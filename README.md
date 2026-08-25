@@ -7,8 +7,8 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **50 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
-LEGO réelle + couche CAO).
+État : **56 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+LEGO réelle + couche CAO + conformité par tirage aléatoire).
 
 Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
 [`docs/ZONES_DOMBRE.md`](docs/ZONES_DOMBRE.md) : chacune est soit fermée avec sa
@@ -23,6 +23,7 @@ pytest                                  # toute la suite
 pytest test_bfk001_adversarial.py       # T1a–T14 (Section M)
 pytest test_bfk001_integration.py       # Phase 7, invariants H1–H6
 pytest test_bfk001_cad.py               # couche CAO (hors contrat)
+pytest test_bfk001_conformance.py       # propriétés, sur tirages aléatoires
 ```
 
 Aucune dépendance hors `pytest` (bibliothèque standard uniquement).

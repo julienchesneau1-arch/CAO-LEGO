@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 50 tests verts.
+Version du noyau : **BFK-001 v3.3.2** — 56 tests verts.
 
 ---
 
@@ -144,7 +144,49 @@ Classées par ce qu'elles bloquent réellement.
 
 ---
 
-## 4. Ce qu'un solveur devra respecter
+## 4. Traçabilité de la revue : v3 → v3.3.2
+
+Le contrat implémenté est l'aboutissement d'une revue en sept passes. Plusieurs
+décisions y ont été **prises puis renversées**. Quiconque relit une version
+intermédiaire risque d'implémenter une règle abandonnée — d'où ce tableau.
+
+### 4.1 Décisions renversées (ne jamais réintroduire)
+
+| Proposé dans une version antérieure | Décision finale v3.3.2 | Pourquoi c'est important |
+|---|---|---|
+| `BFK001_GEOMETRIC_EPSILON_LDU = 1e-6` et comparaisons à epsilon près | **Aucun epsilon.** Arithmétique exacte ℤ (A.1) | Un epsilon en géométrie entière n'absorbe rien : il n'y a pas d'erreur d'arrondi à absorber. Il ne ferait qu'introduire une zone grise entre CONTACT et PENETRATION. |
+| Tolérance figée à **1,0 LDU** / 5°, « alignée sur la grille voxel » | Laissée ouverte en v3.3.2, **fixée à 0,5 LDU** ici | L'argument de la grille voxel est mort avec la voxelisation. Surtout, 1,0 LDU est exactement la valeur limite : deux connecteurs distants d'un LDU sur un axe sont à distance 1,0, donc `<= 1.0` les accepte. La tolérance cesse d'être équivalente à la coïncidence et légitime silencieusement une pièce mal posée. 0,5 reste strictement en deçà. |
+| `solid_overlap` peut **sur-approximer** (AABB englobante, faux positifs acceptés) | **Interdit.** Partition exacte, aucune sur-approximation (A.6) | Un faux positif de pénétration rejette des assemblages légaux. La partition exacte est vérifiée cellule par cellule sur 300 configurations tirées au sort. |
+| `ConstructionState.add_part()` — mise à jour immuable **portée par l'état** | **Supprimé.** Pur conteneur, orchestration extérieure (J.2) | Attention au faux ami : `bfk001/orchestration.py` expose bien une fonction `add_part`, mais c'est une **fonction libre hors contrat** qui retourne un nouvel état — pas une méthode de `ConstructionState`, qui n'en a aucune. |
+| `ConstructionState.spatial_index: SpatialCandidateIndex` | **`SpatialSnapshot`, query-only** (J.1) | Un index mutable dans un état « immuable » est une fuite. Le code va plus loin que le contrat : `ConstructionState` **refuse** un snapshot exposant `insert`/`remove`. |
+| `ConstructionGraph` en `List` | **`Tuple` partout** (I.1) | Rejeté par `TypeError` à la construction, récursivement. |
+| `H3_INVALID_BOND` (« aucun bond ne viole les contraintes ») | **`H3_AUTHORITY_INTEGRITY`** (« aucun bond fabriqué hors de l'oracle ») | Formulation bien plus forte, et la seule vérifiable : un bond émis par l'oracle est valide **par définition**. |
+| T9 : `C_fast ⊇ C_reference` | **`P ⊆ C_fast`**, et `C_ref ⊆ C_fast` explicitement **non exigé** (H.4) | La référence est un oracle de complétude *physique*, pas un canon de candidats. Le test l'exerce : il vérifie `P ⊆ C_fast` **et** que `C_fast` est strictement inclus dans `C_ref`. |
+| T1 unique (introspection du frame d'appel) | **T1a signature + T1b dépendances de module** | L'introspection de frame était fragile ; l'audit statique du module, lui, mord. |
+
+### 4.2 Les six consignes du GO, vérifiées dans le code
+
+| Consigne | Où elle est tenue | Vérification |
+|---|---|---|
+| 1. Ne pas modifier l'architecture sans signaler | README « Écarts signalés » : 9 écarts, chacun motivé | — |
+| 2. Position vs normale | `transform_local_direction_to_world` n'accepte **pas** de `Pose` | `oracle.py:106-107`, `foundation.py:99` : les seuls appels sur une normale, tous via `pose[1]` |
+| 3. `PhysicalBond` opaque, mécanisme privé au choix | Jeton privé + `__init_subclass__` interdit + registre faible | `oracle.py` — c'est ce registre qui rend H3 vérifiable, pas seulement déclaré |
+| 4. `_compatible` / référence O(n²) implémentés **littéralement** | Expression du contrat recopiée ; la référence ignore l'index et la tolérance | La recherche accélérée est une **classe séparée** (H.4 l'anticipe) ; la référence n'a pas été touchée |
+| 5. Tests adversariaux d'abord | Commit `4f59320` : 18 tests, 16 rouges, **avant** toute implémentation | `git log --reverse` |
+| 6. Aucun `List` dans le graphe ni l'état | Zéro occurrence dans `graph.py` / `state.py` | `TypeError` à la construction |
+
+### 4.3 Une préconisation du contrat volontairement non suivie
+
+`solid_overlap` porte en v3.3.1/v3.3.2 la précondition « `intersection ⊆ solid_a`
+et `intersection ⊆ solid_b`, sinon comportement indéfini ». L'implémentation ne
+s'y fie pas : elle recalcule `base = intersection ∩ solid_a ∩ solid_b`. Sous la
+précondition, le résultat est identique ; hors précondition, il reste défini au
+lieu d'être arbitraire. Aucun comportement contractuel n'est modifié — un
+« comportement indéfini » de moins.
+
+---
+
+## 5. Ce qu'un solveur devra respecter
 
 Pour que la couche 2 se branche sans rouvrir le noyau :
 
