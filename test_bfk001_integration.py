@@ -369,3 +369,37 @@ def test_plate_stack_is_valid():
     assert len(state.graph.edges) == 2, "P1-P2 et P2-P3, pas de bond P1-P3"
     report = bfk.validate(state.graph, placed, geometries, tolerance)
     assert report.ok, report.violations
+
+
+def test_invariants_refuse_to_judge_without_geometry():
+    """Un invariant vert sur une piece invisible ne vaut rien.
+
+    Ignorer silencieusement une piece sans geometrie rendrait H2 et H6 verts
+    sans rien avoir verifie. Ils refusent de se prononcer.
+    """
+    placed = stack((("A", (0, 0, 0)), ("B", (0, 0, BRICK_H))))
+    partial = {"A": geometry_2x2()}  # B manque
+
+    with pytest.raises(KeyError, match="H2_COLLISION"):
+        bfk.check_h2_collision(placed, partial)
+
+    with pytest.raises(KeyError, match="H6_FOUNDATION"):
+        bfk.check_h6_foundation(placed, partial)
+
+    with pytest.raises(KeyError, match="H4_FLOATING"):
+        bfk.founded_part_ids(placed, partial)
+
+    with pytest.raises(KeyError):
+        bfk.validate(
+            bfk.assemble(placed, TOL()).graph, placed, partial, TOL()
+        )
+
+    with pytest.raises(KeyError):
+        bfk.evaluate_placement(
+            placed, partial, brick("C", (0, 0, 2 * BRICK_H)), geometry_2x2(), TOL()
+        )
+
+    # Avec toutes les geometries, les memes appels se prononcent.
+    complete = geometries_for(placed)
+    assert bfk.check_h2_collision(placed, complete) == ()
+    assert bfk.check_h6_foundation(placed, complete) == ()

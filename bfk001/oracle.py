@@ -39,6 +39,20 @@ class PhysicalBond:
 
     Aucune API publique de BFK-001 ne permet sa construction directe et le type
     n'expose aucun champ : un PhysicalBond ne se lit pas, il s'obtient.
+
+    POURQUOI CE N'EST PAS UN @dataclass(frozen=True), contrairement au stub du
+    contrat : un dataclass gele SANS CHAMP donne a toutes ses instances la meme
+    valeur et le meme hash. Deux bonds quelconques seraient alors egaux, et un
+    bond fabrique hors oracle appartiendrait au registre d'emission des qu'un
+    seul vrai bond y figure — H3 deviendrait vide de sens tout en paraissant
+    passer. L'identite d'objet n'est donc pas une preference d'implementation :
+    c'est la condition pour que H3 morde. Verifie par
+    test_bond_identity_is_required_for_h3.
+
+    Consequence assumee : un bond est un JETON, pas une valeur. Deux appels a
+    l'oracle sur la meme entree rendent le meme verdict mais deux jetons
+    distincts. La purete de l'oracle porte sur le verdict, pas sur l'identite
+    de l'objet emis.
     """
 
     __slots__ = ("__weakref__",)
@@ -52,6 +66,25 @@ class PhysicalBond:
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("PhysicalBond ne peut pas etre sous-classe (decision A.8)")
+
+    def __copy__(self) -> "PhysicalBond":
+        """Un jeton immuable se copie en lui-meme.
+
+        Sans cela, copier un ConstructionState — reflexe naturel pour du
+        backtracking — transformerait chaque bond en contrefacon et ferait
+        echouer H3 sur un etat pourtant legitime.
+        """
+        return self
+
+    def __deepcopy__(self, memo: object) -> "PhysicalBond":
+        return self
+
+    def __reduce__(self):
+        raise TypeError(
+            "un PhysicalBond ne se serialise pas : il serait ressuscite hors de "
+            "l'oracle et violerait H3. Serialiser les pieces (bfk001.serialization) "
+            "et laisser l'oracle re-emettre les liaisons au chargement."
+        )
 
     def __repr__(self) -> str:
         return "<PhysicalBond emis par l'oracle>"
@@ -93,7 +126,11 @@ def evaluate_connector_pair(
     SEULE operation flottante autorisee dans BFK-001 : dx, dy, dz et leur somme
     de carres restent entiers.
 
-    Fonction pure : aucun etat lu ni ecrit hors du registre d'emission.
+    Purete : le VERDICT est une fonction pure de l'entree — memes connecteurs,
+    memes poses, meme tolerance donnent toujours la meme reponse (liaison ou
+    absence de liaison). Chaque verdict positif frappe en revanche un jeton
+    neuf, inscrit au registre d'emission : c'est ce qui rend H3 verifiable.
+    L'oracle ne lit ni n'ecrit aucun autre etat.
     """
     if not isinstance(connector_a, Connector) or not isinstance(connector_b, Connector):
         raise TypeError("evaluate_connector_pair attend deux Connector")
@@ -113,7 +150,18 @@ def evaluate_connector_pair(
     dx = position_a.x - position_b.x
     dy = position_a.y - position_b.y
     dz = position_a.z - position_b.z
-    distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+    squared_distance = dx * dx + dy * dy + dz * dz
+
+    # Ecartement EXACT avant tout flottant. Z^3 n'est pas borne : au-dela
+    # d'environ 1e154 LDU, math.sqrt() leve OverflowError alors que le contrat
+    # promet une arithmetique exacte sur des entiers arbitraires. math.isqrt
+    # calcule floor(racine) sur n'importe quel entier ; si ce plancher depasse
+    # deja ceil(tolerance), alors la distance reelle depasse la tolerance, sans
+    # la moindre ambiguite. Le verdict est identique, la portee est totale.
+    if math.isqrt(squared_distance) > math.ceil(tolerance.max_position_error_ldu):
+        return None
+
+    distance = math.sqrt(squared_distance)
     if distance > tolerance.max_position_error_ldu:
         return None
 

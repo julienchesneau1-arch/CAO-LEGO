@@ -104,18 +104,22 @@ def assemble(
         ),
         edges=tuple(
             (id_a, id_b, tuple(bonds))
-            for (id_a, id_b), bonds in sorted(bonds_by_edge.items())
+            for (id_a, id_b), bonds in sorted(
+                bonds_by_edge.items(), key=lambda item: item[0]
+            )
         ),
     )
-    snapshot = FrozenSpatialSnapshot(
-        tuple(sorted((part_id, part.aabb) for part_id, part in placed_parts.items()))
-    )
-    return ConstructionState(graph=graph, spatial_snapshot=snapshot)
+    return ConstructionState(graph=graph, spatial_snapshot=_snapshot_of(placed_parts))
 
 
 def _snapshot_of(placed_parts: Mapping[str, PlacedPart]) -> FrozenSpatialSnapshot:
     return FrozenSpatialSnapshot(
-        tuple(sorted((part_id, part.aabb) for part_id, part in placed_parts.items()))
+        tuple(
+            sorted(
+                ((part_id, part.aabb) for part_id, part in placed_parts.items()),
+                key=lambda entry: entry[0],
+            )
+        )
     )
 
 
@@ -187,7 +191,7 @@ def add_part(
         ),
         edges=tuple(
             (id_a, id_b, tuple(bonds))
-            for (id_a, id_b), bonds in sorted(edges.items())
+            for (id_a, id_b), bonds in sorted(edges.items(), key=lambda item: item[0])
         ),
     )
     return (
@@ -279,13 +283,19 @@ def evaluate_placement(
     if candidate.part_id in placed_parts:
         raise ValueError(f"identifiant deja place : {candidate.part_id}")
 
+    missing = sorted(set(placed_parts) - set(geometries))
+    if missing:
+        raise KeyError(
+            f"geometrie absente pour {', '.join(missing)} : un verdict de pose "
+            "ne peut pas ignorer une piece dont la geometrie est inconnue."
+        )
+
     worst = CollisionStatus.CLEAR
     blocking: List[str] = []
     for part_id, part in placed_parts.items():
-        geometry = geometries.get(part_id)
-        if geometry is None:
-            continue
-        status = collide(candidate_geometry, candidate.pose, geometry, part.pose)
+        status = collide(
+            candidate_geometry, candidate.pose, geometries[part_id], part.pose
+        )
         if status is CollisionStatus.PENETRATION:
             blocking.append(part_id)
             worst = CollisionStatus.PENETRATION

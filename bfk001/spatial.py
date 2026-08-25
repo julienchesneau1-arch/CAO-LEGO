@@ -77,7 +77,9 @@ class ReferenceSpatialIndex:
 
     def snapshot(self) -> "FrozenSpatialSnapshot":
         """Vue de lecture seule, detachee de l'index (value object)."""
-        return FrozenSpatialSnapshot(tuple(sorted(self._entries.items())))
+        return FrozenSpatialSnapshot(
+            tuple(sorted(self._entries.items(), key=lambda entry: entry[0]))
+        )
 
 
 @dataclass(frozen=True)
@@ -176,4 +178,6 @@ class GridSpatialIndex:
                 del self._cells[cell]
 
     def snapshot(self) -> "FrozenSpatialSnapshot":
-        return FrozenSpatialSnapshot(tuple(sorted(self._entries.items())))
+        return FrozenSpatialSnapshot(
+            tuple(sorted(self._entries.items(), key=lambda entry: entry[0]))
+        )

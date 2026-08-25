@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **56 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **63 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire).
 
 Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
@@ -237,7 +237,15 @@ axiales unitaires ; `ConstructionState` refuse un `spatial_snapshot` exposant
 `insert`/`remove`. Ces contrôles dérivent du contrat mais n'y sont pas écrits
 comme obligations d'implémentation.
 
-### 9. T14 — assertion affinée
+### 9. `collide()` transforme les vides à la demande
+
+L'algorithme F.5 les transforme dès l'étape 1 ; ils ne servent qu'à l'étape 5.
+Les transformer seulement en cas d'`OVERLAPPING` ne change aucun résultat — et
+rend H2 **17× plus rapide** sur un modèle réel (2,48 s → 0,14 s sur 400 pièces),
+parce qu'une pièce courante porte plus de vingt vides et que l'immense majorité
+des paires ne se recouvrent pas.
+
+### 10. T14 — assertion affinée
 
 `solid_overlap()` réutilise légitimement `intersection_aabb()` en interne. T14
 vérifie donc l'**ordre de première entrée** dans chaque autorité de la chaîne,

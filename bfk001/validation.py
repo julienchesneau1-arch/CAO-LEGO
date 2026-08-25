@@ -115,16 +115,19 @@ def check_h2_collision(
     Ecarter une paire non retournee ne peut donc masquer aucune penetration.
     L'index est construit ici, jamais recu : un accelerateur injecte n'offre
     aucune garantie d'exhaustivite (Section G) et n'a pas a porter un invariant.
+
+    Toute piece placee DOIT avoir une geometrie. Ignorer silencieusement une
+    piece sans geometrie rendrait un H2 vert qui ne veut rien dire : c'est
+    exactement ainsi qu'un validateur cesse d'etre utile.
     """
+    _require_geometries(placed_parts, geometries, "H2_COLLISION")
+
     grid = GridSpatialIndex()
     for part_id, part in placed_parts.items():
-        if part_id in geometries:
-            grid.insert(part_id, part.aabb)
+        grid.insert(part_id, part.aabb)
 
     violations: List[InvariantViolation] = []
     for id_a, part_a in placed_parts.items():
-        if id_a not in geometries:
-            continue
         for id_b in grid.query(part_a.aabb):
             if id_b <= id_a:
                 continue
@@ -136,6 +139,21 @@ def check_h2_collision(
                     InvariantViolation("H2_COLLISION", f"PENETRATION {id_a} / {id_b}")
                 )
     return tuple(violations)
+
+
+def _require_geometries(
+    placed_parts: Mapping[str, PlacedPart],
+    geometries: Mapping[str, CollisionGeometry],
+    invariant: str,
+) -> None:
+    """Un invariant ne se prononce jamais sur une piece qu'il ne voit pas."""
+    missing = sorted(set(placed_parts) - set(geometries))
+    if missing:
+        raise KeyError(
+            f"{invariant} : geometrie absente pour {', '.join(missing)}. "
+            "Un invariant ne peut pas etre declare satisfait sur une piece "
+            "dont la geometrie est inconnue."
+        )
 
 
 def check_h3_authority_integrity(
@@ -219,10 +237,10 @@ def check_h6_foundation(
     Une piece sous le plan est INVALIDE ; une piece exactement au plan doit etre
     geometriquement fondee.
     """
+    _require_geometries(placed_parts, geometries, "H6_FOUNDATION")
+
     violations: List[InvariantViolation] = []
     for part_id, part in placed_parts.items():
-        if part_id not in geometries:
-            continue
         result = check_foundation(
             geometries[part_id].exterior,
             part.connectors,
@@ -255,11 +273,11 @@ def founded_part_ids(
     foundation_plane_z: int = 0,
 ) -> Tuple[str, ...]:
     """Identifiants des pieces geometriquement fondees (support de H4)."""
+    _require_geometries(placed_parts, geometries, "H4_FLOATING")
     return tuple(
         part_id
         for part_id, part in placed_parts.items()
-        if part_id in geometries
-        and check_foundation(
+        if check_foundation(
             geometries[part_id].exterior,
             part.connectors,
             part.pose,

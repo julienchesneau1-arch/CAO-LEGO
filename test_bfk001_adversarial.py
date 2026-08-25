@@ -745,3 +745,152 @@ def test_tolerance_is_lattice_safe():
         assert (
             bfk.evaluate_connector_pair(male, P(), female, pose, tolerance) is None
         ), f"bond fantome a l'ecart ({dx}, {dy}, {dz})"
+
+
+# =============================================================================
+# H3 — ce qui rend l'invariant verifiable plutot que declaratif
+# =============================================================================
+
+
+def test_bond_identity_is_required_for_h3():
+    """Le stub litteral du contrat rendrait H3 VIDE DE SENS.
+
+    `@dataclass(frozen=True) class PhysicalBond: pass` donne a toutes ses
+    instances la meme valeur et le meme hash. Un registre d'emission accepterait
+    alors n'importe quelle contrefacon des qu'un seul vrai bond y figure : H3
+    passerait au vert en ne verifiant rien. L'identite d'objet n'est donc pas
+    une preference d'implementation, c'est la condition de l'invariant.
+    """
+    from dataclasses import dataclass as _dataclass
+
+    @_dataclass(frozen=True)
+    class ContractStubBond:  # exactement le stub de la Section E.1
+        pass
+
+    registre = {ContractStubBond()}
+    assert ContractStubBond() in registre, (
+        "propriete a documenter : avec un dataclass sans champ, toute "
+        "contrefacon est indistinguable d'un bond authentique"
+    )
+
+    # L'implementation reelle, elle, distingue.
+    a = brick("A", (0, 0, 0))
+    b = brick("B", (0, 0, BRICK_H))
+    first = bfk.evaluate_connector_pair(males()[0], a.pose, females()[0], b.pose, TOL())
+    second = bfk.evaluate_connector_pair(males()[0], a.pose, females()[0], b.pose, TOL())
+
+    assert first is not None and second is not None
+    assert first is not second, "chaque verdict positif frappe un jeton neuf"
+    assert first != second, "un bond est un jeton, pas une valeur"
+    assert bfk.is_oracle_issued(first) and bfk.is_oracle_issued(second)
+    assert not bfk.is_oracle_issued(object.__new__(bfk.PhysicalBond))
+
+
+def test_bond_copies_to_itself_and_refuses_serialization():
+    """Copier un etat ne doit pas transformer ses liaisons en contrefacons."""
+    import copy
+    import pickle
+
+    placed = {"A": brick("A", (0, 0, 0)), "B": brick("B", (0, 0, BRICK_H))}
+    state = bfk.assemble(placed, TOL())
+    bond = state.graph.edges[0][2][0]
+
+    assert copy.copy(bond) is bond
+    assert copy.deepcopy(bond) is bond
+    # Le reflexe naturel du backtracking reste sur : H3 tient apres copie.
+    assert bfk.check_h3_authority_integrity(copy.deepcopy(state).graph) == ()
+
+    with pytest.raises(TypeError):
+        pickle.dumps(bond)  # un bond relu d'un fichier serait une contrefacon
+
+
+def test_graph_rejects_structural_fictions():
+    """Un graphe ne peut pas affirmer une connexite qui n'existe pas."""
+    placed = {"A": brick("A", (0, 0, 0)), "B": brick("B", (0, 0, BRICK_H))}
+    state = bfk.assemble(placed, TOL())
+    parts = state.graph.parts
+    bonds = state.graph.edges[0][2]
+
+    with pytest.raises(ValueError):  # extremite non declaree : H4/H5 sur une fiction
+        bfk.ConstructionGraph(parts=parts, edges=(("A", "FANTOME", bonds),))
+
+    with pytest.raises(ValueError):  # boucle sur soi
+        bfk.ConstructionGraph(parts=parts, edges=(("A", "A", bonds),))
+
+    with pytest.raises(ValueError):  # arete sans liaison : ne connecte rien
+        bfk.ConstructionGraph(parts=parts, edges=(("A", "B", ()),))
+
+    with pytest.raises(ValueError):  # arete dupliquee
+        bfk.ConstructionGraph(
+            parts=parts, edges=(("A", "B", bonds), ("B", "A", bonds))
+        )
+
+    with pytest.raises(ValueError):  # identifiant de piece duplique
+        bfk.ConstructionGraph(parts=parts + (parts[0],), edges=())
+
+    # Le graphe legitime, lui, passe.
+    assert bfk.ConstructionGraph(parts=parts, edges=(("A", "B", bonds),))
+
+
+def test_oracle_holds_on_unbounded_coordinates():
+    """Z^3 n'est pas borne : l'oracle doit statuer a n'importe quelle echelle.
+
+    math.sqrt() leve OverflowError au-dela d'environ 1e154. Le contrat promet
+    une arithmetique exacte sur des entiers arbitraires : l'oracle ecarte donc
+    d'abord par un calcul entier exact.
+    """
+    tolerance = TOL()
+    male = bfk.Connector("stud_male", V(0, 0, 0), V(0, 0, 1))
+    female = bfk.Connector("stud_female", V(0, 0, 0), V(0, 0, -1))
+    astronomique = 10 ** 200
+
+    assert (
+        bfk.evaluate_connector_pair(
+            male, P(), female, P((astronomique, 0, 0)), tolerance
+        )
+        is None
+    )
+    # Et a la meme echelle, une coincidence exacte reste une liaison.
+    assert (
+        bfk.evaluate_connector_pair(
+            male,
+            P((astronomique, astronomique, astronomique)),
+            female,
+            P((astronomique, astronomique, astronomique)),
+            tolerance,
+        )
+        is not None
+    )
+
+
+def test_tolerance_rejects_non_finite_values():
+    """Une tolerance infinie connecterait tout a tout."""
+    with pytest.raises(ValueError):
+        bfk.ConnectorTolerance(float("inf"), 0.0)
+    with pytest.raises(ValueError):
+        bfk.ConnectorTolerance(0.5, float("nan"))
+    with pytest.raises(ValueError):
+        bfk.ConnectorTolerance(-0.1, 0.0)
+
+
+def test_collision_status_refuses_incoherent_input():
+    """L'autorite de derivation refuse une entree qui se contredit."""
+    piece = (BX((0, 0, 0), (1, 1, 1)),)
+
+    with pytest.raises(ValueError):  # DISJOINT impose overlap None
+        bfk.collision_status(bfk.GeometricRelation.DISJOINT, piece)
+    with pytest.raises(ValueError):  # TOUCHING impose overlap None
+        bfk.collision_status(bfk.GeometricRelation.TOUCHING, piece)
+    with pytest.raises(ValueError):  # une partition vide vaut None, pas ()
+        bfk.collision_status(bfk.GeometricRelation.OVERLAPPING, ())
+    with pytest.raises(TypeError):
+        bfk.collision_status(bfk.GeometricRelation.OVERLAPPING, [BX((0, 0, 0), (1, 1, 1))])
+
+    assert (
+        bfk.collision_status(bfk.GeometricRelation.OVERLAPPING, None)
+        is bfk.CollisionStatus.CONTACT
+    )
+    assert (
+        bfk.collision_status(bfk.GeometricRelation.OVERLAPPING, piece)
+        is bfk.CollisionStatus.PENETRATION
+    )

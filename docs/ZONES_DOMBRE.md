@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 56 tests verts.
+Version du noyau : **BFK-001 v3.3.2** — 63 tests verts.
 
 ---
 
@@ -96,6 +96,10 @@ Chacune est fermée **par un test**, pas par une intention.
 | 16 | Persistance | Un document ne porte **jamais** un bond ; l'oracle les ré-émet au chargement | `test_document_never_carries_a_bond` |
 | 17 | Identité de pièce | `part_id` (instance) ≠ `design_id` (référence) ≠ `color_id` | `test_bill_of_materials_counts_by_reference_and_colour` |
 | 18 | Nomenclature | `bill_of_materials` agrège par référence et couleur | idem |
+| 19 | H3 réellement vérifiable | Identité d'objet imposée ; copie stable, sérialisation refusée | `test_bond_identity_is_required_for_h3`, `test_bond_copies_to_itself_and_refuses_serialization` |
+| 20 | Intégrité structurelle du graphe | Arête fantôme, boucle, doublon, arête sans liaison, id dupliqué : tous rejetés | `test_graph_rejects_structural_fictions` |
+| 21 | Invariants sans angle mort | H2/H4/H6 refusent de juger une pièce sans géométrie | `test_invariants_refuse_to_judge_without_geometry` |
+| 22 | Exactitude non bornée | Écartement entier exact avant tout flottant | `test_oracle_holds_on_unbounded_coordinates` |
 
 ---
 
@@ -186,7 +190,106 @@ lieu d'être arbitraire. Aucun comportement contractuel n'est modifié — un
 
 ---
 
-## 5. Ce qu'un solveur devra respecter
+## 5. Revue adversariale du noyau par lui-même
+
+Le code a été relu contre lui-même, en cherchant activement à le mettre en
+défaut plutôt qu'à le confirmer. Huit défauts réels ont été trouvés et corrigés.
+Ils sont listés ici parce qu'ils sont instructifs, pas parce qu'ils sont
+résolus.
+
+### 5.1 La spécification littérale de `PhysicalBond` rend H3 vide de sens
+
+Le contrat écrit `@dataclass(frozen=True) class PhysicalBond: pass`. Un
+dataclass gelé **sans champ** donne à toutes ses instances la même valeur et le
+même hash :
+
+```python
+ContractStubBond() == ContractStubBond()   # True
+forgerie in registre_des_bonds_emis        # True dès qu'un seul vrai bond y figure
+```
+
+Autrement dit, avec le stub tel qu'écrit, H3 passerait au vert **sans rien
+vérifier**. L'identité d'objet n'est donc pas une préférence d'implémentation :
+c'est la condition pour que l'invariant morde. `test_bond_identity_is_required_for_h3`
+démontre les deux comportements côte à côte.
+
+Conséquence assumée : un bond est un **jeton**, pas une valeur. La pureté de
+l'oracle porte sur le verdict — mêmes entrées, même réponse — pas sur l'identité
+de l'objet émis.
+
+### 5.2 `deepcopy` transformait les liaisons en contrefaçons
+
+Copier un `ConstructionState` — le réflexe même du backtracking, que le contrat
+encourage — recréait chaque bond hors du registre : H3 échouait sur un état
+pourtant légitime. Corrigé : `__copy__` et `__deepcopy__` d'un jeton immuable
+retournent l'objet lui-même.
+
+### 5.3 `pickle` ressuscitait un bond hors oracle, silencieusement
+
+Corrigé : `__reduce__` refuse, avec un message qui renvoie vers
+`bfk001.serialization` — sérialiser les pièces, laisser l'oracle ré-émettre les
+liaisons.
+
+### 5.4 Le graphe acceptait des fictions structurelles
+
+`ConstructionGraph` acceptait une arête vers une pièce **non déclarée**, une
+boucle d'une pièce sur elle-même, une arête dupliquée, une arête **sans aucune
+liaison**, et des identifiants de pièces dupliqués. H4 et H5 pouvaient donc se
+prononcer sur une connexité qui n'existait pas. Corrigé : les cinq cas lèvent à
+la construction.
+
+### 5.5 Les invariants ignoraient silencieusement une pièce sans géométrie
+
+`check_h2_collision` et `check_h6_foundation` sautaient les pièces absentes de
+`geometries` : un oubli de l'appelant produisait un invariant **vert qui ne
+voulait rien dire**. C'est exactement ainsi qu'un validateur cesse d'être utile.
+Corrigé : `KeyError` explicite nommant les pièces manquantes.
+
+### 5.6 L'oracle échouait au-delà de ~1e154 LDU
+
+ℤ³ n'est pas borné, mais `math.sqrt()` sur un entier Python trop grand lève
+`OverflowError` — le contrat promettait une exactitude que l'implémentation ne
+tenait pas à grande échelle. Corrigé par un écartement **entier exact** avant
+tout flottant : si `isqrt(d²) > ceil(tolérance)`, la distance dépasse la
+tolérance sans ambiguïté. Verdict identique, portée totale.
+
+### 5.7 Une tolérance infinie était acceptée
+
+Elle connecterait tout à tout et faisait exploser `ceil(inf)` dans la recherche
+accélérée. Corrigé : `ConnectorTolerance` exige des réels finis.
+
+### 5.8 H2 payait la transformation de tous les vides pour rien — 17× trop lent
+
+L'algorithme F.5 transforme les vides dès l'étape 1, alors qu'ils ne servent
+qu'à l'étape 5. Une paire `DISJOINT` ou `TOUCHING` — l'immense majorité dans un
+modèle réel — payait donc des centaines de transformations de coins inutiles.
+Les vides sont désormais transformés **à la demande**, uniquement en cas
+d'`OVERLAPPING`. Écart d'ordre, aucun écart de sémantique : les 63 tests sont
+inchangés.
+
+| Mur de briques 2×2 | H2 avant | H2 après |
+|---|---:|---:|
+| 36 pièces | 0,184 s | 0,010 s |
+| 144 pièces | 0,858 s | 0,040 s |
+| 400 pièces | 2,477 s | **0,144 s** |
+
+### 5.9 Mesures actuelles et limite restante
+
+Sur un mur de 400 briques 2×2 : assemblage complet 14 ms, recherche accélérée
+26 ms, H2 144 ms. **La recherche n'est plus le facteur limitant.**
+
+Ce qui l'est : la **pose incrémentale**, à 4,7 ms par pose sur 154 pièces, soit
+un coût linéaire en taille du modèle — donc quadratique pour construire un
+modèle entier. `add_part` relance la recherche sur tout l'assemblage puis filtre
+sur la pièce ajoutée. Le correctif nommé : un index persistant **au niveau des
+connecteurs** (survivant d'une pose à l'autre), et une extension du protocole
+`SearchApproximation` du type `pairs_involving(part_id, …)`. Ce n'est pas une
+optimisation à bricoler dans un coin : elle touche une frontière d'autorité, et
+mérite d'être décidée, pas improvisée.
+
+---
+
+## 6. Ce qu'un solveur devra respecter
 
 Pour que la couche 2 se branche sans rouvrir le noyau :
 

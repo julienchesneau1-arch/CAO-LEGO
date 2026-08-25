@@ -41,6 +41,12 @@ class ConstructionGraph:
                 if not isinstance(connector, Connector):
                     raise TypeError("les connecteurs d'une part sont des Connector")
 
+        declared = tuple(part[0] for part in self.parts)
+        if len(set(declared)) != len(declared):
+            raise ValueError("identifiant de piece duplique dans ConstructionGraph.parts")
+
+        known = set(declared)
+        seen_edges = set()
         for edge in self.edges:
             if not isinstance(edge, tuple) or len(edge) != 3:
                 raise TypeError("chaque edge est un Tuple[str, str, Tuple[PhysicalBond, ...]]")
@@ -52,6 +58,27 @@ class ConstructionGraph:
             for bond in bonds:
                 if not isinstance(bond, PhysicalBond):
                     raise TypeError("les bonds d'une edge sont des PhysicalBond")
+
+            # Integrite structurelle : une arete relie deux pieces DECLAREES,
+            # distinctes, une seule fois, et porte au moins une liaison. Sans
+            # ces controles, un graphe peut affirmer une connexite qui repose
+            # sur une piece inexistante ou sur une arete vide — et H4/H5
+            # passeraient sur une fiction.
+            if id_a not in known or id_b not in known:
+                raise ValueError(
+                    f"arete vers une piece non declaree : {id_a} <-> {id_b}"
+                )
+            if id_a == id_b:
+                raise ValueError(f"arete d'une piece vers elle-meme : {id_a}")
+            if not bonds:
+                raise ValueError(
+                    f"arete sans liaison : {id_a} <-> {id_b}. Une arete sans bond "
+                    "ne connecte rien ; elle ne doit pas exister."
+                )
+            key = (id_a, id_b) if id_a <= id_b else (id_b, id_a)
+            if key in seen_edges:
+                raise ValueError(f"arete dupliquee : {key[0]} <-> {key[1]}")
+            seen_edges.add(key)
 
 
 class BuildStep(Protocol):

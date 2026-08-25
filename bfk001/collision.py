@@ -251,6 +251,14 @@ def collide(
 
     La derivation finale passe toujours par collision_status(), unique autorite
     de traduction relation/overlap -> statut (Section F.4).
+
+    ECART D'ORDRE, SANS ECART DE SEMANTIQUE : l'algorithme F.5 transforme les
+    vides des l'etape 1, alors qu'ils ne servent qu'a l'etape 5. Ils sont donc
+    transformes seulement en cas d'OVERLAPPING. Le resultat est identique — les
+    vides n'interviennent dans aucune autre etape — mais une piece courante
+    porte plus de vingt vides, et une paire DISJOINT ou TOUCHING payait jusqu'ici
+    des centaines de transformations de coins pour rien. C'est ce qui rendait H2
+    dix fois plus lent que necessaire sur un modele reel.
     """
     if not isinstance(geometry_a, CollisionGeometry) or not isinstance(
         geometry_b, CollisionGeometry
@@ -258,13 +266,14 @@ def collide(
         raise TypeError("collide attend deux CollisionGeometry")
 
     aabb_a = transform_aabb(geometry_a.exterior, pose_a)
-    voids_a_m = tuple(transform_aabb(void, pose_a) for void in geometry_a.voids)
     aabb_b = transform_aabb(geometry_b.exterior, pose_b)
-    voids_b_m = tuple(transform_aabb(void, pose_b) for void in geometry_b.voids)
 
     relation = geometric_relation(aabb_a, aabb_b)
     if relation is not GeometricRelation.OVERLAPPING:
         return collision_status(relation, None)
+
+    voids_a_m = tuple(transform_aabb(void, pose_a) for void in geometry_a.voids)
+    voids_b_m = tuple(transform_aabb(void, pose_b) for void in geometry_b.voids)
 
     intersection = intersection_aabb(aabb_a, aabb_b)
     if intersection is None:  # pragma: no cover - OVERLAPPING garantit le contraire

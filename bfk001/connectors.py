@@ -11,6 +11,7 @@ README.md.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -73,8 +74,12 @@ class ConnectorTolerance:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise TypeError(f"ConnectorTolerance.{name} doit etre un reel")
-            if value != value:  # NaN
-                raise ValueError(f"ConnectorTolerance.{name} ne peut pas etre NaN")
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"ConnectorTolerance.{name} doit etre un reel fini "
+                    "(ni NaN, ni infini : une tolerance infinie connecterait "
+                    "tout a tout et viderait l'oracle de son role)"
+                )
             if value < 0:
                 raise ValueError(f"ConnectorTolerance.{name} ne peut pas etre negatif")
 

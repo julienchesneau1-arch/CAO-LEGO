@@ -32,8 +32,13 @@ def BX(lo, hi):
 
 
 def random_box(rng, span=GRID):
-    lo = [rng.randrange(0, span) for _ in range(3)]
-    hi = [value + rng.randrange(1, span - value + 1) for value in lo]
+    """Boite aleatoire a coordonnees entieres, negatives comprises.
+
+    Le domaine traverse volontairement l'origine : c'est la que les divisions
+    entieres et les decoupes changent de signe.
+    """
+    lo = [rng.randrange(-span, span) for _ in range(3)]
+    hi = [value + rng.randrange(1, span + 1) for value in lo]
     return BX(tuple(lo), tuple(hi))
 
 
@@ -131,7 +136,7 @@ def test_solid_overlap_partition_is_exact_on_random_boxes():
     rng = random.Random(SEED + 1)
     non_empty = 0
 
-    for _ in range(300):
+    for _ in range(800):
         solid_a = random_box(rng)
         solid_b = random_box(rng)
         voids_a = tuple(random_box(rng) for _ in range(rng.randrange(0, 3)))
@@ -161,7 +166,7 @@ def test_solid_overlap_partition_is_exact_on_random_boxes():
             covered |= cells
         assert covered == expected, "partition inexacte"
 
-    assert non_empty >= 50, "tirage degenere : trop peu de regions non vides"
+    assert non_empty >= 60, "tirage degenere : trop peu de regions non vides"
 
 
 def test_collide_is_symmetric_and_consistent():
