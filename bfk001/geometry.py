@@ -25,6 +25,9 @@ __all__ = [
     "transform_aabb",
     "transform_local_to_world",
     "transform_local_direction_to_world",
+    "transform_world_to_local",
+    "invert_pose",
+    "compose_poses",
 ]
 
 _ALLOWED_COEFFICIENTS = (-1, 0, 1)
@@ -171,6 +174,18 @@ class Orientation:
             self.m20 * x + self.m21 * y + self.m22 * z,
         )
 
+    def inverse(self) -> "Orientation":
+        """Rotation inverse = transposee (la matrice est orthogonale).
+
+        Exacte dans Z : aucune division. Ajout hors contrat, indispensable au
+        passage monde -> local (selection, ancrage, repositionnement).
+        """
+        return Orientation(
+            self.m00, self.m10, self.m20,
+            self.m01, self.m11, self.m21,
+            self.m02, self.m12, self.m22,
+        )
+
     def compose(self, other: "Orientation") -> "Orientation":
         """Composition exacte : (self o other).apply(v) == self.apply(other.apply(v))."""
         if not isinstance(other, Orientation):
@@ -311,6 +326,42 @@ def transform_local_to_world(local: LDUVector, pose: Pose) -> LDUVector:
         raise TypeError("transform_local_to_world attend un LDUVector")
     translation, orientation = _validate_pose(pose)
     return orientation.apply(local) + translation
+
+
+def transform_world_to_local(world: LDUVector, pose: Pose) -> LDUVector:
+    """Transformation inverse d'une POSITION : monde -> local.
+
+    local = orientation^-1 @ (world - translation). Exacte dans Z^3.
+    Ajout hors contrat : sans elle, un logiciel de CAO ne peut ni convertir un
+    clic en coordonnee de piece, ni reposer une piece sur un nouvel ancrage.
+    Propriete garantie et testee : transform_world_to_local(
+    transform_local_to_world(v, pose), pose) == v pour toute pose.
+    """
+    if not isinstance(world, LDUVector):
+        raise TypeError("transform_world_to_local attend un LDUVector")
+    translation, orientation = _validate_pose(pose)
+    return orientation.inverse().apply(world - translation)
+
+
+def invert_pose(pose: Pose) -> Pose:
+    """Pose inverse : (t, R)^-1 = (-R^-1 t, R^-1). Exacte dans Z^3."""
+    translation, orientation = _validate_pose(pose)
+    inverse_orientation = orientation.inverse()
+    return (-inverse_orientation.apply(translation), inverse_orientation)
+
+
+def compose_poses(outer: Pose, inner: Pose) -> Pose:
+    """Composition de poses : appliquer inner puis outer.
+
+    Necessaire des qu'un assemblage devient une sous-piece (groupes, modeles
+    imbriques facon LDraw). Exacte dans Z^3.
+    """
+    outer_translation, outer_orientation = _validate_pose(outer)
+    inner_translation, inner_orientation = _validate_pose(inner)
+    return (
+        outer_orientation.apply(inner_translation) + outer_translation,
+        outer_orientation.compose(inner_orientation),
+    )
 
 
 # =============================================================================

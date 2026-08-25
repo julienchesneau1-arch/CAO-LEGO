@@ -7,7 +7,12 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **35 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche LEGO réelle).
+État : **50 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+LEGO réelle + couche CAO).
+
+Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
+[`docs/ZONES_DOMBRE.md`](docs/ZONES_DOMBRE.md) : chacune est soit fermée avec sa
+preuve, soit nommée avec la décision qui lui manque.
 
 ---
 
@@ -17,6 +22,7 @@ opaque.
 pytest                                  # toute la suite
 pytest test_bfk001_adversarial.py       # T1a–T14 (Section M)
 pytest test_bfk001_integration.py       # Phase 7, invariants H1–H6
+pytest test_bfk001_cad.py               # couche CAO (hors contrat)
 ```
 
 Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
@@ -40,6 +46,10 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/validation.py` | K | H1 à H6, `validate` |
 | `bfk001/orchestration.py` | — | `assemble`, `with_part` (**hors contrat**, Section J) |
 | `bfk001/lego.py` | — | Métrologie du système LEGO en LDU, `LEGO_TOLERANCE`, briques et plates de référence (**hors contrat**) |
+| `bfk001/rotations.py` | — | Les 24 rotations discrètes, énumérées et nommées (**hors contrat**) |
+| `bfk001/fast_search.py` | H.4 | `LatticeSearchApproximation` : recherche O(n) avec preuve de complétude (**hors contrat**) |
+| `bfk001/catalog.py` | — | Références LEGO, couleurs, nomenclature (**hors contrat**) |
+| `bfk001/serialization.py` | — | Persistance JSON sans aucune liaison (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.
@@ -61,6 +71,21 @@ spatial} → search → graph → state → validation → orchestration`. Aucun
    sous-classement interdit, aucun champ public. Un objet fabriqué par
    contournement (`object.__new__`) n'est pas dans le registre d'émission et
    `is_oracle_issued()` le rejette : c'est ce qui donne des dents à H3.
+
+---
+
+## Couche CAO
+
+Le noyau seul ne suffit pas à écrire un logiciel de conception. Cinq briques
+manquantes ont été ajoutées **hors contrat**, chacune déléguant aux autorités :
+
+| Besoin | Réponse | Garantie |
+|---|---|---|
+| « Puis-je poser cette pièce ici ? » | `evaluate_placement` | Verdict pur, sans état produit ; n'invente aucune règle — H2 (aucune pénétration), H6 (pas sous le plan), H4 (fondée ou reliée) |
+| Poser / retirer sans tout recalculer | `add_part`, `remove_part` | Les liaisons existantes sont conservées **par identité** : la trace d'audit ne défile pas à chaque pose |
+| Tourner une pièce | `all_rotations`, `rotation_x/y/z`, `Orientation.inverse`, `transform_world_to_local` | Groupe des 24, fermé et inversible, exact dans ℤ³ |
+| Passer à l'échelle | `LatticeSearchApproximation` (O(n) prouvé), `GridSpatialIndex` (requête exhaustive) | H1 démontré, pas espéré ; l'élagage de H2 est sans perte car DISJOINT ⇒ CLEAR |
+| Sauvegarder, acheter | `dumps_model` / `loads_model`, `bill_of_materials` | Un document ne porte **jamais** de liaison : l'oracle les ré-émet au chargement, sinon H3 tomberait |
 
 ---
 

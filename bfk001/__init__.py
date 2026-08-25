@@ -18,6 +18,10 @@ Decoupage (Section O, DAG acyclique) :
     validation    K      invariants H1 a H6
     orchestration --     composition d'etats (hors contrat)
     lego          --     metrologie du systeme LEGO et pieces (hors contrat)
+    catalog       --     references, couleurs, nomenclature (hors contrat)
+    rotations     --     les 24 rotations discretes, nommees (hors contrat)
+    fast_search   --     recherche O(n) conforme H1 (hors contrat, H.4)
+    serialization --     persistance sans bond (hors contrat)
 
 `bfk001_kernel.py`, a la racine du depot, est la facade nommee par le brief :
 elle reexporte l'integralite de cette API publique.
@@ -25,6 +29,16 @@ elle reexporte l'integralite de cette API publique.
 
 from __future__ import annotations
 
+from .catalog import (
+    CATALOG,
+    LDRAW_COLORS,
+    BomLine,
+    PartDefinition,
+    PartInstance,
+    bill_of_materials,
+    definition,
+    place,
+)
 from .collision import (
     CollisionGeometry,
     CollisionStatus,
@@ -34,6 +48,7 @@ from .collision import (
 )
 from .connectors import Connector, ConnectorTolerance
 from .foundation import FoundationCheck, FoundationStatus, check_foundation
+from .fast_search import LatticeSearchApproximation
 from .geometry import (
     AABB,
     GeometricRelation,
@@ -43,8 +58,11 @@ from .geometry import (
     geometric_relation,
     intersection_aabb,
     transform_aabb,
+    compose_poses,
+    invert_pose,
     transform_local_direction_to_world,
     transform_local_to_world,
+    transform_world_to_local,
 )
 from .graph import BuildStep, ConstructionGraph, InstructionGraph
 from .lego import (
@@ -65,10 +83,43 @@ from .lego import (
     place_brick,
 )
 from .oracle import PhysicalBond, evaluate_connector_pair, is_oracle_issued
-from .orchestration import assemble, build_index, with_part, without_part
+from .orchestration import (
+    PlacementVerdict,
+    add_part,
+    assemble,
+    build_index,
+    evaluate_placement,
+    remove_part,
+    with_part,
+    without_part,
+)
+from .rotations import (
+    ROT_X_90,
+    ROT_X_180,
+    ROT_X_270,
+    ROT_Y_90,
+    ROT_Y_180,
+    ROT_Y_270,
+    ROT_Z_90,
+    ROT_Z_180,
+    ROT_Z_270,
+    all_rotations,
+    rotation_x,
+    rotation_y,
+    rotation_z,
+)
+from .serialization import (
+    DOCUMENT_VERSION,
+    dumps_model,
+    from_document,
+    loads_model,
+    to_document,
+)
 from .search import PlacedPart, ReferenceSearchApproximation, SearchApproximation
 from .spatial import (
+    DEFAULT_CELL_SIZE_LDU,
     FrozenSpatialSnapshot,
+    GridSpatialIndex,
     ReferenceSpatialIndex,
     SpatialCandidateIndex,
 )
@@ -101,6 +152,22 @@ __all__ = [
     "transform_aabb",
     "transform_local_to_world",
     "transform_local_direction_to_world",
+    "transform_world_to_local",
+    "invert_pose",
+    "compose_poses",
+    "all_rotations",
+    "rotation_x",
+    "rotation_y",
+    "rotation_z",
+    "ROT_X_90",
+    "ROT_X_180",
+    "ROT_X_270",
+    "ROT_Y_90",
+    "ROT_Y_180",
+    "ROT_Y_270",
+    "ROT_Z_90",
+    "ROT_Z_180",
+    "ROT_Z_270",
     # Section D
     "Connector",
     "ConnectorTolerance",
@@ -117,11 +184,14 @@ __all__ = [
     # Section G
     "SpatialCandidateIndex",
     "ReferenceSpatialIndex",
+    "GridSpatialIndex",
+    "DEFAULT_CELL_SIZE_LDU",
     "FrozenSpatialSnapshot",
     # Section H
     "PlacedPart",
     "SearchApproximation",
     "ReferenceSearchApproximation",
+    "LatticeSearchApproximation",
     # Section I
     "ConstructionGraph",
     "BuildStep",
@@ -145,6 +215,15 @@ __all__ = [
     "check_h5_disconnected",
     "check_h6_foundation",
     "validate",
+    # Catalogue et nomenclature (hors contrat)
+    "PartDefinition",
+    "PartInstance",
+    "BomLine",
+    "CATALOG",
+    "LDRAW_COLORS",
+    "definition",
+    "place",
+    "bill_of_materials",
     # Systeme LEGO (hors contrat)
     "LDU_MM",
     "STUD_PITCH_LDU",
@@ -166,5 +245,15 @@ __all__ = [
     "without_part",
     "build_index",
     "assemble",
+    "add_part",
+    "remove_part",
+    "PlacementVerdict",
+    "evaluate_placement",
+    # Persistance (hors contrat)
+    "DOCUMENT_VERSION",
+    "to_document",
+    "from_document",
+    "dumps_model",
+    "loads_model",
     "__version__",
 ]

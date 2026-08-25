@@ -16,7 +16,7 @@ from .foundation import FoundationStatus, check_foundation
 from .graph import ConstructionGraph
 from .oracle import evaluate_connector_pair, is_oracle_issued
 from .search import PlacedPart, ReferenceSearchApproximation, SearchApproximation
-from .spatial import ReferenceSpatialIndex, SpatialCandidateIndex
+from .spatial import GridSpatialIndex, ReferenceSpatialIndex, SpatialCandidateIndex
 
 __all__ = [
     "InvariantViolation",
@@ -107,16 +107,29 @@ def check_h2_collision(
     placed_parts: Mapping[str, PlacedPart],
     geometries: Mapping[str, CollisionGeometry],
 ) -> Tuple[InvariantViolation, ...]:
-    """H2_COLLISION : penetration_count == 0."""
+    """H2_COLLISION : penetration_count == 0.
+
+    Elagage par grille uniforme, SANS perte : deux pieces dont les AABB monde
+    sont disjoints sont CLEAR par la Section F.4, et la requete de
+    GridSpatialIndex est un sur-ensemble exhaustif des pieces non disjointes.
+    Ecarter une paire non retournee ne peut donc masquer aucune penetration.
+    L'index est construit ici, jamais recu : un accelerateur injecte n'offre
+    aucune garantie d'exhaustivite (Section G) et n'a pas a porter un invariant.
+    """
+    grid = GridSpatialIndex()
+    for part_id, part in placed_parts.items():
+        if part_id in geometries:
+            grid.insert(part_id, part.aabb)
+
     violations: List[InvariantViolation] = []
     for id_a, part_a in placed_parts.items():
-        for id_b, part_b in placed_parts.items():
-            if id_a >= id_b:
-                continue
-            if id_a not in geometries or id_b not in geometries:
+        if id_a not in geometries:
+            continue
+        for id_b in grid.query(part_a.aabb):
+            if id_b <= id_a:
                 continue
             status = collide(
-                geometries[id_a], part_a.pose, geometries[id_b], part_b.pose
+                geometries[id_a], part_a.pose, geometries[id_b], placed_parts[id_b].pose
             )
             if status is CollisionStatus.PENETRATION:
                 violations.append(
