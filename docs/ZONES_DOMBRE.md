@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 63 tests verts.
+Version du noyau : **BFK-001 v3.3.2** — 67 tests verts.
 
 ---
 
@@ -287,9 +287,77 @@ connecteurs** (survivant d'une pose à l'autre), et une extension du protocole
 optimisation à bricoler dans un coin : elle touche une frontière d'autorité, et
 mérite d'être décidée, pas improvisée.
 
+### 5.10 Seconde passe adversariale — cinq défauts de plus
+
+| Défaut | Conséquence réelle | Correction |
+|---|---|---|
+| Une pièce démesurée **figeait** `GridSpatialIndex` (insertion > 60 s, non terminée) | H2 se bloque sur un modèle contenant une pièce anormale | Au-delà de 4096 cellules, la pièce est tenue hors grille et testée exactement à chaque requête. Exhaustivité préservée dans les deux branches. |
+| `PlacedPart` acceptait deux **connecteurs identiques** | La même liaison comptée deux fois dans le graphe | Rejeté à la construction |
+| `bill_of_materials` omettait silencieusement une pièce sans identité | Liste de course incomplète — se paie en pièces manquantes le jour du montage | Garde-fou `placed_parts` : `KeyError` nommant les pièces sans référence |
+| **Référence catalogue fausse** : `3021` étiquetée « Plate 2 x 4 » | On commande 3021, on reçoit des plates 2×3 | 3021 = Plate 2×3, ajout de 3020 = Plate 2×4 et 3024 = Plate 1×1. Erreur héritée du document de réflexion produit, qui inversait les deux. |
+| H2 retransformait la géométrie monde de chaque pièce **à chaque paire** | 11 s pour valider un LEGO Art 48×48 | `world_geometry()` + `collide_world()` : la transformation sort de la boucle, sans quitter l'autorité collisionnelle. **10,97 s → 2,76 s** |
+
+Le tirage aléatoire de conformité a également été rendu réaliste : deux tiers
+des pièces sont désormais posées sur la face supérieure d'une pièce déjà
+placée. Un générateur uniforme ne produisait presque aucune liaison — il
+testait H1 sur des états sans bond, donc sur rien.
+
 ---
 
-## 6. Ce qu'un solveur devra respecter
+## 6. Où en est-on de la demande produit
+
+> photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
+
+| Étape | État | Ce qui manque |
+|---|---:|---|
+| Photo → analyse (segmentation, palette, profondeur) | **0 %** | Tout. Couche perception, hors noyau. |
+| → modélisation LEGO Art | **~25 %** | La **garantie** existe et tient à l'échelle réelle ; le **générateur** n'existe pas. Manquent : palette LEGO complète, mapping couleur, solveur de placement. |
+| → liste de course | **~30 %** | Mécanique complète (identité, agrégation, garde-fou) mais 10 références et 9 couleurs seulement. Manquent : import catalogue, palette complète, export BrickLink / Pick-a-Brick, prix. |
+| → notice de montage | **~5 %** | `InstructionGraph.validate_dag` seul. Manquent : `BuildStep` concret, découpage en étapes, sous-assemblages, rendu isométrique, PDF. |
+
+**Environ 15 % de la demande, et ~100 % de sa fondation.** Ce qui est bâti est
+la partie qui rend les 85 % restants dignes de confiance : sans elle, un
+générateur produit des modèles qui s'affichent parfaitement et s'effondrent.
+
+### 6.1 Ce que le noyau encaisse déjà, mesuré
+
+LEGO Art au format officiel 48×48 — 2304 tuiles 1×1 sur substrat, **2917
+pièces**, 4608 liaisons :
+
+| Étape | Temps |
+|---|---:|
+| Assemblage (recherche + oracle) | 0,21 s |
+| H2 collision | 2,76 s |
+| H3 + H4 + H5 + H6 | 2,84 s |
+| **Validation complète** | **5,80 s** |
+| Nomenclature | instantanée |
+
+L'audit H1, lui, reste quadratique **par conception** : 4,2 s pour 144 pièces,
+donc plusieurs heures à cette échelle. C'est un harnais de conformité pour
+valider une implémentation de recherche, pas un contrôle de modèle. J'ai
+refusé de l'accélérer en lui faisant présumer la règle de compatibilité des
+`ctype` : il perdrait son indépendance vis-à-vis de ce qu'il audite, et c'est
+tout ce qui fait sa valeur.
+
+### 6.2 Ce que la mosaïque a révélé sur la demande elle-même
+
+Une mosaïque naïve — les tuiles posées côte à côte sur le plan, exactement ce
+que produit un « pixel art → briques » — passe H2, H4 et H6 sans un seul
+défaut, **et n'est pas un objet** : 64 tuiles, 64 composants séparés. Seul H5
+le voit. Un générateur LEGO Art devra donc produire un substrat (deux couches
+de plates croisées suffisent, c'est testé), sinon il livrera un tas de pièces
+qui s'affiche parfaitement à l'écran. C'est une contrainte de conception pour
+l'étape 2, découverte par le noyau et non par un client mécontent.
+
+### 6.3 Le chemin le plus court vers la demande
+
+1. **Palette LEGO réelle + import catalogue** — débloque à la fois la liste de course et le mapping couleur du générateur.
+2. **Solveur mosaïque 2D** — LEGO Art est un problème 2D : quantification sur la palette, tuile par tenon, substrat imposé. Infiniment plus court que le volume 3D, et c'est exactement la demande.
+3. **`BuildStep` + découpage en étapes** — la notice ; le graphe de dépendances existe déjà, il lui manque son type concret et un rendu.
+
+---
+
+## 7. Ce qu'un solveur devra respecter
 
 Pour que la couche 2 se branche sans rouvrir le noyau :
 

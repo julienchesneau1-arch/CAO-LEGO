@@ -10,7 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Set, Tuple
 
-from .collision import CollisionGeometry, CollisionStatus, collide
+from .collision import (
+    CollisionGeometry,
+    CollisionStatus,
+    collide_world,
+    world_geometry,
+)
 from .connectors import ConnectorTolerance
 from .foundation import FoundationStatus, check_foundation
 from .graph import ConstructionGraph
@@ -123,17 +128,18 @@ def check_h2_collision(
     _require_geometries(placed_parts, geometries, "H2_COLLISION")
 
     grid = GridSpatialIndex()
+    world: Dict[str, CollisionGeometry] = {}
     for part_id, part in placed_parts.items():
         grid.insert(part_id, part.aabb)
+        # Une seule transformation de repere par piece, pas une par paire.
+        world[part_id] = world_geometry(geometries[part_id], part.pose)
 
     violations: List[InvariantViolation] = []
     for id_a, part_a in placed_parts.items():
         for id_b in grid.query(part_a.aabb):
             if id_b <= id_a:
                 continue
-            status = collide(
-                geometries[id_a], part_a.pose, geometries[id_b], placed_parts[id_b].pose
-            )
+            status = collide_world(world[id_a], world[id_b])
             if status is CollisionStatus.PENETRATION:
                 violations.append(
                     InvariantViolation("H2_COLLISION", f"PENETRATION {id_a} / {id_b}")

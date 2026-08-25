@@ -28,6 +28,8 @@ __all__ = [
     "solid_overlap",
     "collision_status",
     "collide",
+    "world_geometry",
+    "collide_world",
 ]
 
 
@@ -272,12 +274,60 @@ def collide(
     if relation is not GeometricRelation.OVERLAPPING:
         return collision_status(relation, None)
 
-    voids_a_m = tuple(transform_aabb(void, pose_a) for void in geometry_a.voids)
-    voids_b_m = tuple(transform_aabb(void, pose_b) for void in geometry_b.voids)
+    return _status_from_world(
+        relation,
+        world_geometry(geometry_a, pose_a),
+        world_geometry(geometry_b, pose_b),
+    )
 
-    intersection = intersection_aabb(aabb_a, aabb_b)
+
+def world_geometry(geometry: CollisionGeometry, pose: Pose) -> CollisionGeometry:
+    """Meme geometrie, exprimee en coordonnees monde. Exacte dans Z^3.
+
+    Value object, comme la geometrie locale. Sert a ne transformer qu'UNE FOIS
+    la geometrie d'une piece qui sera confrontee a beaucoup d'autres : sur un
+    modele reel, chaque piece est comparee a une dizaine de voisines, et une
+    piece courante porte plus de vingt vides.
+    """
+    if not isinstance(geometry, CollisionGeometry):
+        raise TypeError("world_geometry attend une CollisionGeometry")
+    return CollisionGeometry(
+        exterior=transform_aabb(geometry.exterior, pose),
+        voids=tuple(transform_aabb(void, pose) for void in geometry.voids),
+    )
+
+
+def collide_world(
+    geometry_a: CollisionGeometry,
+    geometry_b: CollisionGeometry,
+) -> CollisionStatus:
+    """Meme autorite que collide(), sur des geometries DEJA en coordonnees monde.
+
+    Ce n'est pas un contournement de l'autorite collisionnelle : c'est la meme
+    chaine, dans le meme module, a partir du meme point. Seule la transformation
+    des reperes est sortie de la boucle.
+    """
+    return _status_from_world(
+        geometric_relation(geometry_a.exterior, geometry_b.exterior),
+        geometry_a,
+        geometry_b,
+    )
+
+
+def _status_from_world(
+    relation: GeometricRelation,
+    world_a: CollisionGeometry,
+    world_b: CollisionGeometry,
+) -> CollisionStatus:
+    """Fin de chaine commune : intersection_aabb -> solid_overlap -> statut."""
+    if relation is not GeometricRelation.OVERLAPPING:
+        return collision_status(relation, None)
+
+    intersection = intersection_aabb(world_a.exterior, world_b.exterior)
     if intersection is None:  # pragma: no cover - OVERLAPPING garantit le contraire
         raise AssertionError("OVERLAPPING sans intersection de volume positif")
 
-    overlap = solid_overlap(intersection, aabb_a, voids_a_m, aabb_b, voids_b_m)
+    overlap = solid_overlap(
+        intersection, world_a.exterior, world_a.voids, world_b.exterior, world_b.voids
+    )
     return collision_status(relation, overlap)

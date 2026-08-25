@@ -57,39 +57,52 @@ def unit_cells(aabb):
     }
 
 
-UPRIGHT = tuple(bfk.rotation_z(quarter) for quarter in range(4))
-
-
 def random_state(rng, part_count):
-    """Assemblage tire au sort : references, positions sur le reseau, rotations.
+    """Assemblage tire au sort : references, positions, rotations.
 
-    Cinq sixiemes des pieces restent debout (rotation autour de Z) : c'est ce
-    qui produit de vrais empilements, donc de vrais bonds a auditer. Le sixieme
-    restant tire dans les 24 rotations, pour que les cas absurdes — briques
-    couchees, retournees, enfoncees dans le sol — soient represents eux aussi.
+    Le tirage n'est pas uniforme, et c'est deliberé : deux tiers des pieces
+    sont posees sur la face superieure d'une piece deja placee — c'est ce qui
+    produit de vrais empilements, donc de vrais bonds a auditer. Le tiers
+    restant tombe n'importe ou, dans n'importe laquelle des 24 rotations, pour
+    que les cas absurdes soient represents eux aussi : briques couchees,
+    retournees, enfoncees dans le sol, interpenetrees.
     """
     design_ids = sorted(bfk.CATALOG)
     parts, geometries = {}, {}
+    sites = [(0, 0, 0)]  # faces superieures disponibles
+
     for index in range(part_count):
         part_id = f"P{index}"
-        orientation = (
-            rng.choice(UPRIGHT)
-            if rng.randrange(6)
-            else rng.choice(bfk.all_rotations())
-        )
-        placed, geometry, _ = bfk.place(
-            part_id,
-            rng.choice(design_ids),
-            (
+        design_id = rng.choice(design_ids)
+        height = bfk.CATALOG[design_id].body_height_ldu
+
+        if rng.randrange(3):  # deux fois sur trois : pose alignee sur un site
+            x, y, z = rng.choice(sites)
+            orientation = rng.choice(UPRIGHT)
+            translation = (
+                x + bfk.STUD_PITCH_LDU * rng.randrange(-1, 2),
+                y + bfk.STUD_PITCH_LDU * rng.randrange(-1, 2),
+                z,
+            )
+        else:  # une fois sur trois : n'importe ou, n'importe comment
+            orientation = rng.choice(bfk.all_rotations())
+            translation = (
                 bfk.STUD_PITCH_LDU * rng.randrange(-2, 3),
                 bfk.STUD_PITCH_LDU * rng.randrange(-2, 3),
                 bfk.PLATE_HEIGHT_LDU * rng.randrange(0, 6),
-            ),
-            orientation=orientation,
+            )
+
+        placed, geometry, _ = bfk.place(
+            part_id, design_id, translation, orientation=orientation
         )
         parts[part_id] = placed
         geometries[part_id] = geometry
+        sites.append((translation[0], translation[1], translation[2] + height))
+
     return parts, geometries
+
+
+UPRIGHT = tuple(bfk.rotation_z(quarter) for quarter in range(4))
 
 
 # =============================================================================

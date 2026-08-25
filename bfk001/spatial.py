@@ -19,6 +19,15 @@ __all__ = [
     "FrozenSpatialSnapshot",
 ]
 
+MAX_CELLS_PER_ENTRY = 4096
+"""Au-dela de ce nombre de cellules, une piece est traitee hors grille.
+
+Une piece dont l'AABB couvre des millions de cellules ferait exploser
+l'indexation — et donc figer H2, qui s'appuie sur la grille. Une plaque de base
+48x48 en couvre 576 : le seuil laisse passer tout ce qui est physiquement une
+piece, et attrape ce qui n'en est pas une.
+"""
+
 DEFAULT_CELL_SIZE_LDU = 40
 """Cote de cellule par defaut : 40 LDU = 2 tenons = l'emprise d'une brique 2x2.
 
@@ -137,6 +146,16 @@ class GridSpatialIndex:
         self._cell_size = cell_size_ldu
         self._cells: Dict[Tuple[int, int, int], set] = {}
         self._entries: Dict[str, AABB] = {}
+        self._oversized: Dict[str, AABB] = {}
+
+    def _cell_span(self, aabb: AABB) -> int:
+        """Nombre de cellules couvertes, calcule SANS les enumerer."""
+        size = self._cell_size
+        return (
+            (aabb.max.x // size - aabb.min.x // size + 1)
+            * (aabb.max.y // size - aabb.min.y // size + 1)
+            * (aabb.max.z // size - aabb.min.z // size + 1)
+        )
 
     def _cells_of(self, aabb: AABB) -> Iterable[Tuple[int, int, int]]:
         size = self._cell_size
@@ -149,9 +168,23 @@ class GridSpatialIndex:
         """Sur-ensemble exhaustif des pieces non disjointes de la region."""
         if not isinstance(region, AABB):
             raise TypeError("query attend un AABB")
-        found: set = set()
-        for cell in self._cells_of(region):
-            found.update(self._cells.get(cell, ()))
+
+        found: set = {
+            part_id
+            for part_id, aabb in self._oversized.items()
+            if geometric_relation(aabb, region) is not GeometricRelation.DISJOINT
+        }
+        if self._cell_span(region) <= MAX_CELLS_PER_ENTRY:
+            for cell in self._cells_of(region):
+                found.update(self._cells.get(cell, ()))
+        else:
+            # Region demesuree : la grille n'aide plus, on balaie. Exhaustif
+            # dans les deux branches — jamais un compromis sur la couverture.
+            found.update(
+                part_id
+                for part_id, aabb in self._entries.items()
+                if geometric_relation(aabb, region) is not GeometricRelation.DISJOINT
+            )
         return tuple(sorted(found))
 
     def insert(self, part_id: str, aabb: AABB) -> None:
@@ -159,13 +192,22 @@ class GridSpatialIndex:
             raise TypeError("part_id doit etre une chaine")
         if not isinstance(aabb, AABB):
             raise TypeError("insert attend un AABB")
-        if part_id in self._entries:
+        if part_id in self._entries or part_id in self._oversized:
             self.remove(part_id)
+
+        if self._cell_span(aabb) > MAX_CELLS_PER_ENTRY:
+            # Une piece demesuree n'est pas indexee cellule par cellule : elle
+            # serait plus couteuse a ranger qu'a comparer. Elle est conservee a
+            # part et testee exactement a chaque requete.
+            self._oversized[part_id] = aabb
+            return
+
         self._entries[part_id] = aabb
         for cell in self._cells_of(aabb):
             self._cells.setdefault(cell, set()).add(part_id)
 
     def remove(self, part_id: str) -> None:
+        self._oversized.pop(part_id, None)
         aabb = self._entries.pop(part_id, None)
         if aabb is None:
             return
@@ -178,6 +220,8 @@ class GridSpatialIndex:
                 del self._cells[cell]
 
     def snapshot(self) -> "FrozenSpatialSnapshot":
+        entries = dict(self._entries)
+        entries.update(self._oversized)
         return FrozenSpatialSnapshot(
-            tuple(sorted(self._entries.items(), key=lambda entry: entry[0]))
+            tuple(sorted(entries.items(), key=lambda entry: entry[0]))
         )

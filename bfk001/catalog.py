@@ -83,10 +83,18 @@ _DEFINITIONS = (
     PartDefinition("3010", "Brick 1 x 4", 1, 4, BRICK_HEIGHT_LDU),
     PartDefinition("3003", "Brick 2 x 2", 2, 2, BRICK_HEIGHT_LDU),
     PartDefinition("3001", "Brick 2 x 4", 2, 4, BRICK_HEIGHT_LDU),
+    PartDefinition("3024", "Plate 1 x 1", 1, 1, PLATE_HEIGHT_LDU),
     PartDefinition("3023", "Plate 1 x 2", 1, 2, PLATE_HEIGHT_LDU),
     PartDefinition("3022", "Plate 2 x 2", 2, 2, PLATE_HEIGHT_LDU),
-    PartDefinition("3021", "Plate 2 x 4", 2, 4, PLATE_HEIGHT_LDU),
+    PartDefinition("3021", "Plate 2 x 3", 2, 3, PLATE_HEIGHT_LDU),
+    PartDefinition("3020", "Plate 2 x 4", 2, 4, PLATE_HEIGHT_LDU),
 )
+# ATTENTION — reference corrigee : le document de reflexion produit listait
+# « 3021 Plate 2x4 ». C'est faux : 3021 est une Plate 2x3, et la Plate 2x4 porte
+# la reference 3020. Une liste de course fondee sur cette erreur aurait fait
+# livrer des plates 2x3. C'est exactement pourquoi les references doivent venir
+# d'un import de catalogue reel et non d'une recopie a la main
+# (docs/ZONES_DOMBRE.md, section 3.3).
 
 CATALOG: Mapping[str, PartDefinition] = {
     part.design_id: part for part in _DEFINITIONS
@@ -150,13 +158,26 @@ def place(
 
 def bill_of_materials(
     instances: Mapping[str, PartInstance],
+    placed_parts: Optional[Mapping[str, object]] = None,
 ) -> Tuple[BomLine, ...]:
     """Nomenclature agregee par (reference, couleur), triee.
 
     Pur comptage : aucune substitution, aucun prix, aucune disponibilite. Ces
     decisions relevent d'une couche commerciale qui n'a rien a faire dans un
     noyau geometrique.
+
+    `placed_parts` est un garde-fou optionnel mais recommande : une piece posee
+    sans identite catalogue disparaitrait silencieusement de la liste de course.
+    Une nomenclature incomplete se paie en pieces manquantes le jour du montage.
     """
+    if placed_parts is not None:
+        missing = sorted(set(placed_parts) - set(instances))
+        if missing:
+            raise KeyError(
+                f"identite catalogue absente pour {', '.join(missing)} : "
+                "ces pieces manqueraient a la liste de course."
+            )
+
     counts: Dict[Tuple[str, int], int] = {}
     for instance in instances.values():
         if not isinstance(instance, PartInstance):

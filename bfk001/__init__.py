@@ -43,8 +43,10 @@ from .collision import (
     CollisionGeometry,
     CollisionStatus,
     collide,
+    collide_world,
     collision_status,
     solid_overlap,
+    world_geometry,
 )
 from .connectors import Connector, ConnectorTolerance
 from .foundation import FoundationCheck, FoundationStatus, check_foundation
@@ -181,6 +183,8 @@ __all__ = [
     "solid_overlap",
     "collision_status",
     "collide",
+    "world_geometry",
+    "collide_world",
     # Section G
     "SpatialCandidateIndex",
     "ReferenceSpatialIndex",

@@ -54,6 +54,12 @@ class PlacedPart:
         for connector in self.connectors:
             if not isinstance(connector, Connector):
                 raise TypeError("PlacedPart.connectors ne contient que des Connector")
+        if len(set(self.connectors)) != len(self.connectors):
+            raise ValueError(
+                "connecteur duplique sur une meme piece : deux connecteurs "
+                "identiques a la meme position feraient compter deux fois la "
+                "meme liaison dans le graphe."
+            )
 
 
 # =============================================================================
