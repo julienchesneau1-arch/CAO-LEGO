@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **29 tests verts** (T1a–T14 + compléments + intégration H1–H6).
+État : **35 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche LEGO réelle).
 
 ---
 
@@ -39,6 +39,7 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/foundation.py` | L | `FoundationStatus`, `FoundationCheck`, `check_foundation` |
 | `bfk001/validation.py` | K | H1 à H6, `validate` |
 | `bfk001/orchestration.py` | — | `assemble`, `with_part` (**hors contrat**, Section J) |
+| `bfk001/lego.py` | — | Métrologie du système LEGO en LDU, `LEGO_TOLERANCE`, briques et plates de référence (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.
@@ -60,6 +61,77 @@ spatial} → search → graph → state → validation → orchestration`. Aucun
    sous-classement interdit, aucun champ public. Un objet fabriqué par
    contournement (`object.__new__`) n'est pas dans le registre d'émission et
    `is_oracle_issued()` le rejette : c'est ce qui donne des dents à H3.
+
+---
+
+## Métrologie LEGO
+
+**1 LDU = 0,4 mm** (standard LDraw). Ce n'est pas une unité arbitraire : c'est le
+plus grand diviseur commun des cotes du système, ce qui rend toutes les
+dimensions exactement entières — et c'est précisément ce qui rend la décision
+A.1 (arithmétique exacte dans ℤ³) applicable au LEGO sans approximation.
+
+| Grandeur | LDU | mm |
+|---|---:|---:|
+| Pas de tenon | 20 | 8,0 |
+| Demi-tenon (jumper) | 10 | 4,0 |
+| Hauteur de brique | 24 | 9,6 |
+| Hauteur de plate | 8 | 3,2 |
+| Diamètre de tenon | 12 | 4,8 |
+| Hauteur de tenon | 4 | 1,6 |
+| Épaisseur de paroi | 4 | 1,6 |
+
+3 plates = 1 brique : 3 × 8 = 24 LDU, exactement. Testé.
+
+### Valeur de `ConnectorTolerance` : 0,5 LDU = 0,2 mm
+
+`LEGO_TOLERANCE = ConnectorTolerance(max_position_error_ldu=0.5, max_angular_error_deg=0.0)`
+
+Trois bornes justifient ce choix :
+
+- **Borne haute — strictement < 1 LDU.** Dans ℤ³, deux sites de connexion
+  distincts sont distants d'au moins 1 LDU ; l'écart réellement utile est même
+  d'au moins 8 LDU (hauteur de plate) en vertical et 10 LDU (demi-tenon) dans le
+  plan. Une tolérance sous 1 LDU est donc **exactement équivalente à exiger la
+  coïncidence** : aucun bond fantôme n'est structurellement possible.
+  `test_tolerance_is_lattice_safe` le vérifie sur les 26 voisins unitaires plus
+  les décalages du système — ce n'est pas une supposition.
+- **Borne basse — strictement > 0.** Le jeu d'accroche réel d'une pièce est de
+  l'ordre du centième de millimètre (≈ 0,025 LDU). Une tolérance nulle serait
+  juste pour un réseau parfait mais fausse dès que BFK-002 introduira de la
+  géométrie mesurée ou non alignée sur le réseau. 0,5 LDU laisse un facteur 20
+  au-dessus du jeu physique.
+- **Choix — la moitié du quantum du modèle.** Rayon d'accrochage naturel : toute
+  position est à moins d'un demi-LDU d'au plus un site du réseau.
+
+`max_angular_error_deg = 0.0` dit la vérité du modèle : BFK-001 statue sur
+l'égalité exacte des normales opposées et ne lit jamais ce champ.
+
+Ce n'est **pas** une valeur par défaut — A.2 l'interdit. C'est une constante
+nommée que l'appelant passe explicitement ; `ConnectorTolerance()` lève toujours
+`TypeError`.
+
+### L'accroche réelle, modélisée
+
+La brique de référence inclut ses tenons dans l'`exterior`. Deux briques
+empilées ont donc des extérieurs qui **se recouvrent** (`OVERLAPPING`), et seule
+la soustraction exacte des voids évite le faux positif : les tenons de la brique
+basse sont intégralement absorbés par la cavité de la brique haute →
+`CONTACT`. Un décalage d'un demi-tenon, ou un enfoncement de 4 LDU →
+`PENETRATION`. C'est le cas canonique du système, et il tombe pile sur ce que
+`solid_overlap` sait faire.
+
+Deux approximations assumées, **toutes deux du côté sûr** :
+
+1. Un tenon cylindrique est modélisé par son AABB, donc un prisme carré de
+   12 × 12 LDU. Le modèle est plus **gros** que la pièce réelle : il peut refuser
+   un assemblage légal en diagonale, jamais accepter une pénétration réelle.
+2. Le tube d'accroche interne n'est **pas** modélisé. L'accroche LEGO est un
+   ajustement serré : tenon et tube s'interpénètrent physiquement, et c'est cette
+   interférence qui tient la construction. Une autorité géométrique exacte
+   classerait cela `PENETRATION`. L'élasticité est hors scope BFK-001 (cf.
+   P0_E) : la cavité est donc un vide franc, et l'accroche est portée par
+   l'oracle mécanique, pas par la géométrie.
 
 ---
 
@@ -126,8 +198,10 @@ la traduction relation → statut reste concentrée dans son unique autorité (F
 ### 7. Ajouts hors contrat, nécessaires à l'orchestration et aux tests
 
 `ReferenceSpatialIndex`, `FrozenSpatialSnapshot`, `is_oracle_issued`,
-`bfk001/validation.py` (H1–H6) et `bfk001/orchestration.py`. Aucun n'émet de
-jugement mécanique ou géométrique : ils appellent les autorités.
+`bfk001/validation.py` (H1–H6), `bfk001/orchestration.py` et `bfk001/lego.py`.
+Aucun n'émet de jugement mécanique ou géométrique : ils appellent les autorités.
+`lego.py` est la seule couche qui connaisse le système LEGO — le noyau, lui,
+reste agnostique et ne manipule que des entiers.
 
 ### 8. Validations défensives à la construction
 
@@ -150,7 +224,7 @@ et qu'aucune n'est franchie deux fois (`geometric_relation`, `solid_overlap`,
 
 | Point | État |
 |---|---|
-| Valeur numérique de `ConnectorTolerance` | **Ouverte.** Les tests utilisent `0.5 LDU` comme valeur de fixture, sans portée contractuelle. Aucune valeur par défaut n'existe dans le code. |
+| Valeur numérique de `ConnectorTolerance` | **Fixée pour BFK-001 :** `LEGO_TOLERANCE` = 0,5 LDU (0,2 mm), justifiée ci-dessus et vérifiée par `test_tolerance_is_lattice_safe`. Reste à réexaminer en BFK-002, quand de la géométrie non alignée sur le réseau apparaîtra. Aucune valeur par défaut n'existe dans le code. |
 | `max_angular_error_deg` | Accepté, jamais lu. Vérifié par `test_angular_tolerance_is_ignored`. |
 | P0-B/C/D/E (trajectoire, volume balayé, accessibilité, stabilité) | Hors scope BFK-001. |
 | `BuildStep` exact, langage d'instruction | BFK-001.1. |
@@ -165,7 +239,7 @@ et qu'aucune n'est franchie deux fois (`geometric_relation`, `solid_overlap`,
 | Aucune comparaison flottante en géométrie fondamentale | ✅ |
 | `solid_overlap` exact avec partition formelle | ✅ T12 (volume exact 1200, morceaux d'intérieurs disjoints) |
 | Orientation = matrice 3×3 entière | ✅ det = +1 vérifié à la construction |
-| `ConnectorTolerance` sans défaut ; angle non utilisé | ✅ |
+| `ConnectorTolerance` sans défaut ; angle non utilisé | ✅ `ConnectorTolerance()` lève `TypeError` |
 | H1 = P ⊆ C | ✅ T2, T8, T9, `check_h1_search_coverage` |
 | `ReferenceSearchApproximation` O(n²) exhaustive | ✅ |
 | `ConstructionState` réellement immuable | ✅ T10, T13 |

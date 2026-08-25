@@ -686,3 +686,62 @@ def test_angular_tolerance_is_ignored():
             is None
         )
     assert verdicts == {True}, "la tolerance angulaire a influence l'oracle"
+
+
+# =============================================================================
+# Tolerance — decisions A.2 et D.2, valeur du systeme LEGO
+# =============================================================================
+
+
+def test_connector_tolerance_has_no_default():
+    """A.2 : ConnectorTolerance est obligatoire, sans aucune valeur par defaut."""
+    with pytest.raises(TypeError):
+        bfk.ConnectorTolerance()
+    with pytest.raises(TypeError):
+        bfk.ConnectorTolerance(max_position_error_ldu=0.5)
+    with pytest.raises(TypeError):
+        bfk.ConnectorTolerance(max_angular_error_deg=0.0)
+
+    # LEGO_TOLERANCE est une constante nommee, pas un defaut : rien ne l'injecte
+    # implicitement dans l'oracle ni dans le pipeline de recherche.
+    signature = inspect.signature(bfk.evaluate_connector_pair)
+    assert signature.parameters["tolerance"].default is inspect.Parameter.empty
+
+
+def test_tolerance_is_lattice_safe():
+    """La tolerance LEGO est strictement equivalente a la coincidence exacte.
+
+    Dans Z^3, deux sites de connexion distincts sont distants d'au moins 1 LDU.
+    Une tolerance strictement inferieure a 1 LDU ne peut donc JAMAIS accepter
+    autre chose qu'une coincidence parfaite : la propriete est verifiee, pas
+    supposee.
+    """
+    tolerance = bfk.LEGO_TOLERANCE
+    assert 0 < tolerance.max_position_error_ldu < bfk.MIN_LATTICE_SEPARATION_LDU
+    assert tolerance.max_angular_error_deg == 0.0
+
+    male = bfk.Connector("stud_male", V(10, 10, BRICK_H), V(0, 0, 1))
+    female = bfk.Connector("stud_female", V(10, 10, 0), V(0, 0, -1))
+    seated = P((0, 0, BRICK_H))
+
+    assert bfk.evaluate_connector_pair(male, P(), female, seated, tolerance) is not None
+
+    offsets = [
+        (dx, dy, dz)
+        for dx in (-1, 0, 1)
+        for dy in (-1, 0, 1)
+        for dz in (-1, 0, 1)
+        if (dx, dy, dz) != (0, 0, 0)
+    ]
+    offsets += [
+        (0, 0, bfk.PLATE_HEIGHT_LDU),        # une plate au-dessus
+        (0, 0, -bfk.PLATE_HEIGHT_LDU),       # une plate en dessous
+        (bfk.HALF_STUD_LDU, 0, 0),           # un demi-tenon (jumper)
+        (0, bfk.HALF_STUD_LDU, 0),
+        (bfk.STUD_PITCH_LDU, 0, 0),          # le tenon voisin
+    ]
+    for dx, dy, dz in offsets:
+        pose = P((dx, dy, BRICK_H + dz))
+        assert (
+            bfk.evaluate_connector_pair(male, P(), female, pose, tolerance) is None
+        ), f"bond fantome a l'ecart ({dx}, {dy}, {dz})"

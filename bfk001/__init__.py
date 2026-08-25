@@ -17,6 +17,7 @@ Decoupage (Section O, DAG acyclique) :
     foundation    L      check_foundation
     validation    K      invariants H1 a H6
     orchestration --     composition d'etats (hors contrat)
+    lego          --     metrologie du systeme LEGO et pieces (hors contrat)
 
 `bfk001_kernel.py`, a la racine du depot, est la facade nommee par le brief :
 elle reexporte l'integralite de cette API publique.
@@ -46,6 +47,23 @@ from .geometry import (
     transform_local_to_world,
 )
 from .graph import BuildStep, ConstructionGraph, InstructionGraph
+from .lego import (
+    BRICK_HEIGHT_LDU,
+    HALF_STUD_LDU,
+    LDU_MM,
+    LEGO_TOLERANCE,
+    MIN_LATTICE_SEPARATION_LDU,
+    PLATE_HEIGHT_LDU,
+    STUD_DIAMETER_LDU,
+    STUD_HEIGHT_LDU,
+    STUD_PITCH_LDU,
+    WALL_THICKNESS_LDU,
+    brick_connectors,
+    brick_geometry,
+    ldu_to_mm,
+    mm_to_ldu,
+    place_brick,
+)
 from .oracle import PhysicalBond, evaluate_connector_pair, is_oracle_issued
 from .orchestration import assemble, build_index, with_part, without_part
 from .search import PlacedPart, ReferenceSearchApproximation, SearchApproximation
@@ -127,6 +145,22 @@ __all__ = [
     "check_h5_disconnected",
     "check_h6_foundation",
     "validate",
+    # Systeme LEGO (hors contrat)
+    "LDU_MM",
+    "STUD_PITCH_LDU",
+    "HALF_STUD_LDU",
+    "BRICK_HEIGHT_LDU",
+    "PLATE_HEIGHT_LDU",
+    "STUD_DIAMETER_LDU",
+    "STUD_HEIGHT_LDU",
+    "WALL_THICKNESS_LDU",
+    "MIN_LATTICE_SEPARATION_LDU",
+    "LEGO_TOLERANCE",
+    "ldu_to_mm",
+    "mm_to_ldu",
+    "brick_geometry",
+    "brick_connectors",
+    "place_brick",
     # Orchestration (hors contrat)
     "with_part",
     "without_part",

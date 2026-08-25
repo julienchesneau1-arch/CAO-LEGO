@@ -38,39 +38,21 @@ def P(translation=(0, 0, 0), orientation=None):
 
 
 def TOL():
-    return bfk.ConnectorTolerance(max_position_error_ldu=0.5, max_angular_error_deg=5.0)
+    """Tolerance du systeme LEGO : 0,5 LDU = 0,2 mm (voir bfk001/lego.py)."""
+    return bfk.LEGO_TOLERANCE
 
 
 def connectors_2x2():
-    males = tuple(
-        bfk.Connector("stud_male", V(x, y, BRICK_H), V(0, 0, 1))
-        for x in (10, 30)
-        for y in (10, 30)
-    )
-    females = tuple(
-        bfk.Connector("stud_female", V(x, y, 0), V(0, 0, -1))
-        for x in (10, 30)
-        for y in (10, 30)
-    )
-    return males + females
+    return bfk.brick_connectors(2, 2)
 
 
 def geometry_2x2():
-    """Brique 2x2 a dessous creux : exterieur plein, cavite interne."""
-    return bfk.CollisionGeometry(
-        exterior=BX((0, 0, 0), (BRICK_W, BRICK_W, BRICK_H)),
-        voids=(BX((2, 2, 0), (BRICK_W - 2, BRICK_W - 2, BRICK_H - 4)),),
-    )
+    """Brique 2x2 reelle : corps creux + 4 tenons, tout en LDU entiers."""
+    return bfk.brick_geometry(2, 2)
 
 
 def brick(part_id, translation=(0, 0, 0)):
-    pose = P(translation)
-    return bfk.PlacedPart(
-        part_id=part_id,
-        pose=pose,
-        aabb=bfk.transform_aabb(geometry_2x2().exterior, pose),
-        connectors=connectors_2x2(),
-    )
+    return bfk.place_brick(part_id, translation)
 
 
 def stack(part_ids_and_translations):
@@ -228,7 +210,10 @@ def test_h6_detects_ground_penetration_and_bad_seating():
     assert len(violations) == 1
     assert "penetre" in violations[0].detail
 
-    upside_down_pose = P((0, 0, BRICK_H), bfk.Orientation(1, 0, 0, 0, -1, 0, 0, 0, -1))
+    top_of_studs = bfk.BRICK_HEIGHT_LDU + bfk.STUD_HEIGHT_LDU
+    upside_down_pose = P(
+        (0, 0, top_of_studs), bfk.Orientation(1, 0, 0, 0, -1, 0, 0, 0, -1)
+    )
     flipped = {
         "A": bfk.PlacedPart(
             part_id="A",
@@ -294,3 +279,93 @@ def test_assemble_is_deterministic_and_pure():
 
     with pytest.raises(ValueError):
         bfk.with_part(placed, brick("A", (0, 0, 3 * BRICK_H)))
+
+
+# =============================================================================
+# Systeme LEGO — accroche reelle (bfk001/lego.py)
+# =============================================================================
+
+
+def volume(aabb):
+    return (
+        (aabb.max.x - aabb.min.x)
+        * (aabb.max.y - aabb.min.y)
+        * (aabb.max.z - aabb.min.z)
+    )
+
+
+def test_brick_geometry_is_metrically_exact():
+    """La brique 2x2 est au bon format LDU et ses voids partitionnent la matiere."""
+    geometry = bfk.brick_geometry(2, 2)
+
+    assert geometry.exterior == BX((0, 0, 0), (40, 40, 28))  # 16 x 16 x 11,2 mm
+    assert bfk.ldu_to_mm(bfk.STUD_PITCH_LDU) == 8.0
+    assert bfk.ldu_to_mm(bfk.BRICK_HEIGHT_LDU) == 9.6
+    assert bfk.ldu_to_mm(bfk.STUD_DIAMETER_LDU) == 4.8
+
+    # cavite (32x32x20) + couche des tenons privee des 4 tenons (40x40x4 - 4x12x12x4)
+    assert sum(volume(void) for void in geometry.voids) == 20480 + (6400 - 2304)
+
+    for i, void in enumerate(geometry.voids):
+        assert volume(void) > 0
+        for other in geometry.voids[i + 1 :]:
+            assert bfk.intersection_aabb(void, other) is None
+        assert bfk.intersection_aabb(void, geometry.exterior) is not None
+
+
+def test_real_clutch_is_contact_not_penetration():
+    """Deux briques empilees : les tenons entrent dans la cavite -> CONTACT.
+
+    Les exterieurs se RECOUVRENT (les tenons de la brique basse occupent le
+    volume de la brique haute) : seule la soustraction exacte des voids evite
+    le faux positif de penetration.
+    """
+    geometry = bfk.brick_geometry(2, 2)
+    lower = P((0, 0, 0))
+    upper = P((0, 0, bfk.BRICK_HEIGHT_LDU))
+
+    assert bfk.geometric_relation(
+        bfk.transform_aabb(geometry.exterior, lower),
+        bfk.transform_aabb(geometry.exterior, upper),
+    ) is bfk.GeometricRelation.OVERLAPPING
+    assert bfk.collide(geometry, lower, geometry, upper) is bfk.CollisionStatus.CONTACT
+
+    # cote a cote : contact de paroi
+    assert (
+        bfk.collide(geometry, lower, geometry, P((40, 0, 0)))
+        is bfk.CollisionStatus.CONTACT
+    )
+
+
+def test_misaligned_brick_is_penetration():
+    """Un demi-tenon de decalage, ou une brique enfoncee : matiere contre matiere."""
+    geometry = bfk.brick_geometry(2, 2)
+    lower = P((0, 0, 0))
+
+    half_stud = P((bfk.HALF_STUD_LDU, 0, bfk.BRICK_HEIGHT_LDU))
+    assert bfk.collide(geometry, lower, geometry, half_stud) is bfk.CollisionStatus.PENETRATION
+
+    sunk = P((0, 0, bfk.BRICK_HEIGHT_LDU - bfk.PLATE_HEIGHT_LDU // 2))
+    assert bfk.collide(geometry, lower, geometry, sunk) is bfk.CollisionStatus.PENETRATION
+
+
+def test_plate_stack_is_valid():
+    """Trois plates empilees valent une brique : 3 x 8 LDU = 24 LDU."""
+    assert 3 * bfk.PLATE_HEIGHT_LDU == bfk.BRICK_HEIGHT_LDU
+
+    tolerance = TOL()
+    placed = {
+        name: bfk.place_brick(
+            name, (0, 0, level * bfk.PLATE_HEIGHT_LDU),
+            studs_x=2, studs_y=2, body_height_ldu=bfk.PLATE_HEIGHT_LDU,
+        )
+        for level, name in enumerate(("P1", "P2", "P3"))
+    }
+    geometries = {
+        name: bfk.brick_geometry(2, 2, bfk.PLATE_HEIGHT_LDU) for name in placed
+    }
+    state = bfk.assemble(placed, tolerance)
+
+    assert len(state.graph.edges) == 2, "P1-P2 et P2-P3, pas de bond P1-P3"
+    report = bfk.validate(state.graph, placed, geometries, tolerance)
+    assert report.ok, report.violations
