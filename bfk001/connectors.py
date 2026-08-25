@@ -1,0 +1,90 @@
+"""BFK-001 v3.3.2 — Section D : connecteurs et tolerance.
+
+Ce module porte le vocabulaire des types de connecteurs, y compris la relation
+de compatibilite `_compatible`. Placement : le contrat ecrit `_compatible` dans
+le bloc de code de la Section H, mais l'oracle (Section E) DOIT l'evaluer sans
+importer le module de recherche (contrainte E : "ne connait PAS
+SearchApproximation"). La relation est donc definie ici, au niveau Connector du
+DAG (Section O), et importee par les deux consommateurs. Ecart signale dans
+README.md.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Tuple
+
+from .geometry import LDUVector
+
+__all__ = ["Connector", "ConnectorTolerance"]
+
+CTYPE_STUD_MALE = "stud_male"
+CTYPE_STUD_FEMALE = "stud_female"
+
+_AXIAL_UNIT_NORMALS: Tuple[Tuple[int, int, int], ...] = (
+    (1, 0, 0),
+    (-1, 0, 0),
+    (0, 1, 0),
+    (0, -1, 0),
+    (0, 0, 1),
+    (0, 0, -1),
+)
+
+
+@dataclass(frozen=True)
+class Connector:
+    """Connecteur mecanique exprime dans le repere LOCAL de la piece.
+
+    local_normal : exactement une composante non nulle, de valeur +1 ou -1
+    (l'une des 6 directions axiales unitaires, contrainte D.1).
+    """
+
+    ctype: str
+    local_pos: LDUVector
+    local_normal: LDUVector
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.ctype, str) or not self.ctype:
+            raise TypeError("Connector.ctype doit etre une chaine non vide")
+        if not isinstance(self.local_pos, LDUVector):
+            raise TypeError("Connector.local_pos doit etre un LDUVector")
+        if not isinstance(self.local_normal, LDUVector):
+            raise TypeError("Connector.local_normal doit etre un LDUVector")
+        if self.local_normal.as_tuple() not in _AXIAL_UNIT_NORMALS:
+            raise ValueError(
+                "Connector.local_normal doit etre l'une des 6 directions axiales "
+                f"unitaires (recu : {self.local_normal.as_tuple()})"
+            )
+
+
+@dataclass(frozen=True)
+class ConnectorTolerance:
+    """Parametre d'entree de l'oracle mecanique. Aucune valeur par defaut (A.2).
+
+    max_angular_error_deg est contractuellement present mais explicitement NON
+    utilise par l'oracle en BFK-001 (reserve a BFK-002).
+    """
+
+    max_position_error_ldu: float
+    max_angular_error_deg: float
+
+    def __post_init__(self) -> None:
+        for name in ("max_position_error_ldu", "max_angular_error_deg"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"ConnectorTolerance.{name} doit etre un reel")
+            if value != value:  # NaN
+                raise ValueError(f"ConnectorTolerance.{name} ne peut pas etre NaN")
+            if value < 0:
+                raise ValueError(f"ConnectorTolerance.{name} ne peut pas etre negatif")
+
+
+def _compatible(ctype_a: str, ctype_b: str) -> bool:
+    """BFK-001 definit exactement : 'stud_male' <-> 'stud_female'.
+
+    Tout autre couple est non compatible (rejete ou reserve a une version
+    ulterieure).
+    """
+    return (ctype_a == CTYPE_STUD_MALE and ctype_b == CTYPE_STUD_FEMALE) or (
+        ctype_a == CTYPE_STUD_FEMALE and ctype_b == CTYPE_STUD_MALE
+    )

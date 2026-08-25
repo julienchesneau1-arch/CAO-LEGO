@@ -535,7 +535,19 @@ def test_collide_chain_completeness():
             setattr(module, name, function)
 
     assert status is bfk.CollisionStatus.PENETRATION
-    assert calls == [
+
+    # Chaque autorite de la chaine est franchie une fois et une seule ;
+    # intersection_aabb est en outre reutilise a l'interieur de solid_overlap,
+    # ce qui est legitime (primitive geometrique, pas autorite de statut).
+    assert calls.count("geometric_relation") == 1
+    assert calls.count("solid_overlap") == 1
+    assert calls.count("collision_status") == 1
+
+    order = []
+    for name in calls:
+        if name not in order:
+            order.append(name)
+    assert order == [
         "geometric_relation",
         "intersection_aabb",
         "solid_overlap",
@@ -644,3 +656,33 @@ def test_exact_arithmetic_rotation():
     # Les entiers non entiers sont refuses a la source.
     with pytest.raises(TypeError):
         bfk.LDUVector(1.0, 0, 0)
+
+
+def test_angular_tolerance_is_ignored():
+    """Section D.2 : max_angular_error_deg est present mais JAMAIS lu en BFK-001.
+
+    L'oracle statue sur l'egalite exacte des normales opposees : faire varier la
+    tolerance angulaire ne peut donc rien changer a son verdict.
+    """
+    a = brick("A", (0, 0, 0))
+    b = brick("B", (0, 0, BRICK_H))
+    male = males()[0]
+    female = females()[0]
+
+    verdicts = set()
+    for angular in (0.0, 5.0, 90.0, 1e9):
+        tolerance = bfk.ConnectorTolerance(
+            max_position_error_ldu=0.5, max_angular_error_deg=angular
+        )
+        verdicts.add(
+            bfk.evaluate_connector_pair(male, a.pose, female, b.pose, tolerance)
+            is not None
+        )
+        # Normales non opposees (brique tournee de 90 deg autour de X) :
+        # aucune tolerance angulaire ne peut sauver la paire.
+        rotated = brick("B", (0, 0, BRICK_H), bfk.Orientation(1, 0, 0, 0, 0, -1, 0, 1, 0))
+        assert (
+            bfk.evaluate_connector_pair(male, a.pose, female, rotated.pose, tolerance)
+            is None
+        )
+    assert verdicts == {True}, "la tolerance angulaire a influence l'oracle"
