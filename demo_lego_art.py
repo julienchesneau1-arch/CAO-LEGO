@@ -89,7 +89,15 @@ def main() -> int:
                            help="lignes de mosaique par page de la notice PDF")
     analyseur.add_argument("--hauteur", type=int, default=None,
                            help="hauteur en tenons (defaut : carre)")
-    analyseur.add_argument("--couleurs", type=int, default=None,
+    analyseur.add_argument(
+        "--references", choices=("minimal", "standard", "large"), default="standard",
+        help="jeu de tuiles : minimal = 1x1 seule ; standard = 1x1, 1x2, 1x4 ; "
+             "large = jusqu'a 1x8. Fusionner ne change rien au rendu et divise "
+             "le nombre de pieces, mais multiplie les lots a commander.")
+    analyseur.add_argument("--tolerance", type=float, default=0.5,
+                           help="avec --couleurs auto : ecart en delta E qu'on "
+                                "accepte de perdre pour economiser un sachet")
+    analyseur.add_argument("--couleurs", default=None,
                            help="limiter la mosaique aux N meilleures couleurs")
     options = analyseur.parse_args()
 
@@ -145,19 +153,43 @@ def main() -> int:
             print("      La palette officielle corrige la plus grande part de l'ecart.")
 
     palette_complete = palette
-    if options.couleurs:
-        palette = palette.best_subset(pixels, options.couleurs)
+    if options.couleurs == "auto":
+        complete = palette
+        palette, retenu, meilleur = bfk.mosaic.cheapest_palette(
+            image, palette, options.studs, hauteur, tolerance=options.tolerance
+        )
+        print(
+            f"  palette reduite a {len(palette)} couleurs sur {len(complete)} : "
+            f"{retenu.tiles} tuiles et {retenu.lots} lots au lieu de "
+            f"{meilleur.tiles} et {meilleur.lots}, en abandonnant "
+            f"{max(0.0, retenu.tonal_mean - meilleur.tonal_mean):.2f} delta E "
+            "de justesse tonale"
+        )
+    elif options.couleurs:
+        palette = palette.best_subset(pixels, int(options.couleurs))
         print(f"  palette reduite aux {len(palette)} meilleures couleurs pour cette image")
 
     depart = time.perf_counter()
     tramage = {"adaptatif": "adaptive", "aucun": False, "complet": True}[options.tramage]
     # L'image est deja au bon rapport : plus rien a rogner ici.
+    jeux = {
+        "minimal": bfk.mosaic.TILE_SET_MINIMAL,
+        "standard": bfk.mosaic.TILE_SET_STANDARD,
+        "large": bfk.mosaic.TILE_SET_LARGE,
+    }
     mosaique = bfk.mosaic.from_image(
-        image, palette, options.studs, hauteur, dither=tramage, fit="stretch"
+        image, palette, options.studs, hauteur, dither=tramage, fit="stretch",
+        tiles=jeux[options.references],
     )
+    sans_fusion = mosaique.stud_count
+    economie = 100 * (1 - mosaique.tile_count / sans_fusion)
     print(
         f"modele  : {mosaique.part_count} pieces "
         f"({mosaique.tile_count} tuiles + substrat) en {time.perf_counter() - depart:.2f}s"
+    )
+    print(
+        f"  fusion  : {mosaique.tile_count} tuiles au lieu de {sans_fusion} "
+        f"({economie:.0f} % de pieces en moins), rendu identique au tenon pres"
     )
 
     tolerance = bfk.LEGO_TOLERANCE
@@ -230,7 +262,7 @@ def main() -> int:
         f" | {tonal[0]:.1f} moyen et {tonal[1]:.1f} au pire sur la justesse tonale"
     )
     print(
-        f"livre   : {len(nomenclature)} references, {len(plan.steps)} etapes, "
+        f"livre   : {len(nomenclature)} lots a commander, {len(plan.steps)} etapes, "
         f"notice.pdf de {fascicule.count(b'/Type /Page /Parent')} pages "
         f"({len(fascicule) // 1024} Ko)"
     )

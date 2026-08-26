@@ -136,26 +136,44 @@ class TestEcriturePdf(unittest.TestCase):
         self.assertIn(rb"fin de ligne \) piege \(", contenus)
 
 
-class TestSuitesDeCouleur(unittest.TestCase):
-    def test_regroupement(self):
-        rouge = bfk.LegoColor(4, "Red", (200, 0, 0))
-        noir = bfk.LegoColor(0, "Black", (0, 0, 0))
-        runs = bk.row_runs([rouge, rouge, noir, rouge])
-        self.assertEqual([(n, c.name) for n, c in runs],
-                         [(2, "Red"), (1, "Black"), (1, "Red")])
+class TestPiecesDUneLigne(unittest.TestCase):
+    def test_la_lecture_nomme_les_pieces_posees(self):
+        # Depuis la fusion, « 4 rouges » designe UNE tuile 1x4. Faire prendre
+        # quatre 1x1 enverrait chercher des pieces absentes du sachet.
+        mosaique, _ = petite_mosaique(cote=16, graine=8)
+        for row in range(mosaique.studs_y):
+            attendu = [
+                (pose.length, pose.color.code)
+                for pose in sorted(
+                    (p for p in mosaique.tiles if p.row == row),
+                    key=lambda p: p.column,
+                )
+            ]
+            lu = [(n, c.code) for n, c in bk.row_runs(mosaique, row)]
+            self.assertEqual(lu, attendu, row)
 
-    def test_regroupement_par_code_et_non_par_identite(self):
-        # Deux instances egales sont la meme brique : les separer ferait
-        # recompter le constructeur pour rien.
-        a = bfk.LegoColor(4, "Red", (200, 0, 0))
-        b = bfk.LegoColor(4, "Red", (200, 0, 0))
-        self.assertIsNot(a, b)
-        self.assertEqual(bk.row_runs([a, b, a]), ((3, a),))
-
-    def test_somme_conservee(self):
+    def test_la_ligne_est_couverte_exactement(self):
         mosaique, _ = petite_mosaique()
-        for ligne in mosaique.grid:
-            self.assertEqual(sum(n for n, _ in bk.row_runs(ligne)), len(ligne))
+        for row in range(mosaique.studs_y):
+            self.assertEqual(
+                sum(n for n, _ in bk.row_runs(mosaique, row)), mosaique.studs_x
+            )
+
+    def test_la_couleur_lue_est_celle_de_la_grille(self):
+        mosaique, _ = petite_mosaique()
+        for row in range(mosaique.studs_y):
+            colonne = 0
+            for longueur, couleur in bk.row_runs(mosaique, row):
+                for decalage in range(longueur):
+                    self.assertEqual(
+                        mosaique.grid[row][colonne + decalage].code, couleur.code
+                    )
+                colonne += longueur
+
+    def test_ligne_hors_mosaique_refusee(self):
+        mosaique, _ = petite_mosaique()
+        with self.assertRaises(IndexError):
+            bk.row_runs(mosaique, mosaique.studs_y)
 
 
 class TestCodesCouleur(unittest.TestCase):
@@ -197,7 +215,7 @@ class TestCodesCouleur(unittest.TestCase):
         texte = " ".join(lecture[0][1])
         attendu = " · ".join(
             f"{compte}{codes[color.code]}"
-            for compte, color in bk.row_runs(mosaique.grid[0])
+            for compte, color in bk.row_runs(mosaique, 0)
         )
         self.assertEqual(texte, attendu)
         # Et pas les noms complets, qui se confondent deux a deux.

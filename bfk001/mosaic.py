@@ -21,18 +21,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Tuple
 
-from .catalog import PartInstance, place
+from .catalog import CATALOG, PartInstance, place, place_at
 from .collision import CollisionGeometry
 from .imaging import _REENCODAGE, Image, crop_to_ratio, resample_box
 from .imaging import _TABLE_LUMIERE as _LUMIERE
 from .lego import PLATE_HEIGHT_LDU, STUD_PITCH_LDU
+from .rotations import ROT_Z_90
 from .palette import LegoColor, Palette, delta_e
 from .search import PlacedPart
 
 __all__ = [
     "Mosaic",
+    "TilePlacement",
     "tile_id",
+    "TILE_SET_MINIMAL",
+    "TILE_SET_STANDARD",
+    "TILE_SET_LARGE",
     "quantize",
+    "PaletteCost",
+    "palette_cost_curve",
+    "cheapest_palette",
     "build",
     "from_image",
     "preview",
@@ -62,6 +70,25 @@ def blending_tiles(distance_m: float, stud_mm: float = 8.0) -> int:
     acuite_mm = (VISUAL_ACUITY_ARCMIN / 60) * (3.141592653589793 / 180) * distance_m * 1000
     return max(1, int(acuite_mm / stud_mm))
 
+# Jeux de tuiles. Fusionner des tuiles voisines de meme couleur ne change RIEN
+# au rendu — une 1x4 rouge montre exactement les memes quatre tenons rouges que
+# quatre 1x1 — mais divise le nombre de pieces par deux. Mesure sur un paysage
+# 48x48, palette officielle :
+#
+#   references employees     pieces   lots a commander
+#   1x1 seule                  2304   15
+#   1x1, 1x2                   1571   23      -32 %
+#   1x1, 1x2, 1x4              1283   30      -44 %   <- defaut
+#   + 1x3                      1234   37      -46 %
+#   + 1x6, 1x8                 1105   50      -52 %
+#
+# Le defaut s'arrete a trois references : au-dela, chaque point de pieces gagne
+# coute plusieurs lots supplementaires a trouver, et les tuiles longues sont
+# rares dans beaucoup de couleurs. Le 1x3 coute sept lots pour deux points.
+TILE_SET_MINIMAL = ("3070b",)
+TILE_SET_STANDARD = ("3070b", "3069b", "2431")
+TILE_SET_LARGE = ("3070b", "3069b", "63864", "2431", "6636", "4162")
+
 SUBSTRATE_DESIGN = "3020"   # Plate 2 x 4
 PANEL_DESIGN = "91405"      # Plate 16 x 16, celle des sets LEGO Art
 TILE_DESIGN = "3070b"       # Tile 1 x 1 with Groove
@@ -87,13 +114,29 @@ class Mosaic:
     placed_parts: Mapping[str, PlacedPart]
     geometries: Mapping[str, CollisionGeometry]
     instances: Mapping[str, PartInstance]
+    tiles: Tuple[TilePlacement, ...] = ()
+    """Les tuiles reellement posees, dans l'ordre de lecture. La notice les lit
+    ICI et non dans la grille : depuis la fusion, « 4 rouges » designe une seule
+    piece 1x4, et faire prendre quatre 1x1 serait une consigne fausse."""
 
     def tile_id(self, row: int, column: int) -> str:
         return tile_id(row, column)
 
     @property
-    def tile_count(self) -> int:
+    def stud_count(self) -> int:
+        """Tenons de l'oeuvre. C'est la RESOLUTION, elle ne bouge pas."""
         return self.studs_x * self.studs_y
+
+    @property
+    def tile_count(self) -> int:
+        """PIECES de mosaique a poser. Depuis la fusion, ce n'est plus le
+        nombre de tenons : une tuile 1x4 en couvre quatre a elle seule."""
+        return len(self.tiles)
+
+    @property
+    def tile_ids(self) -> Tuple[str, ...]:
+        """Identifiants des tuiles reellement posees, dans l'ordre de lecture."""
+        return tuple(tile_id(t.row, t.column) for t in self.tiles)
 
     @property
     def part_count(self) -> int:
@@ -358,6 +401,56 @@ def _average(couleurs, count: int):
     return tuple(_REENCODAGE[round(65535 * value / count)] for value in total)
 
 
+@dataclass(frozen=True)
+class TilePlacement:
+    """Une tuile de la mosaique : ou elle commence, combien de tenons elle couvre."""
+
+    row: int
+    column: int
+    length: int
+    design_id: str
+    color: LegoColor
+
+
+def _decoupe_optimale(longueur: int, disponibles: Sequence[int]) -> List[int]:
+    """Decoupe d'un run en un MINIMUM de tuiles. Programmation dynamique.
+
+    Glouton « la plus longue d'abord » n'est pas optimal en general : avec des
+    tuiles de 1, 3 et 4, un run de 6 se decoupe en 3+3 et non en 4+1+1. La DP
+    coute quelques microsecondes et enleve la question.
+    """
+    infini = float("inf")
+    cout = [0] + [infini] * longueur
+    choix = [0] * (longueur + 1)
+    for n in range(1, longueur + 1):
+        for taille in disponibles:
+            if taille <= n and cout[n - taille] + 1 < cout[n]:
+                cout[n] = cout[n - taille] + 1
+                choix[n] = taille
+    if cout[longueur] == infini:  # pragma: no cover - la 1x1 est toujours la
+        raise ValueError("aucune tuile ne permet de couvrir ce run")
+    morceaux, reste = [], longueur
+    while reste:
+        morceaux.append(choix[reste])
+        reste -= choix[reste]
+    return morceaux
+
+
+def _fusionner_ligne(colors, disponibles):
+    """Ligne de couleurs -> (colonne, longueur, couleur) des tuiles a poser."""
+    sortie = []
+    colonne = 0
+    largeur = len(colors)
+    while colonne < largeur:
+        fin = colonne
+        while fin + 1 < largeur and colors[fin + 1].code == colors[colonne].code:
+            fin += 1
+        for taille in _decoupe_optimale(fin - colonne + 1, disponibles):
+            sortie.append((colonne, taille, colors[colonne]))
+            colonne += taille
+    return sortie
+
+
 def _decouper_axe(ancre: int, pas: int, longueur: int) -> List[Tuple[int, int]]:
     """Partition de [0, longueur) par un reseau de pas `pas` ancre en `ancre`.
 
@@ -456,6 +549,7 @@ def build(
     grid: Tuple[Tuple[LegoColor, ...], ...],
     substrate_color: int = SUBSTRATE_COLOR,
     substrate: str = "crossed",
+    tiles: Sequence[str] = TILE_SET_STANDARD,
 ) -> Mosaic:
     """Grille de couleurs -> modele complet : substrat + tuiles.
 
@@ -478,6 +572,21 @@ def build(
     """
     if substrate not in ("crossed", "panels"):
         raise ValueError("substrate vaut 'crossed' ou 'panels'")
+    par_longueur: Dict[int, str] = {}
+    for design in tiles:
+        piece = CATALOG[design]
+        if piece.studs_x != 1 or piece.has_studs:
+            raise ValueError(
+                f"{design} n'est pas une tuile lisse 1 x N : une mosaique se "
+                "termine par une surface plate, et la fusion se fait en ligne."
+            )
+        par_longueur[piece.studs_y] = design
+    if 1 not in par_longueur:
+        raise ValueError(
+            "il faut au moins la tuile 1 x 1 : sans elle, un run de longueur "
+            "premiere ne pourrait pas etre couvert exactement."
+        )
+    longueurs = sorted(par_longueur, reverse=True)
     if not grid or not grid[0]:
         raise ValueError("grille vide")
     studs_y = len(grid)
@@ -526,17 +635,31 @@ def build(
 
     # Derniere couche : la mosaique. La ligne 0 de l'image est en haut, donc au
     # y le plus grand : le modele se lit comme la photo, vu du dessus.
+    #
+    # La fusion se fait LIGNE PAR LIGNE et jamais en colonnes. Ce n'est pas une
+    # limite technique — la rotation existe — mais un choix : la notice se lit
+    # ligne par ligne, et une tuile a cheval sur deux lignes obligerait a la
+    # poser depuis deux pages differentes.
+    poses: List[TilePlacement] = []
     for row, colors in enumerate(grid):
         y = (studs_y - 1 - row) * STUD_PITCH_LDU
-        for column, color in enumerate(colors):
-            add(
+        for column, longueur, color in _fusionner_ligne(colors, longueurs):
+            design = par_longueur[longueur]
+            placed, geometry, instance = place_at(
                 tile_id(row, column),
-                TILE_DESIGN,
+                design,
                 (column * STUD_PITCH_LDU, y, tile_z),
-                color.code,
+                orientation=ROT_Z_90 if longueur > 1 else None,
+                color_id=color.code,
             )
+            parts[placed.part_id] = placed
+            geometries[placed.part_id] = geometry
+            instances[placed.part_id] = instance
+            poses.append(TilePlacement(row, column, longueur, design, color))
 
-    return Mosaic(studs_x, studs_y, grid, parts, geometries, instances)
+    return Mosaic(
+        studs_x, studs_y, grid, parts, geometries, instances, tuple(poses)
+    )
 
 
 def from_image(
@@ -549,13 +672,101 @@ def from_image(
     substrate: str = "crossed",
     fit: str = "crop",
     offset: float = 0.5,
+    tiles: Sequence[str] = TILE_SET_STANDARD,
 ) -> Mosaic:
     """Chaine complete : photo -> modele constructible."""
     return build(
         quantize(image, palette, studs_x, studs_y, dither, fit, offset),
         substrate_color,
         substrate,
+        tiles,
     )
+
+
+@dataclass(frozen=True)
+class PaletteCost:
+    """Ce que coute et ce que rend une palette de N couleurs, mesure."""
+
+    palette: Palette
+    per_tile: float      # ecart moyen tuile par tuile, delta E
+    tonal_mean: float    # justesse d'ensemble, par blocs de 4x4 tuiles
+    tonal_worst: float
+    tiles: int           # pieces de mosaique apres fusion
+    lots: int            # references x couleurs a commander
+
+
+def palette_cost_curve(
+    image: Image,
+    palette: Palette,
+    studs_x: int,
+    studs_y: int,
+    maximum: int = 20,
+    tiles: Sequence[str] = TILE_SET_STANDARD,
+    **quantize_options,
+) -> Tuple[PaletteCost, ...]:
+    """Cout et rendu de chaque taille de palette, sur la mosaique REELLE.
+
+    `Palette.cheapest_subset` juge sur un proxy par grappes, qui ne voit que
+    l'ecart tuile par tuile. Cet ecart plafonne des huit couleurs alors que la
+    justesse tonale continue de s'ameliorer bien au-dela : le proxy conclurait
+    « huit suffisent » pendant que la lecture d'ensemble du tableau se degrade
+    d'un tiers. Ici on construit la mosaique et on mesure les deux.
+
+    C'est plus lent — une quantification par taille — mais c'est la seule
+    mesure qui reponde a la question posee : combien coute vraiment chaque
+    sachet qu'on ajoute, et qu'est-ce qu'il achete.
+    """
+    from .catalog import bill_of_materials
+
+    reduite = resample_box(image, studs_x, studs_y)
+    pixels = [reduite.pixel(x, y) for y in range(studs_y) for x in range(studs_x)]
+    courbe = palette.subset_curve(pixels, maximum)
+
+    sortie = []
+    for rang in range(1, len(courbe) + 1):
+        sous = Palette(couleur for couleur, _ in courbe[:rang])
+        grille = quantize(image, sous, studs_x, studs_y, **quantize_options)
+        modele = build(grille, tiles=tiles)
+        par_tuile = fidelity(grille, image, 1)[0]
+        tonal_moyen, tonal_pire = fidelity(grille, image, 4)
+        sortie.append(
+            PaletteCost(
+                sous, par_tuile, tonal_moyen, tonal_pire, modele.tile_count,
+                len(bill_of_materials(modele.instances, modele.placed_parts)),
+            )
+        )
+    return tuple(sortie)
+
+
+def cheapest_palette(
+    image: Image,
+    palette: Palette,
+    studs_x: int,
+    studs_y: int,
+    tolerance: float = 1.0,
+    maximum: int = 20,
+    tiles: Sequence[str] = TILE_SET_STANDARD,
+    **quantize_options,
+) -> Tuple[Palette, PaletteCost, PaletteCost]:
+    """La plus petite palette qui reste a `tolerance` du meilleur, SUR LES DEUX
+    criteres — ecart par tuile et justesse tonale.
+
+    Rend aussi la mesure retenue et la meilleure mesure atteignable, pour que
+    l'appelant puisse dire ce qu'il abandonne au lieu de l'affirmer.
+    """
+    if tolerance < 0:
+        raise ValueError("une tolerance est positive")
+    courbe = palette_cost_curve(
+        image, palette, studs_x, studs_y, maximum, tiles, **quantize_options
+    )
+    meilleur_tuile = min(c.per_tile for c in courbe)
+    meilleur_tonal = min(c.tonal_mean for c in courbe)
+    reference = min(courbe, key=lambda c: (c.tonal_mean, c.per_tile))
+    for cout in courbe:
+        if (cout.per_tile <= meilleur_tuile + tolerance
+                and cout.tonal_mean <= meilleur_tonal + tolerance):
+            return cout.palette, cout, reference
+    return reference.palette, reference, reference  # pragma: no cover
 
 
 def preview(mosaic: Mosaic, scale: int = 8) -> Image:

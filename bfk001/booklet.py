@@ -414,23 +414,25 @@ CORPS_REGLETTE = 5.4
 INTERLIGNE = 10.5
 
 
-def row_runs(colors: Sequence[LegoColor]) -> Tuple[Tuple[int, LegoColor], ...]:
-    """Ligne de tuiles -> suites consecutives de meme couleur.
+def row_runs(mosaic: Mosaic, row: int) -> Tuple[Tuple[int, LegoColor], ...]:
+    """Une ligne de la mosaique -> les PIECES a poser, de gauche a droite.
 
-    C'est la seule forme sous laquelle une ligne de mosaique se pose sans se
-    tromper : « 3 noir, 5 blanc, 2 rouge » se compte, alors que quarante-huit
-    cases se recomptent.
+    « 4A · 2B · 1B » se lit et se pointe ; quarante-huit cases se recomptent.
+
+    Ce sont bien les pieces posees, lues dans le modele, et non des suites de
+    couleurs lues dans la grille. Depuis la fusion, la difference est reelle :
+    « 4 rouges » designe UNE tuile 1x4, et faire prendre quatre 1x1 serait une
+    consigne fausse — le constructeur chercherait des pieces qui ne sont pas
+    dans le sachet, et il en resterait quatre a la fin.
     """
-    runs: List[Tuple[int, LegoColor]] = []
-    for color in colors:
-        # Par CODE et non par identite : deux LegoColor egales mais distinctes
-        # sont la meme brique dans le sachet, et couper la suite entre elles
-        # ferait recompter le constructeur pour rien.
-        if runs and runs[-1][1].code == color.code:
-            runs[-1] = (runs[-1][0] + 1, color)
-        else:
-            runs.append((1, color))
-    return tuple(runs)
+    if not 0 <= row < mosaic.studs_y:
+        raise IndexError(f"ligne {row} hors de la mosaique")
+    return tuple(
+        (pose.length, pose.color)
+        for pose in sorted(
+            (p for p in mosaic.tiles if p.row == row), key=lambda p: p.column
+        )
+    )
 
 
 def color_codes(mosaic: Mosaic) -> Dict[int, str]:
@@ -765,7 +767,7 @@ def _lecture(
             _couper(
                 " · ".join(
                     f"{compte}{codes[color.code]}"
-                    for compte, color in row_runs(mosaic.grid[row])
+                    for compte, color in row_runs(mosaic, row)
                 ),
                 CORPS_LIGNE,
                 largeur,
@@ -936,11 +938,9 @@ def build_booklet(
     if rows_per_page < 1:
         raise ValueError("une bande compte au moins une ligne")
 
-    tuiles = {
-        mosaic.tile_id(row, column)
-        for row in range(mosaic.studs_y)
-        for column in range(mosaic.studs_x)
-    }
+    # Les tuiles reellement posees, et pas un identifiant par tenon : depuis la
+    # fusion, une tuile 1x4 couvre quatre tenons et n'existe qu'une fois.
+    tuiles = set(mosaic.tile_ids)
     manquantes = tuiles - set(mosaic.placed_parts)
     if manquantes:  # pragma: no cover - la mosaique pose toutes ses tuiles
         raise KeyError(f"{len(manquantes)} tuiles absentes du modele")
@@ -969,9 +969,10 @@ def build_booklet(
     bandes = _decouper_bandes(mosaic, rows_per_page, mise)
     for index, rows in enumerate(bandes, start=1):
         pages.extend(_pages_bande(mosaic, rows, index, len(bandes), mise))
-        for row in rows:
-            for column in range(mosaic.studs_x):
-                page_de[mosaic.tile_id(row, column)] = len(pages) - 1
+        rangs = set(rows)
+        for pose in mosaic.tiles:
+            if pose.row in rangs:
+                page_de[mosaic.tile_id(pose.row, pose.column)] = len(pages) - 1
 
     _verifier_ordre(plan, page_de)
 

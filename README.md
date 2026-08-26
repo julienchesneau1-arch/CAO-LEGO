@@ -370,6 +370,38 @@ qui manquait à toutes les décisions précédentes sur le tramage : celle du co
 
 ---
 
+## Le coût : moitié moins de pièces, rendu identique
+
+Une tuile 1×4 rouge montre exactement les mêmes quatre tenons rouges que quatre
+tuiles 1×1. Fusionner les tuiles voisines de même couleur ne coûte donc **aucune
+fidélité** — un test compare les aperçus octet par octet — et divise le nombre de
+pièces par deux.
+
+```bash
+python3 demo_lego_art.py photo.jpg --references standard --couleurs auto
+```
+
+| Références | Pièces | Lots | Gain |
+|---|---:|---:|---:|
+| 1×1 seule | 2304 | 15 | — |
+| 1×1, 1×2 | 1571 | 23 | −32 % |
+| **1×1, 1×2, 1×4** (défaut) | **1283** | **30** | **−44 %** |
+| + 1×6, 1×8 | 1105 | 50 | −52 % |
+
+Le défaut s'arrête à trois références : au-delà, chaque point gagné coûte
+plusieurs lots de plus à trouver, et les tuiles longues sont rares dans beaucoup
+de couleurs. Le découpage d'une ligne est **optimal** (programmation dynamique,
+pas glouton : avec des tuiles de 1, 3 et 4, un run de 6 fait 3+3 et non 4+1+1).
+
+`--couleurs auto` cherche la plus petite palette qui reste dans la tolérance sur
+**deux** critères — écart par tuile *et* justesse tonale. Le second est
+indispensable : l'écart par tuile plafonne à huit couleurs alors que la justesse
+tonale continue de s'améliorer jusqu'à quatre-vingts. Sur un paysage, 13 couleurs
+au lieu de 80 coûtent 0,09 ΔE de justesse tonale — imperceptible — et
+économisent 111 pièces et 5 lots. La commande annonce ce qu'elle abandonne.
+
+---
+
 ## Le fond de la mosaïque
 
 Deux couches de plates 2×4 croisées, **rognées à l'emprise exacte de l'œuvre**.

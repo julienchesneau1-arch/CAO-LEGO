@@ -315,6 +315,75 @@ class Palette:
 
         return Palette(retenues)
 
+    def subset_curve(
+        self, pixels: Sequence[Rgb], maximum: int = 24
+    ) -> Tuple[Tuple[LegoColor, float], ...]:
+        """Courbe cout / fidelite : (nombre de couleurs, ecart moyen).
+
+        Rend la SUITE elle-meme : la couleur ajoutee a chaque tour et l'ecart
+        moyen qui en resulte. Les N premieres forment la palette pour N.
+
+        Elle rend les couleurs, et pas seulement les ecarts, pour une raison
+        precise : `best_subset` fait varier son nombre de grappes avec `count`,
+        donc sa reponse pour N n'est PAS le prefixe de cette courbe. Choisir N
+        ici puis rappeler `best_subset(N)` livrerait une autre palette que
+        celle qu'on a mesuree. On garde donc la suite mesuree.
+        """
+        if maximum < 1:
+            raise ValueError("une palette compte au moins une couleur")
+        maximum = min(maximum, len(self._colors))
+        clusters = dominant_colors(pixels, min(96, max(16, maximum * 3)))
+        labs = [(srgb_to_lab(couleur), part) for couleur, part in clusters]
+        total = sum(part for _, part in labs) or 1.0
+
+        meilleur = [float("inf")] * len(labs)
+        restantes = list(self._colors)
+        courbe: List[Tuple[int, float]] = []
+        while len(courbe) < maximum and restantes:
+            elue = None
+            cout_elu = None
+            distances_elues = None
+            for candidate in restantes:
+                lab_candidate = srgb_to_lab(candidate.rgb)
+                distances = [
+                    min(actuel, _delta_e2000_lab(lab, lab_candidate))
+                    for actuel, (lab, _) in zip(meilleur, labs)
+                ]
+                cout = sum(d * part for d, (_, part) in zip(distances, labs))
+                if cout_elu is None or cout < cout_elu:
+                    cout_elu, elue, distances_elues = cout, candidate, distances
+            restantes.remove(elue)
+            meilleur = distances_elues
+            courbe.append((elue, cout_elu / total))
+        return tuple(courbe)
+
+    def cheapest_subset(
+        self, pixels: Sequence[Rgb], tolerance: float = 0.5, maximum: int = 24
+    ) -> "Palette":
+        """La plus PETITE palette dont l'ecart PAR TUILE reste dans `tolerance`.
+
+        ATTENTION a ce que cette fonction ne mesure pas. Elle juge l'ecart
+        moyen tuile par tuile, et cet ecart plafonne vite : sur un paysage, il
+        ne bouge plus au-dela de huit couleurs. La JUSTESSE TONALE, elle,
+        continue de s'ameliorer bien apres — 3,7 delta E avec la palette
+        entiere contre 5,0 avec huit couleurs, et 7,5 contre 12,3 au pire.
+        C'est elle qui gouverne la lecture d'ensemble du tableau.
+
+        Pour arbitrer sur les deux criteres a la fois, voir
+        `mosaic.cheapest_palette`, qui evalue la mosaique reelle. Celle-ci
+        reste utile quand on veut un choix instantane sans construire de
+        modele.
+        Chaque couleur en plus est un sachet a trouver, a payer et a ranger.
+        """
+        if tolerance < 0:
+            raise ValueError("une tolerance est positive")
+        courbe = self.subset_curve(pixels, maximum)
+        plancher = min(ecart for _, ecart in courbe)
+        for rang, (_, ecart) in enumerate(courbe, start=1):
+            if ecart <= plancher + tolerance:
+                return Palette(couleur for couleur, _ in courbe[:rang])
+        raise AssertionError  # pragma: no cover - le minimum est dans la courbe
+
 
 PROVISIONAL_PALETTE = Palette(
     (

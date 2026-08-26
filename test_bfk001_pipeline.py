@@ -111,7 +111,8 @@ def test_image_becomes_a_model_the_kernel_certifies():
     tolerance = bfk.LEGO_TOLERANCE
     mosaique = bfk.mosaic.from_image(image_test(), bfk.PROVISIONAL_PALETTE, 8, 8)
 
-    assert mosaique.tile_count == 64
+    assert mosaique.stud_count == 64
+    assert mosaique.tile_count <= 64, "la fusion ne cree jamais de piece en plus"
     assert mosaique.part_count > mosaique.tile_count, "le substrat doit exister"
 
     state = bfk.assemble(
@@ -128,11 +129,19 @@ def test_image_becomes_a_model_the_kernel_certifies():
 
     nomenclature = bfk.bill_of_materials(mosaique.instances, mosaique.placed_parts)
     assert sum(ligne.quantity for ligne in nomenclature) == mosaique.part_count
-    tuiles = sum(l.quantity for l in nomenclature if l.design_id == "3070b")
-    assert tuiles == mosaique.tile_count
+    # Toutes references de tuiles confondues : la fusion en emploie plusieurs,
+    # mais elles doivent couvrir exactement les 64 tenons, ni plus ni moins.
+    tuiles = [l for l in nomenclature if bfk.CATALOG[l.design_id].has_studs is False]
+    assert sum(l.quantity for l in tuiles) == mosaique.tile_count
+    assert sum(
+        l.quantity * bfk.CATALOG[l.design_id].studs_y for l in tuiles
+    ) == mosaique.stud_count
 
     # Le disque rouge et le fond bleu se retrouvent dans la liste de course.
-    couleurs = {l.color_id for l in nomenclature if l.design_id == "3070b"}
+    # Toutes references de tuiles confondues : depuis la fusion, une aplat de
+    # couleur peut n'exister qu'en 1x2 ou 1x4, et chercher dans les seules 1x1
+    # ferait rater la couleur la plus etendue de l'image.
+    couleurs = {l.color_id for l in tuiles}
     assert bfk.PROVISIONAL_PALETTE.nearest((220, 30, 20)).code in couleurs
     assert bfk.PROVISIONAL_PALETTE.nearest((30, 60, 180)).code in couleurs
 

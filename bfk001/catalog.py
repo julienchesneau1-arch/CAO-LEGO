@@ -94,6 +94,17 @@ _DEFINITIONS = (
     PartDefinition("3021", "Plate 2 x 3", 2, 3, PLATE_HEIGHT_LDU),
     PartDefinition("3020", "Plate 2 x 4", 2, 4, PLATE_HEIGHT_LDU),
     PartDefinition("3070b", "Tile 1 x 1 with Groove", 1, 1, PLATE_HEIGHT_LDU, False),
+    # Tuiles longues : elles couvrent plusieurs tenons d'un coup. Le rendu est
+    # identique au tenon pres — une 1x4 rouge montre les memes quatre tenons
+    # rouges que quatre 1x1 —, donc la fusion ne coute AUCUNE fidelite. Elle
+    # divise le nombre de pieces par deux. References verifiees une a une
+    # contre parts.lst de la bibliotheque LDraw officielle, jamais de memoire.
+    PartDefinition("3069b", "Tile 1 x 2 with Groove", 1, 2, PLATE_HEIGHT_LDU, False),
+    PartDefinition("63864", "Tile 1 x 3 with Groove", 1, 3, PLATE_HEIGHT_LDU, False),
+    PartDefinition("2431", "Tile 1 x 4 with Groove", 1, 4, PLATE_HEIGHT_LDU, False),
+    PartDefinition("6636", "Tile 1 x 6", 1, 6, PLATE_HEIGHT_LDU, False),
+    PartDefinition("4162", "Tile 1 x 8", 1, 8, PLATE_HEIGHT_LDU, False),
+    PartDefinition("3068b", "Tile 2 x 2 with Groove", 2, 2, PLATE_HEIGHT_LDU, False),
     PartDefinition("91405", "Plate 16 x 16", 16, 16, PLATE_HEIGHT_LDU),
 )
 # ATTENTION — reference corrigee : le document de reflexion produit listait
@@ -161,6 +172,35 @@ def place(
         connectors=part.connectors(),
     )
     return placed, geometry, PartInstance(part_id, design_id, color_id)
+
+
+def place_at(
+    part_id: str,
+    design_id: str,
+    corner: Tuple[int, int, int],
+    orientation: Optional[Orientation] = None,
+    color_id: int = 15,
+) -> Tuple[PlacedPart, CollisionGeometry, PartInstance]:
+    """Pose une piece de sorte que le coin bas de son AABB tombe sur `corner`.
+
+    `place` translate l'ORIGINE de la piece ; sous rotation, l'origine n'est
+    plus le coin. Une tuile 1x4 tournee d'un quart de tour se retrouve a
+    gauche de la ou on la voulait. Ici on vise le coin, ce qui est la seule
+    chose dont un pavage a besoin, et la compensation se lit dans l'AABB de la
+    piece tournee a l'origine — pas dans un calcul refait a la main.
+    """
+    repere, _, _ = place(part_id, design_id, (0, 0, 0), orientation, color_id)
+    return place(
+        part_id,
+        design_id,
+        (
+            corner[0] - repere.aabb.min.x,
+            corner[1] - repere.aabb.min.y,
+            corner[2] - repere.aabb.min.z,
+        ),
+        orientation,
+        color_id,
+    )
 
 
 def bill_of_materials(
