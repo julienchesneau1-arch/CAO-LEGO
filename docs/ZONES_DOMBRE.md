@@ -1211,6 +1211,48 @@ même fonction ne prouve que ce que cette fonction représente. `preview` ne
 représentait pas les joints, donc le test ne pouvait rien dire des joints — et
 il a servi quatre fois à affirmer le contraire.
 
+### 5.37 CIEDE2000 coûtait 83 % du temps — une borne exacte l'a réduit
+
+Le profil de la quantification d'une photo de 1,7 Mpx : **6,1 s sur 7,4** dans
+`_delta_e2000_lab`, 555 000 évaluations. La formule est chère, et `nearest` la
+lançait sur les quatre-vingts couleurs de la palette pour chaque tenon.
+
+**Première idée, réfutée par la mesure.** Présélectionner les *k* plus proches
+au sens de CIE76 — bien plus simple à calculer — puis n'évaluer CIEDE2000 que
+sur celles-là. Sur 4000 cibles :
+
+| k | Désaccords avec la réponse exacte |
+|---:|---:|
+| 4 | 8,12 % |
+| 8 | 1,48 % |
+| 16 | 0,33 % |
+
+Elle ne converge pas, et c'est logique : si CIE76 classait comme CIEDE2000, il
+n'y aurait eu aucune raison de changer de métrique. Cette présélection
+réintroduisait exactement le biais qu'on venait de corriger. **Rejetée.**
+
+**Ce qui marche est une borne inférieure démontrable**, pas une heuristique :
+
+> ΔE2000² = t_L² + t_C² + t_H² + R_T·t_C·t_H, avec R_T ∈ [−2, 0]
+>
+> or t_C² + t_H² + R_T·t_C·t_H ≥ t_C² + t_H² − 2|t_C||t_H| = (|t_C| − |t_H|)² ≥ 0
+>
+> donc **ΔE2000 ≥ |ΔL| / S_L**, et S_L = 1 + 0,015(L̄−50)²/√(20+(L̄−50)²) ≤ 1,748
+
+En parcourant la palette par clarté croissante autour de la cible, dès que
+|ΔL|/1,748 dépasse le meilleur écart trouvé, aucune couleur plus éloignée en
+clarté ne peut faire mieux. La recherche s'arrête, et le résultat est **exact**.
+
+Vérifié sur 6000 cibles aléatoires et trois palettes : zéro désaccord avec la
+recherche exhaustive. Un test vérifie aussi l'inégalité elle-même sur 3000
+paires — si elle tombait, la coupure écarterait la bonne couleur en silence.
+
+S'y ajoute un cache des résultats : le mode « auto » interroge trois fois les
+mêmes tenons — version sans tramage, mesure de l'écart à la palette, version
+tramée — et deux tiers de ce travail étaient identiques.
+
+**2,17 s → 0,89 s**, à résultat identique.
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :

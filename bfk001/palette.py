@@ -18,6 +18,7 @@ juge a l'oeil, pas au calcul.
 
 from __future__ import annotations
 
+import bisect
 import math
 import re
 from dataclasses import dataclass
@@ -70,6 +71,10 @@ def _linearize(component: int) -> float:
 
 
 _VINGT_CINQ_7 = 25.0 ** 7
+
+_SL_MAX = 1 + 0.015 * 2500 / math.sqrt(20 + 2500)
+"""Maximum de SL sur L dans [0, 100], atteint aux extremes. Sert de borne a la
+coupure exacte de `Palette.nearest` : dE2000 >= |dL| / SL_MAX."""
 
 _CACHE_LAB: Dict[Rgb, Tuple[float, float, float]] = {}
 _CACHE_LAB_MAX = 200_000
@@ -198,6 +203,14 @@ class Palette:
         if len(set(codes)) != len(codes):
             raise ValueError("code couleur duplique dans la palette")
         self._lab = tuple(srgb_to_lab(color.rgb) for color in self._colors)
+        # Palette triee par clarte, pour la coupure exacte de `nearest`.
+        self._par_clarte: Tuple[int, ...] = tuple(
+            sorted(range(len(self._colors)), key=lambda i: self._lab[i][0])
+        )
+        self._clartes: Tuple[float, ...] = tuple(
+            self._lab[i][0] for i in self._par_clarte
+        )
+        self._proches: Dict[Rgb, LegoColor] = {}
 
     def __len__(self) -> int:
         return len(self._colors)
@@ -218,22 +231,64 @@ class Palette:
     def nearest(self, rgb: Rgb) -> LegoColor:
         """Couleur perceptuellement la plus proche, au sens de CIEDE2000.
 
-        La conversion de la cible est sortie de la boucle : c'est elle, et non
-        la formule, qui dominait le temps de calcul.
+        EXACTE, et pourtant elle n'evalue pas toute la palette. La coupure
+        repose sur une borne inferieure demontrable, pas sur une heuristique :
+
+            dE2000^2 = tL^2 + tC^2 + tH^2 + RT.tC.tH   avec RT dans [-2, 0]
+
+        or tC^2 + tH^2 + RT.tC.tH >= tC^2 + tH^2 - 2|tC||tH| = (|tC|-|tH|)^2,
+        qui est positif. Donc dE2000 >= |tL| = |dL| / SL, et SL est borne :
+        SL = 1 + 0,015 (Lm-50)^2 / racine(20 + (Lm-50)^2) <= 1,748 sur [0, 100].
+
+        D'ou : dE2000 >= |dL| / 1,748. En parcourant la palette par clarte
+        croissante autour de la cible, des que |dL| / 1,748 depasse le meilleur
+        ecart deja trouve, aucune couleur plus loin ne peut faire mieux.
+
+        Une presélection par CIE76 avait ete essayee d'abord — bien plus simple
+        et bien plus rapide. Mesure sur 4000 cibles : 1,5 % de desaccords a 8
+        candidats, 0,33 % encore a 16. Elle reintroduisait exactement le biais
+        de CIE76 que CIEDE2000 sert a corriger. Rejetee.
         """
+        # Le mode « auto » interroge trois fois les memes tenons : une fois
+        # pour la version sans tramage, une fois pour mesurer l'ecart a la
+        # palette, une fois pour la version tramee. Deux tiers de ce travail
+        # sont identiques.
+        trouvee = self._proches.get(rgb)
+        if trouvee is not None:
+            return trouvee
         target = _CACHE_LAB.get(rgb)
         if target is None:
             target = srgb_to_lab(rgb)
             if len(_CACHE_LAB) < _CACHE_LAB_MAX:
                 _CACHE_LAB[rgb] = target
-        best_index = 0
+        cible_l = target[0]
+        clartes = self._clartes
+        ordre = self._par_clarte
+        nombre = len(ordre)
+        droite = bisect.bisect_left(clartes, cible_l)
+        gauche = droite - 1
+        best_index = ordre[0]
         best_distance = float("inf")
-        for index, lab in enumerate(self._lab):
-            distance = _delta_e2000_lab(lab, target)
+        infini = float("inf")
+        while gauche >= 0 or droite < nombre:
+            # Toujours le voisin le plus proche en clarte : |dL| croit donc
+            # de facon monotone, et la coupure peut arreter tout le reste.
+            ecart_gauche = cible_l - clartes[gauche] if gauche >= 0 else infini
+            ecart_droite = clartes[droite] - cible_l if droite < nombre else infini
+            if ecart_gauche <= ecart_droite:
+                index, gauche, ecart = ordre[gauche], gauche - 1, ecart_gauche
+            else:
+                index, droite, ecart = ordre[droite], droite + 1, ecart_droite
+            if ecart / _SL_MAX >= best_distance:
+                break
+            distance = _delta_e2000_lab(self._lab[index], target)
             if distance < best_distance:
                 best_distance = distance
                 best_index = index
-        return self._colors[best_index]
+        choisie = self._colors[best_index]
+        if len(self._proches) < _CACHE_LAB_MAX:
+            self._proches[rgb] = choisie
+        return choisie
 
     def restricted_to(self, codes: Sequence[int]) -> "Palette":
         """Sous-palette : un modele reel se limite aux couleurs approvisionnables."""

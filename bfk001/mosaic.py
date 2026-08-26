@@ -253,19 +253,35 @@ def quantize(
         # pas de grappiller une moyenne. S'il n'y arrive pas, il n'ajoute que
         # du grain. La marge de 1 delta E est le seuil de perception : en deca,
         # on ne troque pas du grain visible contre un gain invisible.
-        sans = quantize(image, palette, studs_x, studs_y, False, fit, offset)
-        avec = quantize(image, palette, studs_x, studs_y, "adaptive", fit, offset)
-        gain = fidelity(sans, image, 4)[1] - fidelity(avec, image, 4)[1]
+        # Le cadrage et le reechantillonnage sont faits UNE fois et partages :
+        # les repeter pour chacune des deux quantifications triplerait le
+        # travail le plus cher de la chaine sur une photo de douze megapixels.
+        cadree = _cadrer(image, studs_x, studs_y, fit, offset)
+        reduite = resample_box(cadree, studs_x, studs_y)
+        sans = _quantifier(reduite, palette, studs_x, studs_y, False)
+        avec = _quantifier(reduite, palette, studs_x, studs_y, "adaptive")
+        gain = fidelity(sans, cadree, 4)[1] - fidelity(avec, cadree, 4)[1]
         return avec if gain >= DITHER_AUTO_MIN_GAIN else sans
 
     if dither not in (True, False, "adaptive"):
         raise ValueError("dither vaut True, False, 'adaptive' ou 'auto'")
+    image = _cadrer(image, studs_x, studs_y, fit, offset)
+    reduced = resample_box(image, studs_x, studs_y)
+
+    return _quantifier(reduced, palette, studs_x, studs_y, dither)
+
+
+def _cadrer(image: Image, studs_x: int, studs_y: int, fit: str, offset: float) -> Image:
+    """Cadrage prealable, isole pour n'etre fait qu'une fois en mode « auto »."""
     if fit not in ("crop", "stretch"):
         raise ValueError("fit vaut 'crop' ou 'stretch'")
     if fit == "crop":
-        image = crop_to_ratio(image, studs_x / studs_y, offset)
-    reduced = resample_box(image, studs_x, studs_y)
+        return crop_to_ratio(image, studs_x / studs_y, offset)
+    return image
 
+
+def _quantifier(reduced, palette, studs_x, studs_y, dither):
+    """Grille reduite -> couleurs LEGO. Le cadrage et la moyenne sont deja faits."""
     if dither is False:
         return tuple(
             tuple(palette.nearest(reduced.pixel(x, y)) for x in range(studs_x))

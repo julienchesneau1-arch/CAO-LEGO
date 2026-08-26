@@ -488,3 +488,75 @@ class TestTramageAutomatique(unittest.TestCase):
         photo = self.scene(lambda u, v: (10, 20, 30))
         with self.assertRaises(ValueError):
             bfk.mosaic.quantize(photo, self.palette(), 8, 8, "flou")
+
+
+class TestRechercheExacteEtElaguee(unittest.TestCase):
+    """`nearest` n'evalue pas toute la palette — et rend pourtant l'exact."""
+
+    def palettes(self):
+        return [
+            bfk.PROVISIONAL_PALETTE,
+            bfk.PROVISIONAL_PALETTE.solids_only(),
+            bfk.Palette([
+                bfk.LegoColor(i, f"C{i}", (i * 9 % 256, i * 31 % 256, i * 57 % 256))
+                for i in range(1, 60)
+            ]),
+        ]
+
+    def force_brute(self, palette, rgb):
+        from bfk001.palette import _delta_e2000_lab, srgb_to_lab
+
+        cible = srgb_to_lab(rgb)
+        return min(
+            palette, key=lambda c: (_delta_e2000_lab(srgb_to_lab(c.rgb), cible), c.code)
+        )
+
+    def test_identique_a_la_force_brute(self):
+        rnd = random.Random(23)
+        for palette in self.palettes():
+            for _ in range(400):
+                rgb = tuple(rnd.randrange(256) for _ in range(3))
+                attendu = self.force_brute(palette, rgb)
+                obtenu = palette.nearest(rgb)
+                self.assertAlmostEqual(
+                    bfk.delta_e2000(rgb, obtenu.rgb),
+                    bfk.delta_e2000(rgb, attendu.rgb),
+                    places=9,
+                    msg=f"{rgb} -> {obtenu.name} au lieu de {attendu.name}",
+                )
+
+    def test_les_extremes_aussi(self):
+        # Les bornes de clarte sont la ou la coupure risque de deborder.
+        for palette in self.palettes():
+            for rgb in ((0, 0, 0), (255, 255, 255), (0, 0, 255), (255, 0, 0),
+                        (1, 1, 1), (254, 254, 254), (0, 255, 0)):
+                attendu = self.force_brute(palette, rgb)
+                self.assertAlmostEqual(
+                    bfk.delta_e2000(rgb, palette.nearest(rgb).rgb),
+                    bfk.delta_e2000(rgb, attendu.rgb),
+                    places=9,
+                    msg=f"{rgb}",
+                )
+
+    def test_la_borne_de_coupure_est_valide(self):
+        # dE2000 >= |dL| / SL_MAX. Si cette inegalite tombait, la coupure
+        # ecarterait la bonne couleur en silence.
+        from bfk001.palette import _SL_MAX, _delta_e2000_lab, srgb_to_lab
+
+        rnd = random.Random(24)
+        for _ in range(3000):
+            a = srgb_to_lab(tuple(rnd.randrange(256) for _ in range(3)))
+            b = srgb_to_lab(tuple(rnd.randrange(256) for _ in range(3)))
+            self.assertGreaterEqual(
+                _delta_e2000_lab(a, b) + 1e-9, abs(a[0] - b[0]) / _SL_MAX, (a, b)
+            )
+
+    def test_le_cache_ne_change_pas_la_reponse(self):
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        rnd = random.Random(25)
+        cibles = [tuple(rnd.randrange(256) for _ in range(3)) for _ in range(200)]
+        premier = [palette.nearest(rgb).code for rgb in cibles]
+        second = [palette.nearest(rgb).code for rgb in cibles]
+        self.assertEqual(premier, second)
+        neuve = bfk.Palette(palette.colors)
+        self.assertEqual(premier, [neuve.nearest(rgb).code for rgb in cibles])
