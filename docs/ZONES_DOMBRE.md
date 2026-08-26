@@ -844,6 +844,39 @@ inversé, ce qui expliquait pourquoi il avait échoué. Mesure : **0,1 ΔE d'éc
 dans le bruit**, sur les trois images. Seul effet réel, une liste de course un
 peu plus courte (21 → 18 références). Pas assez pour justifier le code.
 
+### 5.29 La chaîne écrasait toute photo non carrée
+
+Le défaut le plus grave trouvé dans cette passe, et le plus simple à voir une
+fois qu'on pose la bonne question : **que devient un cercle ?**
+
+Un cercle parfait dans une photo 400×300, quantifié en 48×48 :
+
+| Cadrage | Cercle obtenu | Rapport |
+|---|---|---:|
+| étirement (ce que faisait la chaîne) | 24 × 32 tenons | **0,750** |
+| découpe au bon rapport | 32 × 32 tenons | **1,000** |
+
+`resample_box(image, studs_x, studs_y)` applique le rectangle source au
+rectangle cible : il **étire**. Or presque toute photo est en 4:3 ou 3:2, et
+presque toute mosaïque LEGO Art est carrée — 48×48, le format des plaques
+officielles. La chaîne écrasait donc d'un quart, horizontalement, à peu près
+toute photo réelle. Sur un portrait, c'est fatal ; et aucun ΔE ne le voit,
+puisque les couleurs, elles, restent justes.
+
+Deux corrections, indépendantes :
+
+- `quantize(..., fit="crop")`, désormais le défaut, découpe la photo au rapport
+  de la mosaïque avant de moyenner. `fit="stretch"` reste disponible pour qui
+  le veut vraiment. Le remplissage par bandes noires a été écarté : il
+  gaspillerait des tuiles sur du vide.
+- Le CLI, **sans `--hauteur`, suit maintenant les proportions de la photo** :
+  `--studs 48` sur une photo 4:3 donne 48 × 36 tenons, rien n'est rogné ni
+  étiré. Demander `--hauteur 48`, c'est demander un carré — et donc un
+  recadrage, annoncé comme tel.
+- `--cadrage 0..1` déplace la fenêtre de découpe. Le sujet n'est pas toujours
+  au centre, et rien ici ne sait où il est : le dire vaut mieux que le deviner.
+  Un recadrage attentionnel (détection de saillance) reste hors périmètre.
+
 ---
 
 ## 6. Où en est-on de la demande produit
@@ -859,7 +892,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
 | → notice de montage | **~80 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes, codes couleur et légende sur chaque page), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
-**Environ 87 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
+**Environ 89 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 

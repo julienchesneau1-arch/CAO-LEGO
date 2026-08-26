@@ -23,7 +23,7 @@ from typing import Dict, List, Mapping, Optional, Tuple
 
 from .catalog import PartInstance, place
 from .collision import CollisionGeometry
-from .imaging import _REENCODAGE, Image, resample_box
+from .imaging import _REENCODAGE, Image, crop_to_ratio, resample_box
 from .imaging import _TABLE_LUMIERE as _LUMIERE
 from .lego import PLATE_HEIGHT_LDU, STUD_PITCH_LDU
 from .palette import LegoColor, Palette, delta_e
@@ -106,13 +106,22 @@ def quantize(
     studs_x: int,
     studs_y: int,
     dither: object = "adaptive",
+    fit: str = "crop",
+    offset: float = 0.5,
 ) -> Tuple[Tuple[LegoColor, ...], ...]:
     """Image -> grille de couleurs LEGO.
 
-    Deux etapes, dans cet ordre : moyenner d'abord (chaque tenon recoit la
-    couleur moyenne de sa zone), quantifier ensuite. L'inverse — quantifier
-    puis reduire — melangerait des couleurs de palette entre elles et
-    produirait des teintes qui n'existent pas.
+    Trois etapes, dans cet ordre : CADRER, moyenner, quantifier.
+
+    Cadrer d'abord. `fit="crop"` (defaut) decoupe la photo au rapport de la
+    mosaique. `fit="stretch"` l'etire — ce que faisait la chaine, et c'etait un
+    defaut grave : un cercle parfait dans une photo 4:3 ressortait a un rapport
+    de 0,750, ecrase d'un quart. Un visage avec lui. Or presque toute photo est
+    en 4:3 ou 3:2 et presque toute mosaique LEGO Art est carree.
+
+    Moyenner ensuite, quantifier enfin. L'inverse — quantifier puis reduire —
+    melangerait des couleurs de palette entre elles et produirait des teintes
+    qui n'existent pas.
 
     `dither` accepte trois valeurs :
 
@@ -177,6 +186,10 @@ def quantize(
         raise ValueError("dimensions de mosaique invalides")
     if dither not in (True, False, "adaptive"):
         raise ValueError("dither vaut True, False ou 'adaptive'")
+    if fit not in ("crop", "stretch"):
+        raise ValueError("fit vaut 'crop' ou 'stretch'")
+    if fit == "crop":
+        image = crop_to_ratio(image, studs_x / studs_y, offset)
     reduced = resample_box(image, studs_x, studs_y)
 
     if dither is False:
@@ -515,10 +528,12 @@ def from_image(
     substrate_color: int = SUBSTRATE_COLOR,
     dither: object = "adaptive",
     substrate: str = "crossed",
+    fit: str = "crop",
+    offset: float = 0.5,
 ) -> Mosaic:
     """Chaine complete : photo -> modele constructible."""
     return build(
-        quantize(image, palette, studs_x, studs_y, dither),
+        quantize(image, palette, studs_x, studs_y, dither, fit, offset),
         substrate_color,
         substrate,
     )

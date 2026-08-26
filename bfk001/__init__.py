@@ -73,7 +73,7 @@ from .geometry import (
     transform_world_to_local,
 )
 from .graph import ConstructionGraph, InstructionGraph
-from .imaging import Image, read_png, read_ppm, resample_box, write_png
+from .imaging import crop, crop_to_ratio, Image, read_png, read_ppm, resample_box, write_png
 from .jpeg import apply_orientation, exif_orientation, read_jpeg_eighth
 from .instructions import BuildStep, plan_build, render_text
 from .booklet import build_booklet, render_progress, render_layer, row_runs, write_pdf
@@ -268,6 +268,8 @@ __all__ = [
     "apply_orientation",
     "write_png",
     "resample_box",
+    "crop",
+    "crop_to_ratio",
     "LegoColor",
     "Palette",
     "PROVISIONAL_PALETTE",

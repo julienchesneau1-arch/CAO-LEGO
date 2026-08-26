@@ -15,7 +15,15 @@ import zlib
 from dataclasses import dataclass
 from typing import List, Tuple
 
-__all__ = ["Image", "read_png", "read_ppm", "write_png", "resample_box"]
+__all__ = [
+    "Image",
+    "read_png",
+    "read_ppm",
+    "write_png",
+    "resample_box",
+    "crop",
+    "crop_to_ratio",
+]
 
 Rgb = Tuple[int, int, int]
 
@@ -242,6 +250,52 @@ def write_png(image: Image) -> bytes:
         + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
         + chunk(b"IEND", b"")
     )
+
+
+def crop(image: Image, x: int, y: int, width: int, height: int) -> Image:
+    """Sous-image rectangulaire. Les bornes sont verifiees, jamais rabotees.
+
+    Rogner en silence une demande hors cadre donnerait une image dont le
+    contenu ne correspond pas a ce qui a ete demande — et personne ne le
+    verrait avant d'avoir la mosaique sous les yeux.
+    """
+    if width <= 0 or height <= 0:
+        raise ValueError("dimensions de decoupe invalides")
+    if x < 0 or y < 0 or x + width > image.width or y + height > image.height:
+        raise ValueError(
+            f"decoupe {width}x{height} en ({x}, {y}) hors de "
+            f"{image.width}x{image.height}"
+        )
+    sortie = bytearray()
+    for ligne in range(y, y + height):
+        debut = (ligne * image.width + x) * 3
+        sortie += image.data[debut : debut + width * 3]
+    return Image(width, height, bytes(sortie))
+
+
+def crop_to_ratio(image: Image, ratio: float, offset: float = 0.5) -> Image:
+    """Decoupe centree ramenant l'image au rapport largeur/hauteur voulu.
+
+    C'est la seule facon honnete de mettre une photo 4:3 dans une mosaique
+    carree. L'ETIRER — ce que faisait la chaine — ecrase un cercle parfait a un
+    rapport de 0,750 et un visage avec lui. Le remplissage par des bandes
+    gaspillerait des tuiles sur du vide.
+
+    `offset` place la fenetre le long de l'axe rogne, de 0 a 1. Le sujet n'est
+    pas toujours au centre, et rien ici ne sait ou il est.
+    """
+    if ratio <= 0:
+        raise ValueError("rapport invalide")
+    if not 0.0 <= offset <= 1.0:
+        raise ValueError("le decalage de cadrage va de 0 a 1")
+
+    if image.width / image.height > ratio:      # trop large : on rogne en x
+        largeur = max(1, min(image.width, round(image.height * ratio)))
+        x = round((image.width - largeur) * offset)
+        return crop(image, x, 0, largeur, image.height)
+    hauteur = max(1, min(image.height, round(image.width / ratio)))
+    y = round((image.height - hauteur) * offset)
+    return crop(image, 0, y, image.width, hauteur)
 
 
 def _table_lumiere() -> Tuple[bytes, bytes, bytes]:

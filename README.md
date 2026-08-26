@@ -329,6 +329,19 @@ LeoCAD et BrickLink Studio le déposent — aucun drapeau à fournir si l'un d'e
 est installé. Il n'est pas embarqué dans ce dépôt : voir § 5.27 du registre.
 Sur la même photo, 14,2 → **7,7 ΔE** par tuile.
 
+### Le cadrage : la chaîne écrasait toute photo non carrée
+
+Question simple, réponse accablante : **que devient un cercle ?** Un cercle
+parfait dans une photo 400×300, quantifié en 48×48, sortait à **24 × 32
+tenons** — un rapport de 0,750, écrasé d'un quart. `resample_box` applique le
+rectangle source au rectangle cible : il étire. Or presque toute photo est en
+4:3 et presque toute mosaïque LEGO Art est carrée. Sur un portrait, c'est fatal,
+et aucun ΔE ne le voit puisque les couleurs restent justes.
+
+Sans `--hauteur`, le CLI suit désormais les proportions de la photo : `--studs
+48` sur du 4:3 donne 48 × 36 tenons, rien n'est rogné ni étiré. Demander un
+carré, c'est demander un recadrage — annoncé, et déplaçable par `--cadrage 0..1`.
+
 ### Le tramage, rejeté puis adopté
 
 Le tramage avait été rejeté sur un argument de physique : un tenon fait 8 mm,

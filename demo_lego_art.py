@@ -80,6 +80,8 @@ def main() -> int:
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
     analyseur.add_argument("--par-etape", type=int, default=24)
+    analyseur.add_argument("--cadrage", type=float, default=0.5,
+                           help="position de la fenetre de recadrage, de 0 a 1")
     analyseur.add_argument("--tramage", choices=("adaptatif", "aucun", "complet"),
                            default="adaptatif",
                            help="melange de tuiles voisines la ou la palette manque")
@@ -95,7 +97,19 @@ def main() -> int:
     print(f"image   : {image.width} x {image.height} pixels")
     palette = charger_palette(options.ldconfig)
 
-    hauteur = options.hauteur or options.studs
+    # Sans consigne, la hauteur suit les PROPORTIONS DE LA PHOTO : rien n'est
+    # rogne, rien n'est etire. Demander une hauteur, c'est demander un cadrage.
+    if options.hauteur:
+        hauteur = options.hauteur
+    else:
+        hauteur = max(1, round(options.studs * image.height / image.width))
+        if hauteur != options.studs:
+            print(
+                f"  cadrage : {options.studs} x {hauteur} tenons, "
+                f"proportions de la photo conservees "
+                f"(--hauteur {options.studs} pour un carre, la photo sera rognee)"
+            )
+    image = bfk.crop_to_ratio(image, options.studs / hauteur, options.cadrage)
     reduite = bfk.resample_box(image, options.studs, hauteur)
     pixels = [
         reduite.pixel(x, y) for y in range(hauteur) for x in range(options.studs)
@@ -119,8 +133,9 @@ def main() -> int:
 
     depart = time.perf_counter()
     tramage = {"adaptatif": "adaptive", "aucun": False, "complet": True}[options.tramage]
+    # L'image est deja au bon rapport : plus rien a rogner ici.
     mosaique = bfk.mosaic.from_image(
-        image, palette, options.studs, hauteur, dither=tramage
+        image, palette, options.studs, hauteur, dither=tramage, fit="stretch"
     )
     print(
         f"modele  : {mosaique.part_count} pieces "

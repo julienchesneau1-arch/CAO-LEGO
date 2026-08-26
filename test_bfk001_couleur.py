@@ -58,6 +58,72 @@ class TestMoyenneEnLumiere(unittest.TestCase):
         self.assertEqual(_average([(120, 30, 200)], 1), (120, 30, 200))
 
 
+class TestCadrage(unittest.TestCase):
+    def cercle(self, largeur, hauteur, rayon=100):
+        """Un cercle PARFAIT : s'il ressort ovale, la chaine deforme."""
+        cx, cy = largeur // 2, hauteur // 2
+        pixels = bytearray()
+        for y in range(hauteur):
+            for x in range(largeur):
+                dedans = (x - cx) ** 2 + (y - cy) ** 2 < rayon ** 2
+                pixels += bytes((220, 40, 30) if dedans else (245, 245, 245))
+        return bfk.Image(largeur, hauteur, bytes(pixels))
+
+    def rapport_du_cercle(self, grille):
+        cases = [
+            (x, y)
+            for y, ligne in enumerate(grille)
+            for x, couleur in enumerate(ligne)
+            if couleur.code in (4, 320)
+        ]
+        largeur = max(x for x, _ in cases) - min(x for x, _ in cases) + 1
+        hauteur = max(y for _, y in cases) - min(y for _, y in cases) + 1
+        return largeur / hauteur
+
+    def test_une_photo_4_3_dans_un_carre_n_est_pas_ecrasee(self):
+        # LE defaut : presque toute photo est en 4:3 ou 3:2, presque toute
+        # mosaique LEGO Art est carree. Etirer ecrasait tout d'un quart.
+        photo = self.cercle(400, 300)
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        rogne = bfk.mosaic.quantize(photo, palette, 48, 48, dither=False)
+        etire = bfk.mosaic.quantize(photo, palette, 48, 48, dither=False, fit="stretch")
+        self.assertAlmostEqual(self.rapport_du_cercle(rogne), 1.0, delta=0.08)
+        self.assertLess(self.rapport_du_cercle(etire), 0.85)
+
+    def test_le_portrait_aussi(self):
+        photo = self.cercle(300, 400)
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        grille = bfk.mosaic.quantize(photo, palette, 48, 48, dither=False)
+        self.assertAlmostEqual(self.rapport_du_cercle(grille), 1.0, delta=0.08)
+
+    def test_la_decoupe_refuse_de_deborder_en_silence(self):
+        image = bfk.Image(10, 10, bytes(300))
+        for args in ((-1, 0, 5, 5), (0, 0, 11, 5), (6, 6, 5, 5), (0, 0, 0, 5)):
+            with self.assertRaises(ValueError, msg=args):
+                bfk.crop(image, *args)
+
+    def test_la_fenetre_de_cadrage_se_deplace(self):
+        # Le sujet n'est pas toujours au centre, et rien ici ne sait ou il est.
+        gauche = bytes((255, 0, 0)) * 20 + bytes((0, 0, 255)) * 20
+        image = bfk.Image(40, 10, gauche * 10)
+        self.assertEqual(bfk.crop_to_ratio(image, 1.0, 0.0).pixel(0, 0), (255, 0, 0))
+        self.assertEqual(bfk.crop_to_ratio(image, 1.0, 1.0).pixel(9, 0), (0, 0, 255))
+        for mauvais in (-0.1, 1.1):
+            with self.assertRaises(ValueError):
+                bfk.crop_to_ratio(image, 1.0, mauvais)
+
+    def test_une_image_deja_au_bon_rapport_est_intacte(self):
+        motif = bytes((i % 256) for i in range(24 * 24 * 3))
+        image = bfk.Image(24, 24, motif)
+        self.assertEqual(bfk.crop_to_ratio(image, 1.0), image)
+
+    def test_fit_inconnu_refuse(self):
+        with self.assertRaises(ValueError):
+            bfk.mosaic.quantize(
+                bfk.Image(8, 8, bytes(192)), bfk.PROVISIONAL_PALETTE, 4, 4, fit="zoom"
+            )
+
+
 class TestMetriquePerceptive(unittest.TestCase):
     def test_proprietes_de_ciede2000(self):
         rnd = random.Random(4)
