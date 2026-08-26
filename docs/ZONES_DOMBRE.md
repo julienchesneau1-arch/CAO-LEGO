@@ -912,6 +912,35 @@ recalcul naïf plutôt que de le croire. N=48 passe de **12,4 s à 4,4 s**.
 N=8 gagnait 0,14 ΔE (2 %), N=12 et N=20 ne gagnaient **rien du tout**. Le
 glouton est déjà à l'optimum pratique. Pas de code pour ça.
 
+### 5.31 Le décodage JPEG au huitième : question posée, question close
+
+Le décodeur ne lit que les coefficients DC, donc rend l'image **au huitième**.
+Une photo de 4000 px devient 500 px, soit 10 pixels par tenon pour une mosaïque
+de 48 — confortable. Mais une photo de 800 px n'en laisse que 2, et une de
+400 px, un seul. Fallait-il un décodeur au quart, c'est-à-dire une IDCT 2×2 et
+le décodage des coefficients AC ?
+
+Mesuré, sur une image de bandes puis sur une mire d'anneaux concentriques — le
+pire cas pour le sous-échantillonnage, celui qui produit du moiré :
+
+| Photo d'origine | Décodée | px/tenon | ΔE par tuile | pire |
+|---:|---:|---:|---:|---:|
+| 6000 px | 750 | 15,6 | 6,65 | 12,01 |
+| 2000 px | 250 | 5,2 | 7,27 | 15,64 |
+| 800 px | 100 | 2,1 | 8,04 | 17,41 |
+| 384 px | 48 | 1,0 | 6,47 | 8,38 |
+
+**Le coût est de l'ordre de 0,5 ΔE en moyenne.** La raison est structurelle : la
+mosaïque elle-même réduit à 48 tenons, et cette réduction-là domine largement
+celle du décodeur. Un décodeur au quart serait un gros morceau de code — IDCT
+2×2, décodage des AC, table de zigzag — pour un gain que la mesure ne trouve
+pas. **Question close, pas ajournée.**
+
+Reste un cas réel : quand la photo décodée est plus petite que la mosaïque
+demandée. Sous **2 pixels par tenon** il n'y a plus de moyenne du tout — chaque
+tuile prend la couleur d'un pixel à peu près au hasard dans sa zone. Le CLI
+l'annonce désormais, avec la taille à laquelle il faudrait descendre.
+
 ---
 
 ## 6. Où en est-on de la demande produit
@@ -922,12 +951,12 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse | **~92 %** | JPEG (décodé au huitième), PNG, PPM, orientation EXIF, rééchantillonnage par moyenne, quantification CIE L\*a\*b\*. Manque : cadrage assisté. |
+| Photo → analyse | **~94 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000, alerte sous 2 px/tenon. Manque : recadrage attentionnel. |
 | → modélisation LEGO Art | **~80 %** | Solveur + substrat validé H1–H6, palette officielle importable, sélection des N meilleures couleurs, diagnostic des manques. Manque : découpe multi-panneaux, fusion de tuiles, volume 3D. |
 | → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
 | → notice de montage | **~80 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes, codes couleur et légende sur chaque page), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
-**Environ 89 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
+**Environ 90 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 

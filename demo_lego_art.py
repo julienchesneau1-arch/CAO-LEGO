@@ -110,6 +110,24 @@ def main() -> int:
                 f"(--hauteur {options.studs} pour un carre, la photo sera rognee)"
             )
     image = bfk.crop_to_ratio(image, options.studs / hauteur, options.cadrage)
+
+    # En dessous de deux pixels par tenon, il n'y a plus de moyenne : chaque
+    # tuile prend la couleur d'un pixel a peu pres au hasard dans sa zone. Le
+    # rendu devient bruite, et aucun reglage de palette n'y changera rien.
+    # Mesure : le decodage JPEG au huitieme ne coute que ~0,5 delta E tant
+    # qu'on reste au-dessus de ce seuil (docs/ZONES_DOMBRE.md, section 5.31).
+    par_tenon = min(image.width / options.studs, image.height / hauteur)
+    if par_tenon < 2.0:
+        print(
+            f"  ATTENTION — {par_tenon:.1f} pixel(s) par tenon seulement.\n"
+            f"            L'image cadree fait {image.width} x {image.height} pour "
+            f"une mosaique de {options.studs} x {hauteur} tenons.\n"
+            f"            Sous 2 px/tenon il n'y a plus de moyenne : le rendu "
+            f"sera bruite.\n"
+            f"            Fournir une photo plus grande, ou reduire --studs a "
+            f"{max(1, int(image.width // 2))}.",
+            file=sys.stderr,
+        )
     reduite = bfk.resample_box(image, options.studs, hauteur)
     pixels = [
         reduite.pixel(x, y) for y in range(hauteur) for x in range(options.studs)
