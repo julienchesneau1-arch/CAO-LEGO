@@ -251,6 +251,77 @@ class TestDiffusionEnSerpentin(unittest.TestCase):
         )
 
 
+class TestSelectionDeSousPalette(unittest.TestCase):
+    def pixels_riches(self, cote=32):
+        pixels = []
+        for y in range(cote):
+            for x in range(cote):
+                pixels.append((
+                    int(20 + 235 * x / cote),
+                    int(20 + 235 * y / cote),
+                    int(120 + 100 * ((x + y) / (2 * cote))),
+                ))
+        return pixels
+
+    def test_le_minimum_courant_donne_le_meme_resultat_que_le_recalcul(self):
+        # L'optimisation est EXACTE, pas approchee :
+        #   cout(R + [c]) = somme_i part_i * min(min_{r dans R} d(i,r), d(i,c))
+        # Ajouter une couleur ne peut que rapprocher une grappe. On le verifie
+        # plutot que de le croire.
+        from bfk001.palette import _delta_e2000_lab, dominant_colors, srgb_to_lab
+
+        pixels = self.pixels_riches()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        clusters = dominant_colors(pixels, min(96, max(16, 6 * 3)))
+        labs = [(srgb_to_lab(c), part) for c, part in clusters]
+
+        naif: list = []
+        restantes = list(palette)
+        while len(naif) < 6:
+            elue = min(
+                restantes,
+                key=lambda cand: sum(
+                    part * min(
+                        _delta_e2000_lab(lab, srgb_to_lab(c.rgb))
+                        for c in naif + [cand]
+                    )
+                    for lab, part in labs
+                ),
+            )
+            naif.append(elue)
+            restantes.remove(elue)
+
+        rapide = list(palette.best_subset(pixels, 6))
+        self.assertEqual([c.code for c in rapide], [c.code for c in naif])
+
+    def test_un_budget_plus_grand_rapproche_de_la_palette_entiere(self):
+        # Le proxy etait plafonne a 24 grappes, et ce plafond bridait tout :
+        # N=32 ne gagnait rien sur N=24, parce que le proxy ne savait plus
+        # distinguer. Le nombre de grappes suit desormais le budget.
+        pixels = self.pixels_riches(48)
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        complete = sum(
+            delta_e2000(p, palette.nearest(p).rgb) for p in pixels
+        ) / len(pixels)
+        precedent = None
+        for budget in (3, 6, 9):
+            sous = palette.best_subset(pixels, budget)
+            self.assertEqual(len(sous), budget)
+            ecart = sum(delta_e2000(p, sous.nearest(p).rgb) for p in pixels) / len(pixels)
+            self.assertGreaterEqual(ecart + 1e-9, complete)
+            if precedent is not None:
+                self.assertLessEqual(ecart, precedent + 1e-9)
+            precedent = ecart
+
+    def test_budget_egal_ou_superieur_rend_la_palette_entiere(self):
+        palette = bfk.PROVISIONAL_PALETTE
+        pixels = self.pixels_riches(16)
+        self.assertIs(palette.best_subset(pixels, len(palette)), palette)
+        self.assertIs(palette.best_subset(pixels, len(palette) + 5), palette)
+        with self.assertRaises(ValueError):
+            palette.best_subset(pixels, 0)
+
+
 class TestPaletteOfficielle(unittest.TestCase):
     def test_recherche_ne_rend_que_des_fichiers_lisibles(self):
         self.assertIsNone(bfk.find_ldconfig(["/n/existe/pas/LDConfig.ldr"]))

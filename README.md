@@ -33,8 +33,11 @@ BrickLink Studio, et se trouve aussi dans le paquet PyPI `pyldraw`. Les
 couleurs transparentes, chromées, nacrées et caoutchouc en sont écartées
 automatiquement : une liste de course doit être commandable.
 
-`--couleurs 12` restreint la mosaïque aux douze couleurs qui servent le mieux
-*cette* photo. Douze bien choisies valent les quatre-vingts.
+`--couleurs 24` restreint la mosaïque aux vingt-quatre couleurs qui servent le
+mieux *cette* photo — et atteint désormais ce qui en demandait quatre-vingts
+(6,89 contre 6,85 ΔE). Une liste de course trois fois plus courte à qualité
+égale. Le sélecteur était bridé par un plafond de 24 grappes dans son propre
+résumé de l'image ; voir § 5.30 du registre.
 
 Produit `apercu.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`** et `modele.json` —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque

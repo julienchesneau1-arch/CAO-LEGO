@@ -282,24 +282,36 @@ class Palette:
         if count >= len(self._colors):
             return self
 
-        clusters = dominant_colors(pixels, min(24, max(8, count * 2)))
+        # Le nombre de grappes suit le budget de couleurs. Il etait plafonne a
+        # 24, et ce plafond BRIDAIT le resultat : sur un degrade riche, N=32
+        # ne gagnait rien sur N=24 — le proxy ne savait plus les distinguer.
+        clusters = dominant_colors(pixels, min(96, max(16, count * 3)))
+        labs = [(srgb_to_lab(couleur), part) for couleur, part in clusters]
+
+        # Distance courante de chaque grappe a la palette deja retenue. La
+        # tenir a jour rend le glouton lineaire en `count` au lieu de
+        # quadratique : ajouter une couleur ne peut que RAPPROCHER une grappe,
+        # donc un simple minimum suffit, et le resultat est identique.
+        meilleur = [float("inf")] * len(labs)
         retenues: List[LegoColor] = []
         restantes = list(self._colors)
 
         while len(retenues) < count and restantes:
-            meilleure = None
-            meilleur_cout = None
+            elue = None
+            cout_elu = None
+            distances_elues = None
             for candidate in restantes:
-                essai = retenues + [candidate]
-                cout = sum(
-                    part * min(delta_e(couleur, c.rgb) for c in essai)
-                    for couleur, part in clusters
-                )
-                if meilleur_cout is None or cout < meilleur_cout:
-                    meilleur_cout = cout
-                    meilleure = candidate
-            retenues.append(meilleure)
-            restantes.remove(meilleure)
+                lab_candidate = srgb_to_lab(candidate.rgb)
+                distances = [
+                    min(actuel, _delta_e2000_lab(lab, lab_candidate))
+                    for actuel, (lab, _) in zip(meilleur, labs)
+                ]
+                cout = sum(d * part for d, (_, part) in zip(distances, labs))
+                if cout_elu is None or cout < cout_elu:
+                    cout_elu, elue, distances_elues = cout, candidate, distances
+            retenues.append(elue)
+            restantes.remove(elue)
+            meilleur = distances_elues
 
         return Palette(retenues)
 

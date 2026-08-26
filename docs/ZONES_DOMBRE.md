@@ -877,6 +877,41 @@ Deux corrections, indépendantes :
   au centre, et rien ici ne sait où il est : le dire vaut mieux que le deviner.
   Un recadrage attentionnel (détection de saillance) reste hors périmètre.
 
+### 5.30 La sélection des N meilleures couleurs était bridée par son propre proxy
+
+`best_subset` optimise contre un résumé de l'image — `dominant_colors(pixels,
+min(24, max(8, count * 2)))`, des k-moyennes en L\*a\*b\*. Ce **plafond de 24
+grappes** bridait tout le reste : au-delà de 24 couleurs demandées, le proxy ne
+savait plus les distinguer, et le résultat cessait de s'améliorer.
+
+Mesuré sur un dégradé riche (2304 teintes distinctes après réduction) :
+
+| Budget | avant | après |
+|---:|---:|---:|
+| 8 | 9,08 | 8,94 |
+| 16 | 7,34 | 7,30 |
+| 24 | 7,26 | **6,89** |
+| 32 | 7,26 (aucun gain) | **6,87** |
+| 48 | 7,16 | **6,86** |
+| 80 (toute la palette) | 6,85 | 6,85 |
+
+**Vingt-quatre couleurs atteignent désormais ce qui en demandait quatre-vingts.**
+C'est une liste de course trois fois plus courte à qualité égale — le gain le
+plus concret de cette passe pour qui doit vraiment acheter les pièces.
+
+Le glouton était aussi **quadratique en `count`** : à chaque candidat il
+recalculait le minimum sur tout l'ensemble déjà retenu. Or ajouter une couleur
+ne peut que *rapprocher* une grappe, donc un minimum courant suffit :
+
+    cout(R + [c]) = Σᵢ partᵢ · min( min_{r ∈ R} d(i,r) , d(i,c) )
+
+L'optimisation est **exacte**, pas approchée, et un test le vérifie contre un
+recalcul naïf plutôt que de le croire. N=48 passe de **12,4 s à 4,4 s**.
+
+**Piste réfutée.** Une recherche locale par échanges 1-pour-1 après le glouton :
+N=8 gagnait 0,14 ΔE (2 %), N=12 et N=20 ne gagnaient **rien du tout**. Le
+glouton est déjà à l'optimum pratique. Pas de code pour ça.
+
 ---
 
 ## 6. Où en est-on de la demande produit
