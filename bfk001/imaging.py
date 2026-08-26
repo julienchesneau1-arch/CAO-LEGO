@@ -244,13 +244,65 @@ def write_png(image: Image) -> bytes:
     )
 
 
+def _table_lumiere() -> Tuple[bytes, bytes, bytes]:
+    """Tables de passage sRGB <-> lumiere lineaire, sur 16 bits.
+
+    Deux tables d'aller (octet de poids fort, octet de poids faible) pour que
+    la somme d'un bloc se fasse par `bytes.translate` + `sum`, deux boucles en
+    C au lieu d'une boucle Python par pixel. Une table de retour de 65536
+    entrees pour le reencodage. 64 Ko, construits une fois.
+    """
+    lineaire = []
+    for niveau in range(256):
+        canal = niveau / 255
+        lineaire.append(
+            canal / 12.92 if canal <= 0.04045 else ((canal + 0.055) / 1.055) ** 2.4
+        )
+    seize = [round(65535 * valeur) for valeur in lineaire]
+
+    retour = bytearray(65536)
+    for index in range(65536):
+        valeur = index / 65535
+        code = (
+            valeur * 12.92
+            if valeur <= 0.0031308
+            else 1.055 * valeur ** (1 / 2.4) - 0.055
+        )
+        retour[index] = min(255, max(0, round(code * 255)))
+    return (
+        bytes(valeur >> 8 for valeur in seize),
+        bytes(valeur & 0xFF for valeur in seize),
+        bytes(retour),
+    )
+
+
+_POIDS_FORT, _POIDS_FAIBLE, _REENCODAGE = _table_lumiere()
+
+_TABLE_LUMIERE = tuple(
+    ((_POIDS_FORT[niveau] << 8) + _POIDS_FAIBLE[niveau]) / 65535
+    for niveau in range(256)
+)
+"""sRGB -> lumiere lineaire, en clair, pour qui doit moyenner pixel a pixel."""
+
+
 def resample_box(image: Image, width: int, height: int) -> Image:
-    """Reechantillonnage par moyenne de bloc.
+    """Reechantillonnage par moyenne de bloc, EN LUMIERE LINEAIRE.
 
     Choix deliberé face au plus proche voisin : reduire une photo a 48x48
     tenons, c'est jeter 99,9 % de l'information. Prendre un pixel au hasard
     dans chaque bloc produit du bruit ; moyenner le bloc produit la couleur que
     l'oeil y percoit. C'est la premiere condition d'une mosaique fidele.
+
+    Encore faut-il moyenner la bonne grandeur. sRGB n'est pas une echelle
+    lineaire : c'est un encodage en puissance ~2,2. Moyenner les OCTETS revient
+    a moyenner des logarithmes, ce qui n'a aucun sens physique. Un damier noir
+    et blanc — soit exactement 50 % de lumiere — donnait 127 au lieu de 188 :
+    23 delta E d'erreur, plus que tout ce que coute la palette.
+
+    Ce que l'oeil percoit d'un bloc de photo trop petit pour etre resolu, c'est
+    la moyenne des RADIANCES qu'il en recoit. Une tuile est uniforme, elle n'a
+    rien a fusionner : sa couleur doit donc valoir cette moyenne-la. On
+    linearise, on moyenne, on reencode.
     """
     if width <= 0 or height <= 0:
         raise ValueError("dimensions de sortie invalides")
@@ -266,17 +318,17 @@ def resample_box(image: Image, width: int, height: int) -> Image:
         for out_x in range(width):
             x0 = out_x * source_width // width
             x1 = max(x0 + 1, (out_x + 1) * source_width // width)
-            red = green = blue = 0
+            totaux = [0, 0, 0]
             count = (y1 - y0) * (x1 - x0)
             for y in range(y0, y1):
                 debut = (y * source_width + x0) * 3
-                fin = (y * source_width + x1) * 3
-                bande = source[debut:fin]
-                red += sum(bande[0::3])
-                green += sum(bande[1::3])
-                blue += sum(bande[2::3])
-            output[cursor] = red // count
-            output[cursor + 1] = green // count
-            output[cursor + 2] = blue // count
+                bande = source[debut : (y * source_width + x1) * 3]
+                for canal in range(3):
+                    octets = bande[canal::3]
+                    totaux[canal] += (
+                        sum(octets.translate(_POIDS_FORT)) << 8
+                    ) + sum(octets.translate(_POIDS_FAIBLE))
+            for canal in range(3):
+                output[cursor + canal] = _REENCODAGE[totaux[canal] // count]
             cursor += 3
     return Image(width, height, bytes(output))

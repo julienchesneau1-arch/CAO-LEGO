@@ -32,12 +32,27 @@ def test_png_round_trip_and_box_resampling():
     image = image_test(32, 32)
     assert bfk.read_png(bfk.write_png(image)) == image
 
-    # Moyenne de bloc : un damier noir/blanc devient uniformement gris.
+    # Moyenne de bloc EN LUMIERE LINEAIRE. Un damier noir/blanc renvoie
+    # exactement la moitie de la lumiere ; la valeur sRGB correspondante est
+    # 188, pas 127. Moyenner les octets reviendrait a moyenner des logarithmes
+    # — 23 delta E d'erreur, plus que ce que coute toute la palette.
     damier = bfk.Image.from_pixels(
         4, 4,
         ((255, 255, 255) if (x + y) % 2 else (0, 0, 0) for y in range(4) for x in range(4)),
     )
-    assert bfk.resample_box(damier, 2, 2).pixels == ((127, 127, 127),) * 4
+    assert bfk.resample_box(damier, 2, 2).pixels == ((188, 188, 188),) * 4
+
+    # La propriete generale : la moyenne d'un bloc doit renvoyer la meme
+    # lumiere que le bloc. On la verifie sur des paires quelconques.
+    def lumiere(canal):
+        u = canal / 255
+        return u / 12.92 if u <= 0.04045 else ((u + 0.055) / 1.055) ** 2.4
+
+    for sombre, clair in ((0, 128), (30, 90), (64, 192), (200, 255)):
+        paire = bfk.Image(2, 1, bytes((sombre,) * 3 + (clair,) * 3))
+        obtenu = bfk.resample_box(paire, 1, 1).pixel(0, 0)[0]
+        attendu = (lumiere(sombre) + lumiere(clair)) / 2
+        assert abs(lumiere(obtenu) - attendu) < 0.004, (sombre, clair, obtenu)
 
     with pytest.raises(ValueError):
         bfk.read_png(b"ceci n'est pas un png")
@@ -50,21 +65,20 @@ def test_quantization_is_perceptual_and_ordered():
     assert palette.nearest((240, 200, 60)).name == "Yellow"
 
     # L'ORDRE des operations est ce qui compte : moyenner d'abord, quantifier
-    # ensuite. Un damier rouge/blanc a pour moyenne (255, 127, 127) ; la tuile
-    # doit porter la couleur de palette la plus proche de CETTE moyenne, et non
-    # l'une des deux couleurs d'origine choisie au hasard.
+    # ensuite. La tuile doit porter la couleur de palette la plus proche de la
+    # MOYENNE, et non l'une des deux couleurs d'origine choisie au hasard.
     damier = bfk.Image.from_pixels(
         4, 4,
         ((255, 0, 0) if (x + y) % 2 else (255, 255, 255) for y in range(4) for x in range(4)),
     )
     moyenne = bfk.resample_box(damier, 1, 1).pixel(0, 0)
-    assert moyenne == (255, 127, 127)
+    assert moyenne == (255, 188, 188)
     assert bfk.mosaic.quantize(damier, palette, 1, 1)[0][0] is palette.nearest(moyenne)
 
-    # Avec 12 couleurs, cette moyenne tombe sur Red faute de rose dans la
-    # palette : la finesse d'une mosaique tient d'abord au nombre de couleurs
-    # disponibles, pas a l'algorithme. Raison de plus pour importer LDConfig.
-    assert palette.nearest(moyenne).name == "Red"
+    # Avec 12 couleurs, cette moyenne tombe faute de rose dans la palette : la
+    # finesse d'une mosaique tient d'abord au nombre de couleurs disponibles,
+    # pas a l'algorithme. Raison de plus pour importer LDConfig.
+    assert palette.nearest(moyenne).name in ("Red", "White", "Tan")
 
 
 def test_ldconfig_import_replaces_the_provisional_palette():

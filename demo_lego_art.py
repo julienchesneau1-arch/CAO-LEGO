@@ -37,20 +37,30 @@ def charger_image(chemin: pathlib.Path) -> bfk.Image:
 
 
 def charger_palette(chemin: pathlib.Path | None) -> bfk.Palette:
-    if chemin is None:
+    """Palette officielle si on la trouve, provisoire sinon — et on le dit.
+
+    Le fichier est cherche aux emplacements ou LDraw, LeoCAD et BrickLink
+    Studio le deposent : quiconque construit vraiment en LEGO l'a deja sur son
+    disque, et n'a donc aucun drapeau a fournir.
+    """
+    complete, provenance = bfk.load_best_palette(
+        [str(chemin)] if chemin is not None else None
+    )
+    if provenance.startswith("provisoire"):
         print(
             "  palette : PROVISOIRE (12 couleurs recopiees a la main).\n"
-            "            Fournir --ldconfig LDConfig.ldr pour la palette officielle.",
+            "            LDConfig.ldr introuvable. Il est livre avec LDraw,\n"
+            "            LeoCAD et BrickLink Studio ; --ldconfig CHEMIN sinon.\n"
+            "            La palette officielle divise l'ecart par deux.",
             file=sys.stderr,
         )
-        return bfk.PROVISIONAL_PALETTE
-    complete = bfk.load_ldconfig(chemin.read_text(encoding="utf-8", errors="replace"))
+        return complete
     # Filtre indispensable : le fichier officiel contient les transparentes, les
     # chromees, les nacrees, les caoutchouc et deux marqueurs internes au format.
     # Une liste de course qui les contient est incommandable.
     commandables = complete.solids_only()
     print(
-        f"  palette : {len(complete)} couleurs importees de {chemin.name}, "
+        f"  palette : {len(complete)} couleurs lues dans {provenance}, "
         f"{len(commandables)} commandables en tuile"
     )
     return commandables
@@ -96,7 +106,8 @@ def main() -> int:
                 f"      {manque.hex}  {manque.share * 100:4.1f}% des tuiles  "
                 f"-> {manque.best_available.name} a {manque.error:.0f} delta E"
             )
-        print("      Fournir --ldconfig LDConfig.ldr corrige la plus grande part de l'ecart.")
+        if len(palette) < 40:
+            print("      La palette officielle corrige la plus grande part de l'ecart.")
 
     palette_complete = palette
     if options.couleurs:
@@ -172,10 +183,12 @@ def main() -> int:
         bfk.dumps_model(mosaique.placed_parts, mosaique.geometries, mosaique.instances)
     )
 
-    ecart_moyen = bfk.mosaic.fidelity(mosaique.grid, image, 1)[0]
+    par_tuile = bfk.mosaic.fidelity(mosaique.grid, image, 1)
+    tonal = bfk.mosaic.fidelity(mosaique.grid, image, 4)
     print(
-        f"fidelite: {ecart_moyen:.1f} delta E moyen a distance reelle "
-        f"({'excellent' if ecart_moyen < 6 else 'correct' if ecart_moyen < 12 else 'palette insuffisante'})"
+        f"fidelite: {par_tuile[0]:.1f} delta E par tuile "
+        f"({'excellent' if par_tuile[0] < 6 else 'correct' if par_tuile[0] < 12 else 'palette insuffisante'})"
+        f" | {tonal[0]:.1f} moyen et {tonal[1]:.1f} au pire sur la justesse tonale"
     )
     print(
         f"livre   : {len(nomenclature)} references, {len(plan.steps)} etapes, "

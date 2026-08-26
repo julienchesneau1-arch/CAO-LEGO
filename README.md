@@ -58,6 +58,7 @@ pytest test_bfk001_lego_art.py          # mosaïque : ce que le noyau accepte et
 pytest test_bfk001_pipeline.py          # photo → modèle → liste de course → notice
 pytest test_bfk001_booklet.py           # structure du PDF, rendu des pages, ordre vérifié
 pytest test_bfk001_substrat.py          # emprise exacte du fond et connexité, 1521 formats
+pytest test_bfk001_couleur.py           # lumière linéaire, CIEDE2000, palette officielle
 ```
 
 Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
@@ -291,6 +292,42 @@ des paires ne se recouvrent pas.
 vérifie donc l'**ordre de première entrée** dans chaque autorité de la chaîne,
 et qu'aucune n'est franchie deux fois (`geometric_relation`, `solid_overlap`,
 `collision_status` : exactement un appel chacune).
+
+---
+
+## Colorimétrie : deux erreurs systématiques corrigées
+
+**Le rééchantillonnage moyennait des octets sRGB.** sRGB est un encodage en
+puissance ≈ 2,2 ; en moyenner les octets revient à moyenner des logarithmes. Un
+damier noir/blanc renvoie exactement 50 % de la lumière — soit sRGB **188** — et
+le code en donnait **127** (21 % de luminance). 23 ΔE d'erreur, systématiquement
+dans le sens sombre, sur toutes les zones texturées d'une photo. On linéarise
+maintenant, on moyenne, on réencode.
+
+Le centroïde dans L\*a\*b\* minimise pourtant l'écart *par tuile* — c'est
+démontrable. Il a été écarté : il répond à la mauvaise question. Une grande zone
+de texture noire et blanche renvoie 50 % de la lumière, et une tuile à L\*=50 n'en
+renvoie que 19 %. L'œil intègre les grandes surfaces.
+
+**`nearest` choisissait un violet pour un bleu.** La distance euclidienne dans
+L\*a\*b\* préférait Violet `#4354A3` à Blue `#0055BF` pour la cible `#005AB4` —
+quasiment la même couleur — de 0,68 ΔE. C'est la distorsion connue de la région
+bleue. `Palette.nearest` emploie désormais **CIEDE2000**, dont le terme de
+rotation est centré sur H = 275°, c'est-à-dire sur les bleus. Coût : nul —
+0,71 s contre 0,76 s, la conversion de la cible sortie de la boucle payait plus
+cher que la formule.
+
+Bout en bout, en CIEDE2000, palette officielle, 48×48 :
+
+| | écart/tuile | tonale moyenne | tonale au pire |
+|---|---:|---:|---:|
+| avant | 17,00 | 11,19 | 24,35 |
+| **après** | 17,80 | **6,02** | **9,12** |
+
+**Palette officielle.** `LDConfig.ldr` est cherché aux emplacements où LDraw,
+LeoCAD et BrickLink Studio le déposent — aucun drapeau à fournir si l'un d'eux
+est installé. Il n'est pas embarqué dans ce dépôt : voir § 5.27 du registre.
+Sur la même photo, 14,2 → **7,7 ΔE** par tuile.
 
 ---
 

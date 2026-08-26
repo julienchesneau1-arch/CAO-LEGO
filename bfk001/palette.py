@@ -18,9 +18,10 @@ juge a l'oeil, pas au calcul.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 __all__ = [
     "LegoColor",
@@ -68,6 +69,14 @@ def _linearize(component: int) -> float:
     return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
 
 
+_VINGT_CINQ_7 = 25.0 ** 7
+
+_CACHE_LAB: Dict[Rgb, Tuple[float, float, float]] = {}
+_CACHE_LAB_MAX = 200_000
+"""Une photo repasse sans cesse par les memes teintes : la conversion vaut
+d'etre gardee — mais pas au point d'avaler la memoire sur une image de 12 Mpx."""
+
+
 def srgb_to_lab(rgb: Rgb) -> Tuple[float, float, float]:
     """Conversion sRGB -> CIE L*a*b* (illuminant D65).
 
@@ -86,19 +95,96 @@ def srgb_to_lab(rgb: Rgb) -> Tuple[float, float, float]:
     return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
 
 
-def delta_e(first: Rgb, second: Rgb) -> float:
-    """Ecart percu entre deux couleurs (CIE76).
+def delta_e76(first: Rgb, second: Rgb) -> float:
+    """Ecart percu, CIE 1976 : distance euclidienne dans L*a*b*.
 
-    Repere de lecture, etabli par la litterature colorimetrique :
-      < 1   imperceptible          2-10  perceptible au premier coup d'oeil
-      1-2   perceptible a l'oeil exerce   > 10  couleurs franchement differentes
-
-    Sans cette mesure, « rendu fidele » n'est qu'une opinion.
+    Conservee parce qu'elle est simple, rapide et qu'elle sert de repere de
+    lecture. Elle ne sert PLUS a choisir une couleur : voir `delta_e2000`.
     """
     a, b = srgb_to_lab(first), srgb_to_lab(second)
     return (
         (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
     ) ** 0.5
+
+
+def _delta_e2000_lab(lab1, lab2, kL: float = 1.0, kC: float = 1.0,
+                     kH: float = 1.0) -> float:
+    """CIEDE2000 entre deux points L*a*b* deja convertis."""
+    L1, a1, b1 = lab1
+    L2, a2, b2 = lab2
+    C1, C2 = math.hypot(a1, b1), math.hypot(a2, b2)
+    Cb = (C1 + C2) / 2
+    Cb7 = Cb ** 7
+    G = 0.5 * (1 - math.sqrt(Cb7 / (Cb7 + _VINGT_CINQ_7))) if Cb else 0.5
+    a1p, a2p = (1 + G) * a1, (1 + G) * a2
+    C1p, C2p = math.hypot(a1p, b1), math.hypot(a2p, b2)
+    h1p = 0.0 if (a1p == 0 and b1 == 0) else math.degrees(math.atan2(b1, a1p)) % 360
+    h2p = 0.0 if (a2p == 0 and b2 == 0) else math.degrees(math.atan2(b2, a2p)) % 360
+
+    dLp = L2 - L1
+    dCp = C2p - C1p
+    if C1p * C2p == 0:
+        dhp = 0.0
+    elif abs(h2p - h1p) <= 180:
+        dhp = h2p - h1p
+    elif h2p - h1p > 180:
+        dhp = h2p - h1p - 360
+    else:
+        dhp = h2p - h1p + 360
+    dHp = 2 * math.sqrt(C1p * C2p) * math.sin(math.radians(dhp) / 2)
+
+    Lb = (L1 + L2) / 2
+    Cbp = (C1p + C2p) / 2
+    if C1p * C2p == 0:
+        Hbp = h1p + h2p
+    elif abs(h1p - h2p) <= 180:
+        Hbp = (h1p + h2p) / 2
+    elif h1p + h2p < 360:
+        Hbp = (h1p + h2p + 360) / 2
+    else:
+        Hbp = (h1p + h2p - 360) / 2
+
+    T = (
+        1
+        - 0.17 * math.cos(math.radians(Hbp - 30))
+        + 0.24 * math.cos(math.radians(2 * Hbp))
+        + 0.32 * math.cos(math.radians(3 * Hbp + 6))
+        - 0.20 * math.cos(math.radians(4 * Hbp - 63))
+    )
+    SL = 1 + 0.015 * (Lb - 50) ** 2 / math.sqrt(20 + (Lb - 50) ** 2)
+    SC = 1 + 0.045 * Cbp
+    SH = 1 + 0.015 * Cbp * T
+    Cbp7 = Cbp ** 7
+    RC = 2 * math.sqrt(Cbp7 / (Cbp7 + _VINGT_CINQ_7)) if Cbp else 0.0
+    RT = -math.sin(math.radians(60 * math.exp(-(((Hbp - 275) / 25) ** 2)))) * RC
+
+    tL, tC, tH = dLp / (kL * SL), dCp / (kC * SC), dHp / (kH * SH)
+    return math.sqrt(max(0.0, tL * tL + tC * tC + tH * tH + RT * tC * tH))
+
+
+def delta_e2000(first: Rgb, second: Rgb) -> float:
+    """Ecart percu, CIEDE2000 — la metrique recommandee par la CIE.
+
+    Repere de lecture, etabli par la litterature colorimetrique :
+      < 1   imperceptible          2-10  perceptible au premier coup d'oeil
+      1-2   perceptible a l'oeil exerce   > 10  couleurs franchement differentes
+
+    Pourquoi elle et pas la distance euclidienne dans L*a*b* : L*a*b* n'est pas
+    aussi uniforme qu'annonce, et sa region BLEUE est franchement distordue.
+    Mesure faite sur la palette officielle : pour #005AB4, un bleu franc, CIE76
+    choisit Violet (#4354A3) plutot que Blue (#0055BF) — qui est presque la
+    meme couleur — et gagne de 0,68 delta E. CIEDE2000 corrige precisement
+    cela : son terme de rotation RT est centre sur H = 275 deg, c'est-a-dire
+    sur les bleus, parce que la CIE a constate la meme chose.
+
+    Le prix est un facteur deux sur la recherche du plus proche. C'est payable,
+    et une tuile franchement fausse dans un visage coute plus cher que ca.
+    """
+    return _delta_e2000_lab(srgb_to_lab(first), srgb_to_lab(second))
+
+
+# Choisir une couleur, c'est un jugement percu : c'est CIEDE2000 qui tranche.
+delta_e = delta_e2000
 
 
 class Palette:
@@ -130,16 +216,20 @@ class Palette:
         raise KeyError(f"couleur absente de la palette : {code}")
 
     def nearest(self, rgb: Rgb) -> LegoColor:
-        """Couleur perceptuellement la plus proche (delta E 1976 en L*a*b*)."""
-        target = srgb_to_lab(rgb)
+        """Couleur perceptuellement la plus proche, au sens de CIEDE2000.
+
+        La conversion de la cible est sortie de la boucle : c'est elle, et non
+        la formule, qui dominait le temps de calcul.
+        """
+        target = _CACHE_LAB.get(rgb)
+        if target is None:
+            target = srgb_to_lab(rgb)
+            if len(_CACHE_LAB) < _CACHE_LAB_MAX:
+                _CACHE_LAB[rgb] = target
         best_index = 0
         best_distance = float("inf")
         for index, lab in enumerate(self._lab):
-            distance = (
-                (lab[0] - target[0]) ** 2
-                + (lab[1] - target[1]) ** 2
-                + (lab[2] - target[2]) ** 2
-            )
+            distance = _delta_e2000_lab(lab, target)
             if distance < best_distance:
                 best_distance = distance
                 best_index = index
@@ -293,6 +383,60 @@ def load_ldconfig(text: str) -> Palette:
     if not colors:
         raise ValueError("aucune ligne !COLOUR exploitable dans ce LDConfig")
     return Palette(colors)
+
+
+LDCONFIG_EMPLACEMENTS = (
+    "~/.ldraw/LDConfig.ldr",
+    "~/ldraw/LDConfig.ldr",
+    "~/Library/Application Support/LDraw/LDConfig.ldr",
+    "/usr/share/ldraw/LDConfig.ldr",
+    "/usr/local/share/ldraw/LDConfig.ldr",
+    "/opt/ldraw/LDConfig.ldr",
+    "C:/Users/Public/Documents/LDraw/LDConfig.ldr",
+    "C:/Program Files/LDraw/LDConfig.ldr",
+    "~/Library/Application Support/LeoCAD/library/LDConfig.ldr",
+    "~/.local/share/leocad/library/LDConfig.ldr",
+    "C:/Program Files/Studio 2.0/ldraw/LDConfig.ldr",
+    "/Applications/Studio 2.0/ldraw/LDConfig.ldr",
+)
+"""Ou LDraw, LeoCAD et BrickLink Studio deposent le fichier de couleurs.
+
+Le fichier n'est PAS embarque dans ce depot. Il appartient a LDraw.org et se
+distribue sous CCAL 2.0 — une licence qui autorise la redistribution avec
+attribution, mais qui definit l'oeuvre par une ligne `!LICENSE` que
+LDConfig.ldr ne porte pas. L'ambiguite n'est pas tranchable ici, et
+redistribuer un fichier dont on ne peut pas etablir la licence n'est pas une
+decision a prendre tout seul. On le CHERCHE donc la ou il se trouve deja.
+"""
+
+
+def find_ldconfig(extra: Optional[Sequence[str]] = None) -> Optional[str]:
+    """Chemin du premier LDConfig.ldr lisible, ou None.
+
+    Rend la palette officielle disponible sans aucun drapeau des que LDraw,
+    LeoCAD ou Studio est installe — ce qui est le cas de quiconque construit
+    vraiment en LEGO.
+    """
+    import os
+
+    for chemin in list(extra or ()) + list(LDCONFIG_EMPLACEMENTS):
+        complet = os.path.expanduser(chemin)
+        if os.path.isfile(complet) and os.access(complet, os.R_OK):
+            return complet
+    return None
+
+
+def load_best_palette(extra: Optional[Sequence[str]] = None) -> Tuple[Palette, str]:
+    """(palette, provenance). La palette officielle si on la trouve.
+
+    Rend toujours quelque chose d'utilisable, et dit toujours ce que c'est :
+    une palette silencieusement degradee est pire qu'une palette absente.
+    """
+    chemin = find_ldconfig(extra)
+    if chemin is None:
+        return PROVISIONAL_PALETTE, "provisoire (12 couleurs recopiees a la main)"
+    with open(chemin, "r", encoding="utf-8", errors="replace") as fichier:
+        return load_ldconfig(fichier.read()), chemin
 
 
 # =============================================================================

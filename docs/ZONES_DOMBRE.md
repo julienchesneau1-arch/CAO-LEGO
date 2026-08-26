@@ -659,6 +659,144 @@ vue.
 
 ---
 
+### 5.24 L'échantillonnage moyennait des logarithmes
+
+La plus grosse erreur systématique de toute la chaîne, présente depuis le
+premier jour, invisible à tous les tests.
+
+`resample_box` moyennait les **octets sRGB**. Or sRGB n'est pas une échelle
+linéaire : c'est un encodage en puissance ≈ 2,2. Moyenner des octets sRGB
+revient à moyenner des logarithmes, ce qui n'a aucun sens physique.
+
+Cas d'école à réponse connue : un damier noir et blanc renvoie exactement 50 %
+de la lumière incidente. La valeur sRGB correspondante est **188**. Le code en
+donnait **127**, dont la luminance vaut 21 %.
+
+| Bloc | Ancien | Correct | Écart |
+|---|---:|---:|---:|
+| noir + blanc | 127 | **188** | 23,1 ΔE |
+| 0 + 128 | 64 | **92** | 12,0 ΔE |
+| 64 + 192 | 128 | **146** | 7,0 ΔE |
+| 100 + 160 | 130 | **134** | 1,6 ΔE |
+
+L'erreur est nulle sur les aplats et maximale sur le détail fin à fort
+contraste — feuillage, tissu, eau, cheveux, exactement ce qu'une photo contient
+en abondance. Elle assombrit **systématiquement** toutes les zones texturées.
+
+Corrigé : on linéarise, on moyenne, on réencode. Deux tables de 256 entrées
+(octet fort, octet faible d'une valeur 16 bits) permettent de faire la somme
+d'un bloc par `bytes.translate` + `sum`, deux boucles en C ; une table de
+retour de 65 536 entrées réencode. Coût mesuré : 0,06 s pour 600×450 → 48×48.
+
+**Le piège qu'il a fallu éviter.** Le centroïde dans L\*a\*b\* minimise l'écart
+moyen par tuile — c'est démontrable : Σ‖lab_i − p‖² = Σ‖lab_i − μ‖² + n‖μ − p‖².
+Il est donc *optimal* pour ce critère-là. Mais il répond à la mauvaise
+question : une grande zone de texture noire et blanche renvoie 50 % de la
+lumière, et une tuile à L\*=50 n'en renvoie que 19 %. L'œil ne juge pas une
+tuile isolée, il intègre les grandes surfaces — un biais de luminance s'y voit
+à toute distance. Mesuré sur les trois méthodes, palette officielle :
+
+| Cible de la tuile | écart/tuile | justesse tonale | tonale au pire |
+|---|---:|---:|---:|
+| moyenne des octets sRGB | 23,63 | 14,14 | 27,46 |
+| **moyenne des radiances** | 24,28 | **7,95** | **15,41** |
+| centroïde L\*a\*b\* (optimal par tuile) | 23,68 | 13,87 | 27,46 |
+
+0,65 ΔE de perdu par tuile contre 6,2 ΔE de gagné en justesse tonale, et le
+pire cas divisé par deux. Le choix n'est pas discutable.
+
+Noter au passage que la moyenne des octets sRGB et le centroïde L\*a\*b\* donnent
+presque le même résultat : les deux sont des compressions en puissance ~1/2,2
+et ~1/3. L'ancien code n'était pas « un choix perceptif », c'était un accident
+qui ressemblait à un choix.
+
+### 5.25 CIELAB choisissait un violet pour un bleu
+
+`Palette.nearest` utilisait la distance euclidienne dans L\*a\*b\* (ΔE 1976).
+L\*a\*b\* n'est pas aussi uniforme qu'annoncé, et sa **région bleue** est
+notoirement distordue.
+
+Mesure sur la palette officielle, pour `#005AB4` — un bleu franc :
+
+| Choix | ΔE76 | Lab |
+|---|---:|---|
+| Violet `#4354A3` | **10,13** ← choisi | (38,2 · 18,0 · −44,9) |
+| Blue `#0055BF` | 10,81 | (38,3 · 21,2 · −61,3) |
+
+`#005AB4` et `#0055BF` sont quasiment la même couleur. CIE76 préférait le
+violet, de 0,68 ΔE. Sur quatorze bleus testés, **aucun** n'obtenait une couleur
+nommée « Blue ». Pour une photo, où le ciel est la plus grande surface bleue,
+c'est le pire endroit possible pour se tromper.
+
+Corrigé en passant à **CIEDE2000**, la métrique recommandée par la CIE. Son
+terme de rotation `RT` est centré sur H = 275°, c'est-à-dire exactement sur les
+bleus : la CIE avait constaté la même distorsion.
+
+**Le piège de circularité.** Juger ΔE76 avec ΔE76 ne prouve rien. J'ai donc
+essayé OKLab (conçu pour les grands écarts et la linéarité des teintes) et pris
+CIEDE2000 comme **arbitre** — elle n'est ni l'une ni l'autre :
+
+| Métrique de choix | ΔE2000 moyen, RVB uniforme | sur les tuiles d'une photo |
+|---|---:|---:|
+| CIELAB ΔE76 | 9,77 | **7,24** |
+| OKLab | **9,18** | 8,52 |
+| CIEDE2000 | 8,43 | 7,08 |
+
+Les deux jeux se contredisent sur OKLab : impossible de trancher entre ΔE76 et
+OKLab honnêtement. CIEDE2000 domine les deux sur la moyenne **et** sur le pire
+cas (30,0 → 16,7 en RVB uniforme), et c'est le standard. C'est elle.
+
+**Ce qu'elle n'apporte pas.** En agrégat sur une vraie image, le gain est
+marginal : 17,00 → 16,97 ΔE par tuile. Sa valeur est ailleurs — dans les échecs
+ponctuels et visibles, un bleu de ciel rendu violet. Une tuile franchement
+fausse dans un visage coûte plus cher que dix tuiles légèrement décalées.
+
+**Le coût est nul.** 0,71 s pour 2304 tuiles × 80 couleurs, contre 0,76 s pour
+l'ancienne implémentation de CIE76 : la conversion sRGB → L\*a\*b\* de la cible,
+sortie de la boucle et mise en cache, payait déjà plus cher que la formule.
+
+### 5.26 Effet des deux corrections, bout en bout
+
+Mesuré en CIEDE2000, palette officielle 80 solides, mosaïque 48×48 :
+
+| | écart/tuile | tonale moyenne | tonale au pire |
+|---|---:|---:|---:|
+| avant (octets sRGB + CIE76) | 17,00 | 11,19 | 24,35 |
+| + lumière linéaire | 17,84 | 5,36 | 9,12 |
+| + CIEDE2000 seul | 16,97 | 11,05 | 24,35 |
+| **après (les deux)** | 17,80 | **6,02** | **9,12** |
+
+**Erreur tonale au pire divisée par 2,7.** À l'œil, sur une bande de test :
+le tissu rayé noir/blanc passait d'un gris-olive sombre à un gris clair juste ;
+le feuillage d'un vert plat trop sombre à un vert lumineux texturé ; l'eau d'un
+indigo plat à un bleu avec ses reflets.
+
+### 5.27 La palette officielle est cherchée, pas embarquée
+
+`LDConfig.ldr` — 162 couleurs, dont 80 solides commandables — divise l'écart
+par deux : 14,2 → 7,7 ΔE par tuile sur la même photo.
+
+Le fichier **n'est pas** dans ce dépôt. Il appartient à LDraw.org et se
+distribue sous CCAL 2.0, qui autorise la redistribution avec attribution — mais
+qui définit l'œuvre par une ligne `0 !LICENSE Redistributable under CCAL
+version 2.0` que **LDConfig.ldr ne porte pas**. L'ambiguïté n'est pas
+tranchable ici, et redistribuer un fichier dont on ne peut pas établir la
+licence est une décision qui appartient au propriétaire du dépôt, pas à moi.
+
+`find_ldconfig()` le cherche donc aux douze emplacements où LDraw, LeoCAD et
+BrickLink Studio le déposent. Quiconque construit vraiment en LEGO l'a déjà sur
+son disque et n'a aucun drapeau à fournir. À défaut, la palette provisoire sert,
+et le dit — une palette silencieusement dégradée est pire qu'une palette
+absente.
+
+**Limite honnête restante.** Les 80 couleurs « solides » du fichier officiel ne
+sont pas toutes disponibles en **tuile 1×1 (3070b)**. Le fichier ne contient
+aucun signal exploitable : les 80 portent toutes un `LEGOID` — vérifié, il n'en
+manque aucune. La disponibilité par référence est une donnée commerciale que ce
+dépôt n'a pas, et elle n'est pas devinée.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -667,12 +805,12 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse | **~85 %** | JPEG (décodé au huitième), PNG, PPM, orientation EXIF, rééchantillonnage par moyenne, quantification CIE L\*a\*b\*. Manque : cadrage assisté. |
+| Photo → analyse | **~92 %** | JPEG (décodé au huitième), PNG, PPM, orientation EXIF, rééchantillonnage par moyenne, quantification CIE L\*a\*b\*. Manque : cadrage assisté. |
 | → modélisation LEGO Art | **~80 %** | Solveur + substrat validé H1–H6, palette officielle importable, sélection des N meilleures couleurs, diagnostic des manques. Manque : découpe multi-panneaux, fusion de tuiles, volume 3D. |
 | → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
 | → notice de montage | **~80 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes, codes couleur et légende sur chaque page), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
-**Environ 81 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
+**Environ 85 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 

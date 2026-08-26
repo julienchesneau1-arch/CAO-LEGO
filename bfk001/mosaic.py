@@ -23,7 +23,8 @@ from typing import Dict, List, Mapping, Tuple
 
 from .catalog import PartInstance, place
 from .collision import CollisionGeometry
-from .imaging import Image, resample_box
+from .imaging import _REENCODAGE, Image, resample_box
+from .imaging import _TABLE_LUMIERE as _LUMIERE
 from .lego import PLATE_HEIGHT_LDU, STUD_PITCH_LDU
 from .palette import LegoColor, Palette, delta_e
 from .search import PlacedPart
@@ -236,13 +237,21 @@ def fidelity(
 ) -> Tuple[float, float]:
     """(ecart moyen, ecart maximal) entre la mosaique et l'image, en delta E.
 
-    `block` est le nombre de tuiles que l'oeil FUSIONNE, a obtenir de
-    `blending_tiles(distance)` et non a choisir au jugement. Pour une mosaique
-    LEGO il vaut 1 a toute distance humaine : les tenons font 8 mm.
+    Deux lectures, selon `block`, et les deux sont necessaires.
 
-    Ce parametre existe parce qu'il faut pouvoir poser la question — mais il
-    faut la poser avec la bonne valeur. Mesurer a block=3 une mosaique de
-    tenons de 8 mm, c'est evaluer un rendu depuis 165 m.
+    `block=1` — FIDELITE PAR TUILE. Chaque tenon contre la zone qu'il remplace.
+    C'est la mesure de la finesse : elle est bornee par la palette.
+
+    `block>1` — JUSTESSE TONALE. On compare la lumiere moyenne de regions de
+    block x block tuiles. L'oeil n'a pas besoin de fusionner les tuiles pour
+    juger qu'une zone est trop sombre : il integre les grandes surfaces, et une
+    erreur systematique s'y voit a toute distance. C'est cette mesure, et elle
+    seule, qui a revele que l'echantillonnage moyennait des octets sRGB au lieu
+    de la lumiere — 24 delta E d'erreur tonale au pire, ramenes a 9.
+
+    L'ancienne lecture de `block` — « le nombre de tuiles que l'oeil fusionne »,
+    donc 1 a toute distance humaine — n'etait pas fausse, elle etait trop
+    etroite : elle ne laissait pas poser la question tonale.
     """
     if block < 1:
         raise ValueError("la distance de regard se compte en tuiles, au moins une")
@@ -271,11 +280,17 @@ def _render_rgb(grid):
 
 
 def _average(couleurs, count: int):
-    total = [0, 0, 0]
+    """Moyenne d'un groupe de couleurs, EN LUMIERE LINEAIRE.
+
+    Meme raison qu'a l'echantillonnage : sRGB est un encodage en puissance, et
+    en moyenner les octets n'a pas de sens physique. Une mesure faite sur la
+    mauvaise grandeur ne mesure pas la bonne chose.
+    """
+    total = [0.0, 0.0, 0.0]
     for couleur in couleurs:
         for i in range(3):
-            total[i] += couleur[i]
-    return tuple(value // count for value in total)
+            total[i] += _LUMIERE[couleur[i]]
+    return tuple(_REENCODAGE[round(65535 * value / count)] for value in total)
 
 
 def _decouper_axe(ancre: int, pas: int, longueur: int) -> List[Tuple[int, int]]:
