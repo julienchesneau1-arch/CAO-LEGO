@@ -95,6 +95,8 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/mosaic.py` | — | Solveur LEGO Art : image → modèle avec substrat (**hors contrat**) |
 | `bfk001/instructions.py` | — | Plan de montage acyclique, ordonné par portance (**hors contrat**) |
 | `bfk001/booklet.py` | — | Notice imprimable : PDF écrit à la main, mosaïque bande par bande (**hors contrat**) |
+| `bfk001/ldraw.py` | — | Export `.ldr` : conventions d'axes et d'origine lues dans une pièce officielle (**hors contrat**) |
+| `bfk001/bricklink.py` | — | Liste de souhaits BrickLink ; refuse de deviner une couleur absente de la table (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.

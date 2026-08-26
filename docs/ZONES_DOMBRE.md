@@ -802,7 +802,7 @@ Le registre notait le tramage comme **rejeté**, sur un argument de physique :
 un tenon fait 8 mm, deux tuiles ne fusionnent qu'à 55 m, donc à toute distance
 réelle l'œil voit le damier et le rendu se dégrade.
 
-Ayant établi en § 5.24 que **la justesse tonale prime sur l'écart par tuile**,
+Ayant établi en § 5.42 que **la justesse tonale prime sur l'écart par tuile**,
 la cohérence obligeait à rouvrir la question avec le bon critère.
 
 | image | variante | par tuile | tonal | tonal pire | couleurs |
@@ -975,113 +975,6 @@ mélange l'erreur de palette et le grain. La justesse tonale ne le voit pas non
 plus, puisque le grain s'y annule par construction.
 
 ---
-
-### 5.24 Le coût : moitié moins de pièces, sans toucher au rendu
-
-Une tuile 1×4 rouge montre exactement les mêmes quatre tenons rouges que quatre
-tuiles 1×1. Fusionner les tuiles voisines de même couleur ne coûte donc
-**aucune fidélité** — c'est vérifié par un test qui compare les aperçus octet
-par octet — et divise le nombre de pièces.
-
-Mesure sur un paysage 48×48, palette officielle :
-
-| Références employées | Pièces | Lots à commander | Gain |
-|---|---:|---:|---:|
-| 1×1 seule | 2304 | 15 | — |
-| 1×1, 1×2 | 1571 | 23 | −32 % |
-| **1×1, 1×2, 1×4** | **1283** | **30** | **−44 %** |
-| + 1×3 | 1234 | 37 | −46 % |
-| + 1×6, 1×8 | 1105 | 50 | −52 % |
-
-Le défaut s'arrête à trois références. Au-delà, chaque point de pièces gagné
-coûte plusieurs lots de plus à trouver — le 1×3 coûte sept lots pour deux
-points — et les tuiles longues sont rares dans beaucoup de couleurs.
-
-Deux choix de conception, tous deux mesurés :
-
-- **Découpe par programmation dynamique, pas glouton.** « La plus longue
-  d'abord » n'est pas optimal : avec des tuiles de 1, 3 et 4, un run de 6 se
-  découpe en 3+3 et non en 4+1+1. Un test compare la DP à une recherche
-  exhaustive sur toutes les longueurs jusqu'à 24.
-- **Fusion en lignes, jamais en colonnes.** La rotation existe et fonctionne
-  (`place_at` vise le coin de l'AABB, pas l'origine de la pièce, parce que sous
-  rotation les deux diffèrent). Mais la notice se lit ligne par ligne, et une
-  tuile à cheval sur deux lignes obligerait à la poser depuis deux pages.
-
-Le gain n'est pas une propriété du code mais de l'**image** : sur du bruit pur,
-aucune suite à fusionner, gain quasi nul ; sur une image structurée, massif. Le
-test vérifie les deux cas.
-
-### 5.25 Le proxy de choix de palette optimisait le mauvais critère
-
-`Palette.cheapest_subset` choisit la plus petite palette dont l'écart **par
-tuile** reste dans une tolérance. Il conclut « huit couleurs suffisent » : au-delà,
-l'écart par tuile ne bouge plus (8,09 → 8,06 puis 8,38).
-
-C'est faux, et la mesure sur la mosaïque réelle le montre :
-
-| Couleurs | ΔE/tuile | Ton moyen | Ton pire | Tuiles | Lots |
-|---:|---:|---:|---:|---:|---:|
-| 8 | 8,09 | 5,01 | 12,29 | 1117 | 26 |
-| 13 | 8,39 | 4,35 | 8,54 | 1172 | 29 |
-| 80 | 8,27 | **3,73** | **7,48** | 1283 | 34 |
-
-**L'écart par tuile plafonne à huit couleurs ; la justesse tonale continue de
-s'améliorer jusqu'à quatre-vingts.** Or c'est la justesse tonale qui gouverne la
-lecture d'ensemble du tableau — c'est déjà elle qui avait tranché le choix de
-moyenner en lumière linéaire (§ 5.23bis). Le proxy aurait fait perdre un tiers
-de justesse tonale en annonçant que ça ne coûtait rien.
-
-`mosaic.palette_cost_curve` construit donc la mosaïque pour chaque taille de
-palette et mesure les deux critères. `mosaic.cheapest_palette` arbitre sur les
-deux, et **rend ce qu'il abandonne** au lieu de l'affirmer : à 0,5 ΔE de
-tolérance, 13 couleurs au lieu de 80, soit 1172 tuiles et 29 lots au lieu de
-1283 et 34, pour 0,09 ΔE de justesse tonale perdue — très au-dessous du seuil
-de perception.
-
-Défaut trouvé en écrivant le test : `best_subset` fait varier son nombre de
-grappes avec `count`, donc sa réponse pour N n'est **pas** le préfixe de la
-courbe. Choisir N sur la courbe puis rappeler `best_subset(N)` livrait une
-palette autre que celle qu'on venait de mesurer. La courbe rend maintenant la
-suite de couleurs elle-même.
-
----
-
-### 5.26 Le fond coûtait un tiers du modèle pour quelque chose d'invisible
-
-657 plates 2×4 sur une 48×48, soit 36 % des pièces — pour un substrat que
-personne ne verra jamais. Sa seule qualité est de tenir.
-
-Premier réflexe : repaver en grandes plates. Un réseau 8×8 décalé de moitié
-donne 85 pièces au lieu de 613, couvre exactement… et **scinde le fond sur 992
-formats sur 1521**. Même piège qu'au § 5.22.
-
-La mesure dit précisément où est le piège, et ce n'est pas où je l'avais dit
-d'abord. Au niveau du **réseau**, le pavage grossier tient toujours : zéro
-échec sur 441 formats. Mais une cellule rognée du bord n'est pas une pièce
-réelle — un rectangle 3×7 n'existe pas — et il faut la découper en plates du
-catalogue. **C'est cette découpe qui réaligne les joints** sur ceux de la
-couche du dessous : 294 formats sur 441 se scindent alors. La première version
-de ce paragraphe accusait le réseau ; le test l'a démentie.
-
-D'où la solution, qui repose sur un théorème et non sur un balayage :
-
-> Contracter deux sommets d'un graphe connexe laisse un graphe connexe.
-
-Fusionner des plates **déjà posées** est exactement une contraction du graphe
-de liaison. Le fond ne peut donc pas se scinder, quelle que soit la taille de
-l'œuvre — ce n'est plus une vérification empirique, c'est une garantie. Et la
-fusion ne crée jamais de joint nouveau, donc elle ne peut rien réaligner.
-
-| Côté | Fond avant | Fond après |
-|---:|---:|---:|
-| 16×16 | 105 | 28 |
-| 32×32 | 325 | 70 |
-| 48×48 | **657** | **128** |
-| 64×64 | 1105 | 202 |
-
-Vérifié sur tous les formats de 2×2 à 48×48 plus 56 et 64 : emprise exacte,
-fond d'un seul tenant, zéro violation sur les six invariants.
 
 ### 5.33 Le tramage n'a pas de bon réglage universel — il en faut un par image
 
@@ -1405,7 +1298,114 @@ fixe désormais cette distinction.
 
 Le défaut de la commande passe donc à `--cadrage auto`.
 
-### 5.27 Bilan de la passe d'optimisation
+### 5.42 Le coût : moitié moins de pièces, sans toucher au rendu
+
+Une tuile 1×4 rouge montre exactement les mêmes quatre tenons rouges que quatre
+tuiles 1×1. Fusionner les tuiles voisines de même couleur ne coûte donc
+**aucune fidélité** — c'est vérifié par un test qui compare les aperçus octet
+par octet — et divise le nombre de pièces.
+
+Mesure sur un paysage 48×48, palette officielle :
+
+| Références employées | Pièces | Lots à commander | Gain |
+|---|---:|---:|---:|
+| 1×1 seule | 2304 | 15 | — |
+| 1×1, 1×2 | 1571 | 23 | −32 % |
+| **1×1, 1×2, 1×4** | **1283** | **30** | **−44 %** |
+| + 1×3 | 1234 | 37 | −46 % |
+| + 1×6, 1×8 | 1105 | 50 | −52 % |
+
+Le défaut s'arrête à trois références. Au-delà, chaque point de pièces gagné
+coûte plusieurs lots de plus à trouver — le 1×3 coûte sept lots pour deux
+points — et les tuiles longues sont rares dans beaucoup de couleurs.
+
+Deux choix de conception, tous deux mesurés :
+
+- **Découpe par programmation dynamique, pas glouton.** « La plus longue
+  d'abord » n'est pas optimal : avec des tuiles de 1, 3 et 4, un run de 6 se
+  découpe en 3+3 et non en 4+1+1. Un test compare la DP à une recherche
+  exhaustive sur toutes les longueurs jusqu'à 24.
+- **Fusion en lignes, jamais en colonnes.** La rotation existe et fonctionne
+  (`place_at` vise le coin de l'AABB, pas l'origine de la pièce, parce que sous
+  rotation les deux diffèrent). Mais la notice se lit ligne par ligne, et une
+  tuile à cheval sur deux lignes obligerait à la poser depuis deux pages.
+
+Le gain n'est pas une propriété du code mais de l'**image** : sur du bruit pur,
+aucune suite à fusionner, gain quasi nul ; sur une image structurée, massif. Le
+test vérifie les deux cas.
+
+### 5.43 Le proxy de choix de palette optimisait le mauvais critère
+
+`Palette.cheapest_subset` choisit la plus petite palette dont l'écart **par
+tuile** reste dans une tolérance. Il conclut « huit couleurs suffisent » : au-delà,
+l'écart par tuile ne bouge plus (8,09 → 8,06 puis 8,38).
+
+C'est faux, et la mesure sur la mosaïque réelle le montre :
+
+| Couleurs | ΔE/tuile | Ton moyen | Ton pire | Tuiles | Lots |
+|---:|---:|---:|---:|---:|---:|
+| 8 | 8,09 | 5,01 | 12,29 | 1117 | 26 |
+| 13 | 8,39 | 4,35 | 8,54 | 1172 | 29 |
+| 80 | 8,27 | **3,73** | **7,48** | 1283 | 34 |
+
+**L'écart par tuile plafonne à huit couleurs ; la justesse tonale continue de
+s'améliorer jusqu'à quatre-vingts.** Or c'est la justesse tonale qui gouverne la
+lecture d'ensemble du tableau — c'est déjà elle qui avait tranché le choix de
+moyenner en lumière linéaire (§ 5.23bis). Le proxy aurait fait perdre un tiers
+de justesse tonale en annonçant que ça ne coûtait rien.
+
+`mosaic.palette_cost_curve` construit donc la mosaïque pour chaque taille de
+palette et mesure les deux critères. `mosaic.cheapest_palette` arbitre sur les
+deux, et **rend ce qu'il abandonne** au lieu de l'affirmer : à 0,5 ΔE de
+tolérance, 13 couleurs au lieu de 80, soit 1172 tuiles et 29 lots au lieu de
+1283 et 34, pour 0,09 ΔE de justesse tonale perdue — très au-dessous du seuil
+de perception.
+
+Défaut trouvé en écrivant le test : `best_subset` fait varier son nombre de
+grappes avec `count`, donc sa réponse pour N n'est **pas** le préfixe de la
+courbe. Choisir N sur la courbe puis rappeler `best_subset(N)` livrait une
+palette autre que celle qu'on venait de mesurer. La courbe rend maintenant la
+suite de couleurs elle-même.
+
+---
+
+### 5.44 Le fond coûtait un tiers du modèle pour quelque chose d'invisible
+
+657 plates 2×4 sur une 48×48, soit 36 % des pièces — pour un substrat que
+personne ne verra jamais. Sa seule qualité est de tenir.
+
+Premier réflexe : repaver en grandes plates. Un réseau 8×8 décalé de moitié
+donne 85 pièces au lieu de 613, couvre exactement… et **scinde le fond sur 992
+formats sur 1521**. Même piège qu'au § 5.22.
+
+La mesure dit précisément où est le piège, et ce n'est pas où je l'avais dit
+d'abord. Au niveau du **réseau**, le pavage grossier tient toujours : zéro
+échec sur 441 formats. Mais une cellule rognée du bord n'est pas une pièce
+réelle — un rectangle 3×7 n'existe pas — et il faut la découper en plates du
+catalogue. **C'est cette découpe qui réaligne les joints** sur ceux de la
+couche du dessous : 294 formats sur 441 se scindent alors. La première version
+de ce paragraphe accusait le réseau ; le test l'a démentie.
+
+D'où la solution, qui repose sur un théorème et non sur un balayage :
+
+> Contracter deux sommets d'un graphe connexe laisse un graphe connexe.
+
+Fusionner des plates **déjà posées** est exactement une contraction du graphe
+de liaison. Le fond ne peut donc pas se scinder, quelle que soit la taille de
+l'œuvre — ce n'est plus une vérification empirique, c'est une garantie. Et la
+fusion ne crée jamais de joint nouveau, donc elle ne peut rien réaligner.
+
+| Côté | Fond avant | Fond après |
+|---:|---:|---:|
+| 16×16 | 105 | 28 |
+| 32×32 | 325 | 70 |
+| 48×48 | **657** | **128** |
+| 64×64 | 1105 | 202 |
+
+Vérifié sur tous les formats de 2×2 à 48×48 plus 56 et 64 : emprise exacte,
+fond d'un seul tenant, zéro violation sur les six invariants.
+
+### 5.45 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :
 
@@ -1422,8 +1422,8 @@ de l'œuvre ne change de couleur par rapport à ce que la palette permet.
 
 Trois défauts trouvés en écrivant les tests de cette passe, tous des
 affirmations de ma part que la mesure a démenties : le réseau accusé à la place
-de la découpe (§ 5.26), le proxy de palette qui optimisait le mauvais critère
-(§ 5.25), et le générateur aléatoire du test de conformité qui tirait à
+de la découpe (§ 5.44), le proxy de palette qui optimisait le mauvais critère
+(§ 5.43), et le générateur aléatoire du test de conformité qui tirait à
 l'aveugle puis renonçait — inoffensif tant que le catalogue ne contenait que
 de petites pièces, muet dès qu'on y a ajouté des plates 8×8.
 
