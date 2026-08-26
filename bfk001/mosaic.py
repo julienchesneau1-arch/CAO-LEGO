@@ -30,6 +30,7 @@ from .search import PlacedPart
 
 __all__ = [
     "Mosaic",
+    "tile_id",
     "quantize",
     "build",
     "from_image",
@@ -66,6 +67,15 @@ TILE_DESIGN = "3070b"       # Tile 1 x 1 with Groove
 SUBSTRATE_COLOR = 71        # Light Bluish Gray : invisible sous la mosaique
 
 
+def tile_id(row: int, column: int) -> str:
+    """Identifiant de la tuile en (ligne, colonne). Une seule definition.
+
+    Le fascicule doit pouvoir retrouver la piece qui realise un pixel. Que ce
+    schema soit ecrit a deux endroits, et les deux divergeront un jour.
+    """
+    return f"T{row}_{column}"
+
+
 @dataclass(frozen=True)
 class Mosaic:
     """Resultat du solveur : la grille voulue et le modele qui la realise."""
@@ -76,6 +86,9 @@ class Mosaic:
     placed_parts: Mapping[str, PlacedPart]
     geometries: Mapping[str, CollisionGeometry]
     instances: Mapping[str, PartInstance]
+
+    def tile_id(self, row: int, column: int) -> str:
+        return tile_id(row, column)
 
     @property
     def tile_count(self) -> int:
@@ -343,7 +356,7 @@ def build(
         y = (studs_y - 1 - row) * STUD_PITCH_LDU
         for column, color in enumerate(colors):
             add(
-                f"T{row}_{column}",
+                tile_id(row, column),
                 TILE_DESIGN,
                 (column * STUD_PITCH_LDU, y, tile_z),
                 color.code,

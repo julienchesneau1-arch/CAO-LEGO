@@ -34,7 +34,7 @@ elle reexporte l'integralite de cette API publique.
 
 from __future__ import annotations
 
-from . import imaging, instructions, jpeg, mosaic, palette
+from . import booklet, imaging, instructions, jpeg, mosaic, palette
 from .catalog import (
     CATALOG,
     LDRAW_COLORS,
@@ -76,6 +76,7 @@ from .graph import ConstructionGraph, InstructionGraph
 from .imaging import Image, read_png, read_ppm, resample_box, write_png
 from .jpeg import apply_orientation, exif_orientation, read_jpeg_eighth
 from .instructions import BuildStep, plan_build, render_text
+from .booklet import build_booklet, render_progress, render_layer, row_runs, write_pdf
 from .lego import (
     BRICK_HEIGHT_LDU,
     HALF_STUD_LDU,
@@ -253,6 +254,7 @@ __all__ = [
     "jpeg",
     "palette",
     "mosaic",
+    "booklet",
     "instructions",
     "Image",
     "read_png",
@@ -275,6 +277,11 @@ __all__ = [
     "BuildStep",
     "plan_build",
     "render_text",
+    "build_booklet",
+    "render_progress",
+    "render_layer",
+    "row_runs",
+    "write_pdf",
     # Systeme LEGO (hors contrat)
     "LDU_MM",
     "STUD_PITCH_LDU",

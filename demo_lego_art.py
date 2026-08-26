@@ -70,6 +70,8 @@ def main() -> int:
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
     analyseur.add_argument("--par-etape", type=int, default=24)
+    analyseur.add_argument("--lignes-par-page", type=int, default=4,
+                           help="lignes de mosaique par page de la notice PDF")
     analyseur.add_argument("--hauteur", type=int, default=None,
                            help="hauteur en tenons (defaut : carre)")
     analyseur.add_argument("--couleurs", type=int, default=None,
@@ -156,6 +158,16 @@ def main() -> int:
         return 1
     (options.sortie / "notice.txt").write_text(bfk.render_text(plan) + "\n")
 
+    fascicule = bfk.build_booklet(
+        mosaique,
+        plan,
+        nomenclature,
+        palette=palette_complete,
+        title=options.image.stem.replace("_", " ").title(),
+        rows_per_page=options.lignes_par_page,
+    )
+    (options.sortie / "notice.pdf").write_bytes(fascicule)
+
     (options.sortie / "modele.json").write_text(
         bfk.dumps_model(mosaique.placed_parts, mosaique.geometries, mosaique.instances)
     )
@@ -165,7 +177,11 @@ def main() -> int:
         f"fidelite: {ecart_moyen:.1f} delta E moyen a distance reelle "
         f"({'excellent' if ecart_moyen < 6 else 'correct' if ecart_moyen < 12 else 'palette insuffisante'})"
     )
-    print(f"livre   : {len(nomenclature)} references, {len(plan.steps)} etapes")
+    print(
+        f"livre   : {len(nomenclature)} references, {len(plan.steps)} etapes, "
+        f"notice.pdf de {fascicule.count(b'/Type /Page /Parent')} pages "
+        f"({len(fascicule) // 1024} Ko)"
+    )
     print(f"          -> {options.sortie}/")
     return 0
 

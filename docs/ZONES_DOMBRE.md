@@ -487,6 +487,102 @@ opaques réellement disponibles en tuile 1×1.
 
 ---
 
+### 5.19 La notice : une page par étape aurait donné 733 pages
+
+`plan_build` regroupe les pièces par **couleur** à chaque niveau. C'est le bon
+regroupement pour un assemblage : on ne change pas de sachet vingt fois. Pour
+une mosaïque, c'est catastrophique, et la mesure le dit sans appel :
+
+| Mosaïque 48×48 | Mesure |
+|---|---:|
+| Pièces | 2917 |
+| Étapes produites par `plan_build` | **733** |
+| Étapes du type « poser 4 tuiles rouges » | la quasi-totalité |
+
+Ces quatre tuiles rouges sont dispersées dans une grille de 2304 cases. Une
+notice d'une page par étape ferait chercher quatre cases parmi 2304, cinq cents
+fois de suite. Le plan est **physiquement juste** et **pratiquement inutilisable
+tel quel comme mise en page**.
+
+Les notices LEGO Art officielles procèdent autrement, et elles ont raison :
+**ligne par ligne**, de haut en bas, avec le compte des tuiles consécutives de
+chaque couleur — « 5 gris foncé, 9 vert, 4 gris foncé ». Une suite se compte,
+quarante-huit cases se recomptent.
+
+`booklet.py` sépare donc les deux autorités :
+
+- le **plan** reste l'autorité sur ce qui *peut* être posé quand ;
+- le **fascicule** choisit seulement dans quel *ordre*, parmi les ordres permis ;
+- `_verifier_ordre` confronte l'ordre choisi aux dépendances du plan et **refuse
+  de produire le PDF** s'il en viole une. Le rendu n'a pas le droit de casser la
+  physique, et ce n'est pas une intention : c'est vérifié.
+
+Résultat mesuré sur la même mosaïque : **16 pages, 125 Ko, 0,5 s** — contre 733.
+
+### 5.20 Trois défauts trouvés en regardant les pages, pas le code
+
+Le PDF passait toutes les vérifications structurelles avant qu'aucune de ces
+trois erreurs ne soit visible. Elles ne sont sorties qu'en **regardant les
+images produites**.
+
+1. **La page « couche 2 » du fond ne montrait rien.** La seconde couche de
+   plates recouvre intégralement la première ; la dessiner par-dessus effaçait
+   exactement ce que la page devait transmettre — le **décalage** entre les deux
+   couches, qui est la seule raison pour laquelle le fond tient. Corrigé en
+   retraçant les *joints* de la couche du dessous par-dessus la couche du
+   dessus.
+
+2. **Le cadre de la bande en cours mangeait les tuiles de bord.** Un trait noir
+   de 2 px tracé *dans* la bande recouvrait 15 % de la première et de la
+   dernière ligne — c'est-à-dire la couleur à poser. Les traits de délimitation
+   sont désormais posés **hors** de la bande, et toute réglure tracée *dans* la
+   mosaïque **assombrit** au lieu de peindre : la couleur reste lisible dessous.
+   Un test vérifie l'invariant — dans la bande en cours, tout pixel est la
+   couleur exacte de sa tuile, ou cette couleur assombrie par une ou deux
+   réglures, jamais autre chose.
+
+3. **« Déjà posé » et « reste à poser » se confondaient.** Le déjà-posé était
+   rendu en couleur pâlie, le reste en gris clair uniforme. Là où l'œuvre est
+   grise — un ciel couvert, une façade — les deux étaient indiscernables. La
+   pâleur seule ne peut pas porter cette distinction. Ce qui reste à poser est
+   maintenant **damié**, motif qui n'est la couleur d'aucune tuile et ne peut
+   donc pas être lu comme une consigne.
+
+### 5.21 La mise en page ne peut pas être fixée d'avance
+
+Une bande de 4 lignes tient sur une page pour une photo (« 48 Blue » : une
+suite), pas pour une image bruitée (48 suites par ligne, ~9 lignes de texte).
+Fixer 4 lignes par page fait déborder la lecture hors de la feuille — et une
+ligne de notice qui déborde est une ligne de tuiles perdue.
+
+La lecture est donc produite **avant** la mise en page, et c'est elle qui
+commande : `_decouper_bandes` n'ajoute une ligne à la bande que si la lecture
+tient encore, et la vue se dimensionne sur la place restante. Pour le cas
+extrême où une seule ligne ne tiendrait pas — mosaïque très large et très
+bruitée —, la lecture continue sur une page de suite plutôt que d'être tronquée.
+Tronquer aurait perdu des tuiles silencieusement.
+
+### 5.22 Le substrat déborde de l'œuvre — défaut mesuré, non corrigé ici
+
+Rendre la couche de fond a révélé autre chose. Pour une mosaïque 48×48 :
+
+| Couche | Emprise (LDU) | Emprise de la mosaïque |
+|---|---|---|
+| z = 0 | x 0…960, y 0…960 | x 0…960, y 0…960 |
+| z = 8 | **x −20…980, y −40…1000** | idem |
+
+La seconde couche, décalée d'un tenon en x et de deux en y pour croiser la
+première, **dépasse de 1 tenon en x et de 2 en y sur chaque bord**. L'œuvre finie
+porte donc un liseré de plate grise nue tout autour — visible, et payé en
+pièces. Le décalage est nécessaire ; le débordement ne l'est pas : les cellules
+de bord peuvent être remplies par des plates plus courtes (2×2, 2×3, 1×2, 1×1),
+toutes au catalogue.
+
+Non corrigé dans le même travail que la notice, pour que les deux restent
+séparables. Consigné ici pour ne pas être oublié.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -498,9 +594,9 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | Photo → analyse | **~85 %** | JPEG (décodé au huitième), PNG, PPM, orientation EXIF, rééchantillonnage par moyenne, quantification CIE L\*a\*b\*. Manque : cadrage assisté. |
 | → modélisation LEGO Art | **~80 %** | Solveur + substrat validé H1–H6, palette officielle importable, sélection des N meilleures couleurs, diagnostic des manques. Manque : découpe multi-panneaux, fusion de tuiles, volume 3D. |
 | → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
-| → notice de montage | **~30 %** | Plan acyclique, ordre physiquement exécutable, regroupement par couleur. Manque : vues isométriques, PDF, ligne graphique LEGO. |
+| → notice de montage | **~75 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles, pose du fond, mosaïque bande par bande avec réglettes et comptage des suites), ordre vérifié contre le plan. Manque : ligne graphique LEGO, repérage de la pièce de départ. |
 
-**Environ 65 % de la demande.** Le bond depuis les ~15 % precedents n'est pas un
+**Environ 79 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 
@@ -542,13 +638,16 @@ et c'est vérifié à chaque génération.
 - **Pas de tramage** : les dégradés se posterisent. C'est visible sur l'aperçu.
 - **Substrat non optimisé** : un pavage plein de plates 2×4. Un solveur de coût
   choisirait mieux.
-- **Notice sans images.** La structure est juste, le rendu graphique reste à faire.
+- **Liseré de substrat nu** de 1 à 2 tenons autour de l'œuvre (§ 5.22).
+- **Notice en vue de dessus seulement.** C'est le bon choix pour une mosaïque
+  — une perspective n'ajouterait rien à une œuvre plate — mais un assemblage
+  en volume demanderait autre chose.
 
 ### 6.4 Le chemin le plus court pour la suite
 
 1. **Importer LDConfig.ldr et un vrai catalogue** — débloque d'un coup la qualité du rendu et la justesse de la liste de course.
 2. **Tramage Floyd-Steinberg** contraint à la palette — le plus gros gain visuel pour le plus petit effort.
-3. **Rendu de la notice** — vues isométriques par étape ; c'est du rendu 3D, pas de la CAO.
+3. **Supprimer le liseré de substrat** (§ 5.22) — plates plus courtes sur les bords.
 
 ---
 

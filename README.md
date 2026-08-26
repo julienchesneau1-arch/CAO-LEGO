@@ -36,7 +36,7 @@ automatiquement : une liste de course doit être commandable.
 `--couleurs 12` restreint la mosaïque aux douze couleurs qui servent le mieux
 *cette* photo. Douze bien choisies valent les quatre-vingts.
 
-Produit `apercu.png`, `liste_de_course.csv`, `notice.txt` et `modele.json` —
+Produit `apercu.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`** et `modele.json` —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
 qui ne tiendrait pas ensemble n'est pas livrée.
 
@@ -56,6 +56,7 @@ pytest test_bfk001_cad.py               # couche CAO (hors contrat)
 pytest test_bfk001_conformance.py       # propriétés, sur tirages aléatoires
 pytest test_bfk001_lego_art.py          # mosaïque : ce que le noyau accepte et refuse
 pytest test_bfk001_pipeline.py          # photo → modèle → liste de course → notice
+pytest test_bfk001_booklet.py           # structure du PDF, rendu des pages, ordre vérifié
 ```
 
 Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
@@ -88,6 +89,7 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/palette.py` | — | Palette LEGO, import LDConfig, quantification CIE L\*a\*b\* (**hors contrat**) |
 | `bfk001/mosaic.py` | — | Solveur LEGO Art : image → modèle avec substrat (**hors contrat**) |
 | `bfk001/instructions.py` | — | Plan de montage acyclique, ordonné par portance (**hors contrat**) |
+| `bfk001/booklet.py` | — | Notice imprimable : PDF écrit à la main, mosaïque bande par bande (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.
@@ -288,6 +290,41 @@ des paires ne se recouvrent pas.
 vérifie donc l'**ordre de première entrée** dans chaque autorité de la chaîne,
 et qu'aucune n'est franchie deux fois (`geometric_relation`, `solid_overlap`,
 `collision_status` : exactement un appel chacune).
+
+---
+
+## La notice PDF
+
+`booklet.py` écrit le PDF à la main — objets numérotés, table de renvois,
+images compressées par `zlib`, polices de base. Rien à embarquer, aucune
+dépendance. Un test relit le fichier octet par octet : chaque décalage de la
+table doit tomber pile sur l'en-tête de son objet, chaque flux doit se
+décompresser, aucun objet ne doit être orphelin. Un lecteur PDF répare
+silencieusement une table cassée ; « ça s'ouvre » ne prouve donc rien.
+
+Le fascicule ne suit **pas** une page par étape du plan. `plan_build` regroupe
+par couleur : sur une mosaïque 48×48 il produit 733 étapes du type « poser 4
+tuiles rouges », dispersées dans 2304 cases. La notice procède comme les
+notices LEGO Art officielles — **ligne par ligne**, avec le comptage des suites
+(« 5 gris foncé · 9 vert · 4 gris foncé ») — et tient en **16 pages**.
+
+Le plan reste l'autorité sur ce qui *peut* être posé quand ; le fascicule
+choisit seulement l'*ordre*, et `_verifier_ordre` refuse d'écrire le PDF si
+l'ordre choisi violait une dépendance du plan.
+
+Trois règles de rendu, chacune née d'un défaut vu à l'image (§ 5.20 du
+registre) :
+
+- toute réglure tracée **dans** la mosaïque **assombrit** au lieu de peindre —
+  un trait opaque mentirait sur la teinte de la tuile qu'il recouvre ;
+- ce qui reste à poser est **damié**, motif qui n'est la couleur d'aucune tuile
+  et ne peut donc pas être lu comme une consigne ;
+- les joints de la couche de fond précédente sont retracés par-dessus la
+  suivante, sans quoi la page ne montrerait plus le **décalage** qui fait tenir
+  le fond.
+
+Les chiffres des réglettes sont du **texte PDF**, pas des pixels : nets à
+l'impression, et rien à embarquer comme fonte matricielle.
 
 ---
 
