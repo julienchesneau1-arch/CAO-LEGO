@@ -44,9 +44,23 @@ def charger_palette(chemin: pathlib.Path | None) -> bfk.Palette:
             file=sys.stderr,
         )
         return bfk.PROVISIONAL_PALETTE
-    palette = bfk.load_ldconfig(chemin.read_text(encoding="utf-8", errors="replace"))
-    print(f"  palette : {len(palette)} couleurs importees de {chemin.name}")
-    return palette
+    complete = bfk.load_ldconfig(chemin.read_text(encoding="utf-8", errors="replace"))
+    # Filtre indispensable : le fichier officiel contient les transparentes, les
+    # chromees, les nacrees, les caoutchouc et deux marqueurs internes au format.
+    # Une liste de course qui les contient est incommandable.
+    commandables = complete.solids_only()
+    print(
+        f"  palette : {len(complete)} couleurs importees de {chemin.name}, "
+        f"{len(commandables)} commandables en tuile"
+    )
+    return commandables
+
+
+def nom_couleur(palette, code: int) -> str:
+    for couleur in palette:
+        if couleur.code == code:
+            return couleur.name
+    return str(code)
 
 
 def main() -> int:
@@ -82,6 +96,7 @@ def main() -> int:
             )
         print("      Fournir --ldconfig LDConfig.ldr corrige la plus grande part de l'ecart.")
 
+    palette_complete = palette
     if options.couleurs:
         palette = palette.best_subset(pixels, options.couleurs)
         print(f"  palette reduite aux {len(palette)} meilleures couleurs pour cette image")
@@ -127,12 +142,9 @@ def main() -> int:
     nomenclature = bfk.bill_of_materials(mosaique.instances, mosaique.placed_parts)
     lignes = ["design_id,nom,code_couleur,couleur,quantite"]
     for ligne in sorted(nomenclature, key=lambda l: -l.quantity):
-        nom_couleur = next(
-            (c.name for c in palette if c.code == ligne.color_id), str(ligne.color_id)
-        )
         lignes.append(
             f'{ligne.design_id},"{ligne.name}",{ligne.color_id},'
-            f'"{nom_couleur}",{ligne.quantity}'
+            f'"{nom_couleur(palette_complete, ligne.color_id)}",{ligne.quantity}'
         )
     (options.sortie / "liste_de_course.csv").write_text("\n".join(lignes) + "\n")
 

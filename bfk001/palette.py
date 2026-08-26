@@ -39,11 +39,22 @@ Rgb = Tuple[int, int, int]
 
 @dataclass(frozen=True)
 class LegoColor:
-    """Une couleur du systeme : code LDraw, nom, valeur RVB."""
+    """Une couleur du systeme : code LDraw, nom, valeur RVB, finition.
+
+    La finition n'est pas decorative : une couleur transparente, chromee,
+    nacree ou pailletee n'existe pas forcement en tuile 1x1, et parfois
+    n'existe pas du tout. Une liste de course batie dessus serait
+    incommandable.
+    """
 
     code: int
     name: str
     rgb: Rgb
+    finish: str = "solid"
+
+    @property
+    def is_solid(self) -> bool:
+        return self.finish == "solid"
 
     def __post_init__(self) -> None:
         if isinstance(self.code, bool) or not isinstance(self.code, int):
@@ -139,18 +150,42 @@ class Palette:
         wanted = set(codes)
         return Palette(color for color in self._colors if color.code in wanted)
 
+    def solids_only(self) -> "Palette":
+        """Les couleurs opaques et mates : celles qu'on peut reellement commander.
+
+        Ecarte transparent, chrome, nacre, metallise, caoutchouc et pailleté —
+        la finition est lue dans le fichier officiel, jamais deduite du nom.
+
+        Ecarte aussi les codes 16 et 24. Ce ne sont pas des couleurs mais des
+        marqueurs internes au format LDraw : 16 signifie « la couleur courante »
+        et 24 « la couleur des aretes ». Rien ne les distingue des autres dans
+        le fichier, et une liste de course contenant « Edge Colour » est
+        incommandable. Trouve en lisant une selection automatique qui l'avait
+        retenue.
+        """
+        return Palette(
+            color
+            for color in self._colors
+            if color.is_solid and color.code not in LDRAW_INTERNAL_CODES
+        )
+
     def best_subset(self, pixels: Sequence[Rgb], count: int) -> "Palette":
         """Les `count` couleurs de CETTE palette qui rendent le mieux ces pixels.
 
-        Une mosaique ne se commande pas en soixante-dix couleurs : chaque teinte
-        supplementaire est un sachet, un cout, une reference a trouver. La
-        question n'est donc pas « toutes les couleurs » mais « lesquelles ».
+        Une mosaique ne se commande pas en quatre-vingts couleurs : chaque
+        teinte supplementaire est un sachet, un cout, une reference a trouver.
+        La question n'est donc pas « toutes les couleurs » mais « lesquelles ».
 
-        Selection gloutonne sur les couleurs dominantes de l'image, ponderees
-        par leur surface : a chaque tour on ajoute la couleur qui reduit le plus
-        l'ecart total. Sur une palette de douze couleurs c'est sans effet ; sur
-        la palette officielle, c'est la difference entre un rendu juste et un
-        rendu gris.
+        Selection gloutonne sur les couleurs dominantes de l'image, ponderee par
+        leur surface : a chaque tour on ajoute la couleur qui reduit le plus
+        l'ecart total.
+
+        Un critere « minimax » a ete essaye ici — minimiser le PIRE ecart plutot
+        que l'ecart moyen, pour empecher un grand aplat de sacrifier un petit
+        sujet. Il a ete retire : mesurablement pire (13,1 contre 9,7 delta E de
+        moyenne), sans ameliorer le pire ecart d'un dixieme, et surtout il
+        repondait a un probleme inexistant — voir docs/ZONES_DOMBRE.md, section
+        5.17. Un reglage qui ne gagne nulle part ne merite pas d'exister.
         """
         if count < 1:
             raise ValueError("une palette compte au moins une couleur")
@@ -166,9 +201,10 @@ class Palette:
             meilleur_cout = None
             for candidate in restantes:
                 essai = retenues + [candidate]
-                cout = 0.0
-                for couleur, part in clusters:
-                    cout += part * min(delta_e(couleur, c.rgb) for c in essai)
+                cout = sum(
+                    part * min(delta_e(couleur, c.rgb) for c in essai)
+                    for couleur, part in clusters
+                )
                 if meilleur_cout is None or cout < meilleur_cout:
                     meilleur_cout = cout
                     meilleure = candidate
@@ -182,7 +218,7 @@ PROVISIONAL_PALETTE = Palette(
     (
         LegoColor(0, "Black", (0x05, 0x13, 0x1D)),
         LegoColor(1, "Blue", (0x00, 0x55, 0xBF)),
-        LegoColor(2, "Green", (0x23, 0x78, 0x41)),
+        LegoColor(2, "Green", (0x25, 0x7A, 0x3E)),  # corrige : #237841 etait faux
         LegoColor(4, "Red", (0xC9, 0x1A, 0x09)),
         LegoColor(6, "Brown", (0x58, 0x39, 0x27)),
         LegoColor(14, "Yellow", (0xF2, 0xCD, 0x37)),
@@ -194,12 +230,38 @@ PROVISIONAL_PALETTE = Palette(
         LegoColor(320, "Dark Red", (0x72, 0x0E, 0x0F)),
     )
 )
-"""PROVISOIRE — 12 couleurs recopiees a la main. Remplacer par load_ldconfig()."""
+"""PROVISOIRE — 12 couleurs recopiees a la main, dont onze verifiees exactes
+contre le fichier officiel et une corrigee (Green valait #237841 au lieu de
+#257A3E). Douze couleurs ne suffisent a aucune photo : sur un paysage, elles
+laissent 17,8 delta E d'ecart la ou la palette officielle en laisse 9,7.
+Remplacer par load_ldconfig()."""
 
 
 _COLOUR_LINE = re.compile(
     r"^\s*0\s+!COLOUR\s+(\S+).*?\bCODE\s+(\d+)\b.*?\bVALUE\s+#([0-9A-Fa-f]{6})",
 )
+
+LDRAW_INTERNAL_CODES = frozenset({16, 24})
+"""Codes LDraw qui ne designent pas une couleur : 16 = couleur courante,
+24 = couleur des aretes. Ce sont des marqueurs de format, pas des produits."""
+
+
+_FINISHES = (
+    ("ALPHA", "transparent"),
+    ("CHROME", "chrome"),
+    ("PEARLESCENT", "pearl"),
+    ("METAL", "metal"),
+    ("RUBBER", "rubber"),
+    ("MATERIAL", "material"),
+)
+
+
+def _finish_of(line: str) -> str:
+    """Finition declaree par la ligne elle-meme, jamais devinee."""
+    for mot_cle, finition in _FINISHES:
+        if re.search(r"\b" + mot_cle + r"\b", line):
+            return finition
+    return "solid"
 
 
 def load_ldconfig(text: str) -> Palette:
@@ -225,6 +287,7 @@ def load_ldconfig(text: str) -> Palette:
                 code,
                 name.replace("_", " "),
                 (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)),
+                _finish_of(line),
             )
         )
     if not colors:

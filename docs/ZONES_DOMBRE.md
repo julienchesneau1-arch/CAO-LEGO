@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 86 tests verts, chaîne complète photo → notice.
+Version du noyau : **BFK-001 v3.3.2** — 87 tests verts, chaîne complète photo → notice.
 
 ---
 
@@ -419,6 +419,72 @@ c'est exactement le geste qui avait fait étiqueter la référence 3021 « Plate
 2×4 ». `load_ldconfig()` importe la palette officielle en une ligne ; c'est la
 seule voie que je certifie.
 
+### 5.16 La palette était accessible — je ne l'avais jamais vérifié
+
+J'avais déclaré la palette officielle hors d'atteinte et refusé de la recopier
+de mémoire. La deuxième moitié était juste ; la première était une **hypothèse
+non testée**. `ldraw.org` est bien bloqué par le proxy, mais PyPI est
+directement accessible — l'environnement l'autorise explicitement — et le
+paquet `pyldraw` embarque le `LDConfig.ldr` officiel. **162 couleurs obtenues
+de la source, pas de la mémoire.**
+
+**Contre-vérification de mes douze valeurs recopiées :** onze exactes au bit
+près, une fausse — Green valait #237841 au lieu de #257A3E, soit 2,8 ΔE. Ma
+prudence était donc proportionnée, et la discipline a payé : j'avais une
+supposition à 92 %, j'ai maintenant la donnée.
+
+**Un bug attrapé dans la foulée.** `solids_only()` laissait passer les codes 16
+et 24. Ce ne sont pas des couleurs mais des marqueurs du format LDraw —
+« couleur courante » et « couleur des arêtes ». Rien dans le fichier ne les
+distingue, et la sélection automatique avait retenu « Edge Colour » pour la
+mosaïque. Une liste de course incommandable.
+
+**Le gain, mesuré :**
+
+| Palette | Couleurs | Fidélité |
+|---|---:|---:|
+| Mes 12 recopiées à la main | 12 | 17,8 ΔE |
+| Officielle, commandables | 80 | 9,7 ΔE |
+| Officielle, **12 mieux choisies** | 12 | **9,7 ΔE** |
+
+Douze couleurs bien choisies valent les quatre-vingts. Ce n'est pas une
+économie marginale : c'est douze sachets au lieu de quatre-vingts.
+
+### 5.17 Le phare rose : deux hypothèses réfutées, et une leçon
+
+Sur le rendu officiel, le phare ressortait rose. J'ai formulé deux explications
+et je les ai testées toutes les deux.
+
+**Hypothèse 1 — le critère sacrifie les petits sujets.** La sélection minimise
+l'écart *moyen* ; le ciel occupe 40 % des tuiles, le phare 2 %. J'ai donc ajouté
+un critère minimax, qui minimise le *pire* écart. Résultat mesuré : **13,1 ΔE
+contre 9,7**, et le pire écart strictement inchangé. Le réglage a été **retiré**
+— un critère qui ne gagne nulle part ne mérite pas d'exister.
+
+**Hypothèse 2 — c'est la résolution.** Testé à 96×128 et sur un recadrage serré
+du sujet : **aucune tuile rouge dans les deux cas**, et le rouge n'entre même
+pas dans la palette sélectionnée.
+
+**La réalité.** Les pixels les plus rouges de la photo valent (186, 88, 99) —
+un rose poussiéreux. Les pixels franchement rouges représentent **0,16 % de
+l'image, soit 4,8 tuiles sur 3072**. Le phare est contre-jour, sa bande rouge
+est dans l'ombre, et à 48 tenons de large elle occupe cinq tuiles roses.
+**La mosaïque est fidèle. C'est mon souvenir de la scène qui ne l'était pas.**
+
+C'est la leçon la plus utile de la session : j'étais à un pas de biaiser
+l'algorithme vers ce que je *croyais* voir plutôt que vers ce que la photo
+contient. C'est exactement ainsi qu'un outil se met à mentir.
+
+### 5.18 Un filtre écrit, testé — et jamais branché
+
+La liste de course finale contenait 592 tuiles de « Chrome Antique Brass »,
+249 de « Rubber Black » et 486 de « Trans Light Blue Violet ». `solids_only()`
+existait, passait ses tests, et n'avait jamais été appelé par la CLI.
+
+Le genre de défaut que seul l'usage révèle : chaque pièce fonctionnait, et la
+chaîne était fausse. Corrigé, la liste ne contient plus que des couleurs
+opaques réellement disponibles en tuile 1×1.
+
 ---
 
 ## 6. Où en est-on de la demande produit
@@ -429,12 +495,12 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse | **~70 %** | Lecture PNG/PPM et rééchantillonnage par moyenne de bloc, quantification en CIE L\*a\*b\*. Manquent : tramage (dithering), cadrage assisté. |
-| → modélisation LEGO Art | **~70 %** | Solveur mosaïque + substrat croisé, validé H1–H6 à l'échelle officielle. Manquent : fusion des tuiles en plates plus grandes (coût), découpe multi-plaques, et tout le volume 3D. |
-| → liste de course | **~55 %** | Nomenclature agrégée, export CSV, garde-fou anti-omission. Manquent : import catalogue réel, palette complète, export BrickLink, prix. |
-| → notice de montage | **~30 %** | Plan acyclique, ordre physiquement exécutable, regroupement par couleur, rendu texte. Manquent : vues isométriques, PDF, ligne graphique LEGO. |
+| Photo → analyse | **~85 %** | JPEG (décodé au huitième), PNG, PPM, orientation EXIF, rééchantillonnage par moyenne, quantification CIE L\*a\*b\*. Manque : cadrage assisté. |
+| → modélisation LEGO Art | **~80 %** | Solveur + substrat validé H1–H6, palette officielle importable, sélection des N meilleures couleurs, diagnostic des manques. Manque : découpe multi-panneaux, fusion de tuiles, volume 3D. |
+| → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
+| → notice de montage | **~30 %** | Plan acyclique, ordre physiquement exécutable, regroupement par couleur. Manque : vues isométriques, PDF, ligne graphique LEGO. |
 
-**Environ 55 % de la demande.** Le bond depuis les ~15 % precedents n'est pas un
+**Environ 65 % de la demande.** Le bond depuis les ~15 % precedents n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 

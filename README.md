@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **86 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **87 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire).
 
 Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
@@ -25,6 +25,16 @@ python3 demo_lego_art.py photo.jpg --studs 48 --hauteur 64 --sortie resultat/
 JPEG, PNG ou PPM. L'orientation EXIF est appliquée, et la palette est
 diagnostiquée **avant** de construire : si elle ne peut pas rendre la photo, la
 commande le dit et nomme les couleurs qui manquent.
+
+**Palette officielle.** Les 12 couleurs intégrées ne suffisent à aucune photo
+(17,8 ΔE sur un paysage, contre 9,7 avec la palette officielle). Fournir
+`--ldconfig LDConfig.ldr` — le fichier est livré avec LDraw, LeoCAD et
+BrickLink Studio, et se trouve aussi dans le paquet PyPI `pyldraw`. Les
+couleurs transparentes, chromées, nacrées et caoutchouc en sont écartées
+automatiquement : une liste de course doit être commandable.
+
+`--couleurs 12` restreint la mosaïque aux douze couleurs qui servent le mieux
+*cette* photo. Douze bien choisies valent les quatre-vingts.
 
 Produit `apercu.png`, `liste_de_course.csv`, `notice.txt` et `modele.json` —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque

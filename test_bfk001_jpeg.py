@@ -228,3 +228,36 @@ def test_best_subset_picks_the_colours_that_matter():
     assert riche.best_subset(pixels, 100) is riche, "plus de couleurs que la palette"
     with pytest.raises(ValueError):
         riche.best_subset(pixels, 0)
+
+
+def test_solids_only_excludes_what_cannot_be_ordered():
+    """Une liste de course ne contient ni transparent, ni chrome, ni « Edge Colour »."""
+    fichier = "\n".join(
+        (
+            "0 !COLOUR Red CODE 4 VALUE #C91A09 EDGE #333333",
+            "0 !COLOUR Trans_Red CODE 36 VALUE #C91A09 EDGE #880000 ALPHA 128",
+            "0 !COLOUR Chrome_Gold CODE 334 VALUE #BBA53D EDGE #333333 CHROME",
+            "0 !COLOUR Pearl_White CODE 183 VALUE #F2F3F2 EDGE #333333 PEARLESCENT",
+            "0 !COLOUR Rubber_Black CODE 256 VALUE #212121 EDGE #333333 RUBBER",
+            "0 !COLOUR Glitter_Trans CODE 114 VALUE #DF6695 EDGE #000000 ALPHA 128 MATERIAL GLITTER",
+            "0 !COLOUR Main_Colour CODE 16 VALUE #FFFF80 EDGE #333333",
+            "0 !COLOUR Edge_Colour CODE 24 VALUE #7F7F7F EDGE #333333",
+        )
+    )
+    complete = bfk.load_ldconfig(fichier)
+    assert len(complete) == 8
+
+    solides = complete.solids_only()
+    assert [c.code for c in solides] == [4], (
+        "seul le rouge opaque est commandable en tuile 1x1"
+    )
+
+    # Les codes 16 et 24 ne sont pas des couleurs mais des marqueurs de format.
+    # Rien dans le fichier ne les distingue : c'est une connaissance du format,
+    # et une selection automatique les avait retenus avant ce garde-fou.
+    assert 16 in bfk.palette.LDRAW_INTERNAL_CODES
+    assert 24 in bfk.palette.LDRAW_INTERNAL_CODES
+    assert complete.by_code(36).finish == "transparent"
+    assert complete.by_code(334).finish == "chrome"
+    assert complete.by_code(114).finish == "transparent", "ALPHA prime sur MATERIAL"
+    assert complete.by_code(4).is_solid
