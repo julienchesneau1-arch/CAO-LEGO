@@ -132,7 +132,7 @@ Classées par ce qu'elles bloquent réellement.
 |---|---|---|---|
 | **`BuildStep` concret** | **FERMÉE** — dataclass gelée dans `instructions.py` (`step_id`, `part_ids`, `depends_on`, `description`), conforme au Protocol, refusant une étape sans pièce. | — | Fait |
 | **Export LDraw (.ldr)** | **FERMÉE** — `bfk001/ldraw.py`. Les deux données manquantes ont été lues dans `3001.dat` officiel, pas devinées (§ 5.39). | — | Fait |
-| **Palette couleur complète** | **FERMÉE côté LDraw** — `load_ldconfig()` importe les 162 couleurs officielles, dont 80 solides commandables, avec détection de finition ; recherche automatique dans les emplacements d'installation usuels. Reste ouverte côté **BrickLink** : la correspondance des codes couleur exige une clé d'API Rebrickable, non vérifiable ici (§ 6.7). | Fournir la table de correspondance, ou une clé. | Couche 3 |
+| **Palette couleur complète** | **FERMÉE côté LDraw** — `load_ldconfig()` importe les 162 couleurs officielles, dont 80 solides commandables, avec détection de finition ; recherche automatique dans les emplacements d'installation usuels. Reste ouverte côté **BrickLink** : la correspondance des codes couleur exige une clé d'API Rebrickable, non vérifiable ici (§ 5.40). | Fournir la table de correspondance, ou une clé. | Couche 3 |
 | **Catalogue complet** | 8 références rectangulaires générées paramétriquement. | Import LDraw `.dat` → `CollisionGeometry` + connecteurs. Dépend entièrement de 3.1 (géométrie non-AABB). | BFK-002 |
 | **Prix, disponibilité, substitution** | Absents. | Hors noyau, et **doit le rester** : un noyau géométrique ne consulte pas un marchand. La contrainte d'approvisionnement, elle, est exprimable : `--codes-couleur` impose la liste réellement en stock. | Couche 3 |
 | **Commander la liste** | **FERMÉE côté code** — `bricklink.py` produit la liste de souhaits XML, et refuse plutôt que de deviner une couleur absente de la table (§ 5.40). Ouverte côté **donnée** : la table de correspondance des couleurs n'est pas fournie, aucune n'ayant pu être vérifiée ici. | Fournir la table. | Couche 3 |
@@ -1438,11 +1438,11 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | Étape | État | Ce qui manque |
 |---|---:|---|
 | Photo → analyse | **~98 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon. recadrage attentionnel par énergie de gradient. Manque : rien d'identifié. |
-| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.5). Manque : découpe multi-panneaux pour les très grands formats. |
+| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Manque : découpe multi-panneaux pour les très grands formats. |
 | → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
 | → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
-**Environ 90 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
+**Environ 92 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 
@@ -1450,7 +1450,42 @@ Ce qui reste est domine par deux choses tres differentes : du **rendu
 graphique** pour la notice, et de la **donnee reelle** (palette officielle,
 catalogue, prix). Aucune des deux n'est un probleme d'architecture.
 
-### 6.5 La fidélité est à la limite du médium, et c'est mesurable
+### 6.1 Mesures de bout en bout
+
+Paysage → mosaïque 48×48 (format LEGO Art officiel), palette officielle :
+
+| Étape | Résultat |
+|---|---|
+| Modèle | **1411 pièces** (1283 tuiles + 128 de fond), 4608 liaisons |
+| Génération | 0,68 s |
+| Validation H1–H6 | 2,59 s, **0 violation** |
+| Fidélité | 8,3 ΔE par tuile, 3,7 de justesse tonale |
+| Liste de course | 37 lots, 1411 pièces |
+| Notice | 369 étapes, PDF de 17 pages, 175 Ko |
+| `modele.ldr` | 1412 pièces, 62 Ko |
+| `modele.json` | 0,76 Mo |
+
+Pour comparaison, la même photo au début de la passe d'optimisation : **2917
+pièces** et **23,9 ΔE** par tuile. Soit −52 % de pièces et un écart divisé par
+près de trois, sans qu'aucun tenon ne change de couleur par rapport à ce que la
+palette permet.
+
+Le modèle n'est **écrit que s'il passe les six invariants**. Une mosaïque qui ne
+tiendrait pas ensemble n'est pas livrée — c'est tout l'intérêt d'avoir bâti le
+noyau d'abord. Et depuis § 5.35, `build` refuse en amont les formats dont le
+fond ne peut pas tenir, au lieu de laisser les invariants le découvrir.
+
+### 6.2 Ce que la mosaïque a révélé sur la demande elle-même
+
+
+Une mosaïque naïve — les tuiles posées côte à côte sur le plan, exactement ce
+que produit un « pixel art → briques » — passe H2, H4 et H6 sans un seul
+défaut, **et n'est pas un objet** : 64 tuiles, 64 composants séparés. Seul H5
+le voit. Le solveur impose donc un substrat de deux couches de plates croisées,
+et c'est vérifié à chaque génération.
+
+### 6.3 La fidélité est à la limite du médium, et c'est mesurable
+
 
 Question posée : « peut-on faire plus précis ? ». Réponse mesurée sur un
 portrait, palette officielle :
@@ -1472,7 +1507,8 @@ Ajouter des tenons agrandit l'œuvre, ça ne l'affine pas. C'est une propriété
 médium, pas une limite du logiciel — et ça clôt la question « hyper précise » :
 on y est.
 
-### 6.6 Profil de la chaîne complète
+### 6.4 Profil de la chaîne complète
+
 
 Paysage 48×48, palette officielle, 1411 pièces :
 
@@ -1497,49 +1533,76 @@ ne dépend de rien d'autre. `cost_of_grid` les calcule directement, et le
 substrat — qui ne dépend pas de la palette — n'est mesuré qu'une fois.
 **9,0 s → 5,0 s**, comptes vérifiés identiques au modèle construit.
 
-### 6.1 Mesures de bout en bout
+### 6.5 Les limites honnêtes de ce qui est livré
 
-Photo 256×256 → mosaïque 48×48 (format LEGO Art officiel) :
 
-| Étape | Résultat |
+Toutes mesurées, aucune supposée.
+
+- **La fidélité est plafonnée par la palette, pas par le logiciel.** 7,89 ΔE par
+  tuile sur un portrait, et l'écart de la palette seule vaut exactement 7,89 :
+  toute l'erreur restante vient de ce que LEGO ne fabrique pas la couleur
+  demandée. La résolution n'y change rien (§ 6.3).
+- **Palette provisoire de 12 couleurs par défaut.** `load_ldconfig()` importe les
+  162 officielles et cherche le fichier dans les emplacements d'installation
+  usuels ; sans lui, l'écart double. Le fichier n'est pas livré ici : sa licence
+  n'a pas pu être confirmée (§ 6.7).
+- **La fusion des tuiles change la surface**, pas les couleurs : appareil à
+  joints décalés au lieu de la grille uniforme des sets officiels (§ 5.36).
+  `apercu_joints.png` le montre, `--references minimal` rend la grille.
+- **Le recadrage automatique mesure du détail, pas un sujet.** Un fond texturé
+  derrière un visage lisse l'attire vers le fond (§ 5.41).
+- **La commande BrickLink exige une table** de correspondance des couleurs que
+  le dépôt ne fournit pas — c'est une donnée, pas du code (§ 5.40).
+- **Notice en vue de dessus seulement.** C'est le bon choix pour une mosaïque —
+  une perspective n'ajouterait rien à une œuvre plate — mais un assemblage en
+  volume demanderait autre chose.
+- **Une mosaïque d'un tenon de large ne tient pas** au-delà de quelques tenons.
+  `build` le constate et refuse plutôt que de livrer (§ 5.35).
+
+### 6.6 Ce qui reste, et pourquoi
+
+
+Les trois premiers points de cette liste, dans ses versions précédentes, sont
+faits : palette officielle importable, tramage décidé par image, export
+BrickLink. Ce qui reste se range en trois catégories très différentes.
+
+**Des données, pas du code.** La table de correspondance des couleurs BrickLink
+et le fichier `LDConfig.ldr`. Le code qui s'en sert existe et est testé ; ni
+l'une ni l'autre n'a pu être vérifiée ici. Ce sont des décisions
+d'approvisionnement, pas d'ingénierie.
+
+**Une préférence esthétique.** La ligne graphique de la notice. Le fascicule est
+complet et vérifié — structure, marges d'impression, ordre contrôlé contre le
+plan — mais il ne ressemble pas à une notice LEGO. C'est du dessin, et rien ne
+le mesure.
+
+**Un autre produit.** Découpe multi-panneaux, volume 3D, connecteurs Technic,
+géométrie non-AABB, stabilité mécanique : tout cela est listé en § 3 avec la
+décision que chacun réclame, et cible BFK-002. Ce n'est pas du reste, c'est une
+suite.
+
+### 6.7 La seule question qui n'est pas technique
+
+`LDConfig.ldr` — les 162 couleurs officielles — n'est pas livré dans ce dépôt,
+et c'est la seule zone que je n'ai pas fermée par décision délibérée.
+
+Le fichier de licence joint à la bibliothèque LDraw est **CC BY 2.0**. Mais son
+texte définit l'œuvre couverte comme *les pièces portant la ligne*
+`0 !LICENSE Redistributable under CCAL version 2.0`. Vérification faite :
+
+| Fichier | Porte le marqueur |
 |---|---|
-| Modèle | 2917 pièces (2304 tuiles + substrat), 4608 liaisons |
-| Génération | 0,40 s |
-| Validation H1–H6 | 4,90 s, **0 violation** |
-| Liste de course | 10 références, instantanée |
-| Notice | 126 étapes, DAG validé |
-| Document `.json` | 1,15 Mo (9,6 Mo avant mise en facteur des géométries) |
+| `3001.dat` et les autres pièces | **oui** — d'où l'export LDraw, § 5.39 |
+| `LDConfig.ldr` | **non** |
 
-Le modèle n'est **écrit que s'il passe les six invariants**. Une mosaïque qui ne
-tiendrait pas ensemble n'est pas livrée — c'est tout l'intérêt d'avoir bâti le
-noyau d'abord.
+Redistribuer un fichier dont je ne peux pas confirmer le marqueur de licence est
+une action tournée vers l'extérieur, et elle n'est pas la mienne. Le code le
+cherche dans les emplacements d'installation usuels de LDraw, LeoCAD et
+BrickLink Studio, et `--ldconfig` prend un chemin. La décision de l'intégrer
+appartient au propriétaire du dépôt.
 
-### 6.2 Ce que la mosaïque a révélé sur la demande elle-même
-
-Une mosaïque naïve — les tuiles posées côte à côte sur le plan, exactement ce
-que produit un « pixel art → briques » — passe H2, H4 et H6 sans un seul
-défaut, **et n'est pas un objet** : 64 tuiles, 64 composants séparés. Seul H5
-le voit. Le solveur impose donc un substrat de deux couches de plates croisées,
-et c'est vérifié à chaque génération.
-
-### 6.3 Les limites honnêtes de ce qui est livré
-
-- **Palette provisoire de 12 couleurs**, recopiées à la main — le même geste qui
-  avait produit l'erreur 3021. `load_ldconfig()` importe la palette officielle
-  en une ligne ; tant qu'elle n'est pas fournie, la finesse du rendu est
-  plafonnée par la palette, pas par l'algorithme.
-- **Pas de tramage** : les dégradés se posterisent. C'est visible sur l'aperçu.
-- **Substrat non optimisé** : un pavage plein de plates 2×4. Un solveur de coût
-  choisirait mieux.
-- **Notice en vue de dessus seulement.** C'est le bon choix pour une mosaïque
-  — une perspective n'ajouterait rien à une œuvre plate — mais un assemblage
-  en volume demanderait autre chose.
-
-### 6.4 Le chemin le plus court pour la suite
-
-1. **Importer LDConfig.ldr et un vrai catalogue** — débloque d'un coup la qualité du rendu et la justesse de la liste de course.
-2. **Tramage Floyd-Steinberg** contraint à la palette — le plus gros gain visuel pour le plus petit effort.
-3. **Export BrickLink / Pick-a-Brick** — la liste de course devient commandable en un clic. Bloqué sur une donnée : la correspondance des codes couleur LDraw ↔ BrickLink exige une clé d'API Rebrickable (§ 6.7). Les références de PIÈCES, elles, sont déjà communes aux deux systèmes.
+Écart mesuré sans lui : la palette provisoire de 12 couleurs laisse **deux fois
+plus d'écart** que les 80 officielles.
 
 ---
 
