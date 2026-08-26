@@ -39,7 +39,7 @@ mieux *cette* photo — et atteint désormais ce qui en demandait quatre-vingts
 égale. Le sélecteur était bridé par un plafond de 24 grappes dans son propre
 résumé de l'image ; voir § 5.30 du registre.
 
-Produit `apercu.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`** et `modele.json` —
+Produit `apercu.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
 qui ne tiendrait pas ensemble n'est pas livrée.
 
@@ -411,6 +411,23 @@ indispensable : l'écart par tuile plafonne à huit couleurs alors que la justes
 tonale continue de s'améliorer jusqu'à quatre-vingts. Sur un paysage, 13 couleurs
 au lieu de 80 coûtent 0,09 ΔE de justesse tonale — imperceptible — et
 économisent 111 pièces et 5 lots. La commande annonce ce qu'elle abandonne.
+
+---
+
+## Export LDraw
+
+`modele.ldr` s'ouvre dans LeoCAD, BrickLink Studio ou LDView : le modèle en 3D,
+pièce par pièce, avec ses vraies couleurs.
+
+Deux données étaient nécessaires, et elles ont été **lues** dans `3001.dat`
+officiel, pas devinées : l'origine des pièces (centre de l'empreinte, face
+supérieure du corps) et la convention d'axes (`y_ldraw = −z_noyau`). Le module
+vérifie à l'import que le changement d'axes a un déterminant de **+1** — un
+déterminant −1 serait une réflexion, et une mosaïque exportée en miroir ne se
+signalerait par rien.
+
+Le test relit le fichier produit et compare les empreintes reconstruites à
+celles du noyau : exact sur les 24 rotations.
 
 ---
 

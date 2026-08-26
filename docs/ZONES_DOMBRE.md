@@ -130,9 +130,9 @@ Classées par ce qu'elles bloquent réellement.
 
 | Zone | État | Décision requise | Cible |
 |---|---|---|---|
-| **`BuildStep` concret** | `Protocol` structurel (`step_id`, `depends_on`) ; `validate_dag` opérationnel (Kahn). Le type concret manque. | Le compilateur v0.1 proposait `step_number`, `parts`, `subassembly_id`, `dependencies` — compatible avec le Protocol actuel. Reste à figer. | BFK-001.1 |
-| **Export LDraw (.ldr)** | Absent, **délibérément**. LDraw place l'axe Y vers le bas et chaque pièce a une origine propre définie dans son `.dat`. | Deux données à importer, pas à deviner : la convention d'axes (kernel Z-haut → LDraw −Y-haut) et **la table des origines de pièces**. Écrire un exporteur sans les vraies origines produirait des fichiers faux : je ne l'ai pas fait. | BFK-001.1 |
-| **Palette couleur complète** | 9 codes LDraw seulement, en dur. | Import de la table LDraw/BrickLink (~70 couleurs actives, correspondances Element ID, couleurs discontinuées). Donnée externe. | Couche 3 |
+| **`BuildStep` concret** | **FERMÉE** — dataclass gelée dans `instructions.py` (`step_id`, `part_ids`, `depends_on`, `description`), conforme au Protocol, refusant une étape sans pièce. | — | Fait |
+| **Export LDraw (.ldr)** | **FERMÉE** — `bfk001/ldraw.py`. Les deux données manquantes ont été lues dans `3001.dat` officiel, pas devinées (§ 5.39). | — | Fait |
+| **Palette couleur complète** | **FERMÉE côté LDraw** — `load_ldconfig()` importe les 162 couleurs officielles, dont 80 solides commandables, avec détection de finition ; recherche automatique dans les emplacements d'installation usuels. Reste ouverte côté **BrickLink** : la correspondance des codes couleur exige une clé d'API Rebrickable, non vérifiable ici (§ 6.7). | Fournir la table de correspondance, ou une clé. | Couche 3 |
 | **Catalogue complet** | 8 références rectangulaires générées paramétriquement. | Import LDraw `.dat` → `CollisionGeometry` + connecteurs. Dépend entièrement de 3.1 (géométrie non-AABB). | BFK-002 |
 | **Prix, disponibilité, substitution** | Absents. | Hors noyau, et **doit le rester** : un noyau géométrique ne consulte pas un marchand. | Couche 3 |
 
@@ -1299,6 +1299,45 @@ qu'une qui trouve toujours quelque chose à couper.
 *(Rectificatif : le message du commit précédent annonçait 193 tests verts, il y
 en avait 192.)*
 
+### 5.39 L'export LDraw : la zone déclarée « délibérément absente » est fermée
+
+Le registre disait : *« Écrire un exporteur sans les vraies origines produirait
+des fichiers faux : je ne l'ai pas fait. »* C'était la bonne décision — un
+`.ldr` faux s'ouvre normalement et ne signale rien. Les deux données manquantes
+sont maintenant **lues**, pas devinées.
+
+**Origine des pièces**, établie sur `3001.dat` (Brick 2×4) de la bibliothèque
+LDraw officielle — fichier qui porte, lui, le marqueur
+`!LICENSE Redistributable under CCAL version 2.0` :
+
+| Ce que dit le fichier | Conséquence |
+|---|---|
+| Corps : x ∈ [−40, 40], z ∈ [−20, 20] | Origine au **centre** de l'empreinte |
+| Corps : y ∈ [0, 24] | |
+| Tubes de dessous descendant jusqu'à y = 24 | Origine à la **face supérieure** du corps |
+
+**Convention d'axes** : `x_ldraw = x_noyau`, `y_ldraw = −z_noyau`,
+`z_ldraw = y_noyau`. Le déterminant vaut **+1**, et le module le vérifie à
+l'import. Ce n'est pas une précaution de principe : un déterminant −1 serait une
+réflexion, et une mosaïque exportée en miroir — un visage inversé, un texte à
+l'envers — ne se signalerait par rien.
+
+**Un défaut trouvé par le test, et c'est la règle du contrat qui se venge.**
+Je calculais d'abord l'origine LDraw depuis l'**AABB** de la pièce posée. Ça
+marchait tant qu'aucune pièce n'était tournée, et se décalait de 20 LDU dès
+qu'une l'était : l'AABB bouge avec la rotation, pas l'origine. Le décalage du
+coin local vers l'origine LDraw est un **vecteur local** — il subit R seul, puis
+on ajoute t. C'est exactement `transform_local_direction_to_world`, la première
+des quatre règles non négociables du contrat, et elle se venge ici comme
+ailleurs.
+
+Le test relit le fichier produit, reconstruit les empreintes indépendamment et
+les compare à celles du noyau : **exact sur les 24 rotations et quatre
+références**. Ce qu'il ne prouve pas, et qui est écrit dans l'en-tête du fichier
+produit : qu'une seule pièce officielle était disponible pour établir la
+convention. Elle vaut pour la famille rectangulaire — briques, plates, tuiles —
+qui est exactement ce que ce dépôt emploie.
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :
@@ -1433,7 +1472,7 @@ et c'est vérifié à chaque génération.
 
 1. **Importer LDConfig.ldr et un vrai catalogue** — débloque d'un coup la qualité du rendu et la justesse de la liste de course.
 2. **Tramage Floyd-Steinberg** contraint à la palette — le plus gros gain visuel pour le plus petit effort.
-3. **Export BrickLink / Pick-a-Brick** — la liste de course devient commandable en un clic.
+3. **Export BrickLink / Pick-a-Brick** — la liste de course devient commandable en un clic. Bloqué sur une donnée : la correspondance des codes couleur LDraw ↔ BrickLink exige une clé d'API Rebrickable (§ 6.7). Les références de PIÈCES, elles, sont déjà communes aux deux systèmes.
 
 ---
 

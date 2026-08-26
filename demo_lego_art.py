@@ -282,6 +282,11 @@ def main() -> int:
     )
     (options.sortie / "notice.pdf").write_bytes(fascicule)
 
+    (options.sortie / "modele.ldr").write_text(
+        bfk.dumps_ldr(
+            mosaique.placed_parts, mosaique.instances, options.image.stem
+        )
+    )
     (options.sortie / "modele.json").write_text(
         bfk.dumps_model(mosaique.placed_parts, mosaique.geometries, mosaique.instances)
     )
