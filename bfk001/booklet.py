@@ -428,7 +428,7 @@ def row_runs(mosaic: Mosaic, row: int) -> Tuple[Tuple[int, LegoColor], ...]:
     if not 0 <= row < mosaic.studs_y:
         raise IndexError(f"ligne {row} hors de la mosaique")
     return tuple(
-        (pose.length, pose.color)
+        (pose.length, pose.color, pose.level)
         for pose in sorted(
             (p for p in mosaic.tiles if p.row == row), key=lambda p: p.column
         )
@@ -443,8 +443,12 @@ def _lire_ligne(mosaic: Mosaic, row: int, codes: Mapping[int, str]) -> str:
     compte neuf occurrences identiques sans se tromper : on ecrit « 9x4B ».
     """
     morceaux: List[Tuple[int, str]] = []
-    for longueur, color in row_runs(mosaic, row):
-        piece = f"{longueur}{codes[color.code]}"
+    for longueur, color, niveau in row_runs(mosaic, row):
+        # L'etage n'est marque que s'il y en a un. La tuile se pose de toute
+        # facon sur ce qui est deja la — les couches de relief sont montees
+        # avant, et l'ordre est verifie contre le plan — mais le marquer
+        # permet au constructeur de verifier qu'il est sur la bonne pile.
+        piece = f"{longueur}{codes[color.code]}" + ("^" * niveau)
         if morceaux and morceaux[-1][1] == piece:
             morceaux[-1] = (morceaux[-1][0] + 1, piece)
         else:
@@ -844,7 +848,9 @@ def _pages_bande(
          f"Mosaique — bande {numero} sur {total}", True),
         (MARGE, A4_HEIGHT - 80, CORPS_LIGNE,
          f"Lignes {first_row + 1} a {last_row + 1}, de gauche a droite. "
-         "En pale : deja pose. En gris : pas encore.", False),
+         "En pale : deja pose. En gris : pas encore."
+         + (" Un ^ par etage de relief."
+            if any(p.level for p in mosaic.tiles) else ""), False),
     ]
     textes: List[TextLine] = list(entete)
     textes.extend(

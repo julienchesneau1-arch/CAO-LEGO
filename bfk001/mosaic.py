@@ -27,7 +27,7 @@ from .imaging import _REENCODAGE, Image, crop_to_ratio, resample_box
 from .imaging import _TABLE_LUMIERE as _LUMIERE
 from .lego import PLATE_HEIGHT_LDU, STUD_PITCH_LDU
 from .rotations import ROT_Z_90
-from .palette import LegoColor, Palette, delta_e
+from .palette import LegoColor, Palette, delta_e, srgb_to_lab
 from .search import PlacedPart
 
 __all__ = [
@@ -35,6 +35,7 @@ __all__ = [
     "TilePlacement",
     "tile_id",
     "TILE_SET_MINIMAL",
+    "TILE_SET_ART",
     "TILE_SET_STANDARD",
     "TILE_SET_LARGE",
     "quantize",
@@ -46,6 +47,7 @@ __all__ = [
     "build",
     "from_image",
     "preview",
+    "relief_from_luminance",
     "fidelity",
     "blending_tiles",
 ]
@@ -96,6 +98,10 @@ def blending_tiles(distance_m: float, stud_mm: float = 8.0) -> int:
 # coute plusieurs lots supplementaires a trouver, et les tuiles longues sont
 # rares dans beaucoup de couleurs. Le 1x3 coute sept lots pour deux points.
 TILE_SET_MINIMAL = ("3070b",)
+TILE_SET_ART = ("98138",)
+"""Tuiles RONDES, comme les mosaiques LEGO Art officielles. Aucune fusion
+possible — elles n'existent qu'en 1x1 — donc le prix plein : un tenon, une
+piece. C'est l'aspect qu'on achete, en trame de points plutot qu'en aplats."""
 TILE_SET_STANDARD = ("3070b", "3069b", "2431")
 TILE_SET_LARGE = ("3070b", "3069b", "63864", "2431", "6636", "4162")
 
@@ -103,6 +109,10 @@ SUBSTRATE_DESIGN = "3020"   # Plate 2 x 4
 PANEL_DESIGN = "91405"      # Plate 16 x 16, celle des sets LEGO Art
 TILE_DESIGN = "3070b"       # Tile 1 x 1 with Groove
 SUBSTRATE_COLOR = 71        # Light Bluish Gray : invisible sous la mosaique
+
+RELIEF_LIGHTING = 0.22
+"""Force de l'eclairage simule d'une marche de relief, par niveau d'ecart.
+Reperage visuel, pas une grandeur physique."""
 
 SEAM_DARKENING = 0.62
 """Assombrissement du joint entre deux pieces, pour l'apercu. Sur du vrai LEGO
@@ -464,6 +474,8 @@ class TilePlacement:
     length: int
     design_id: str
     color: LegoColor
+    level: int = 0
+    """Elevation, en epaisseurs de plate. 0 pour une oeuvre plate."""
 
 
 def _references_par_longueur(tiles: Sequence[str]):
@@ -507,6 +519,46 @@ def _decoupe_optimale(longueur: int, disponibles: Sequence[int]) -> List[int]:
         morceaux.append(choix[reste])
         reste -= choix[reste]
     return morceaux
+
+
+@dataclass(frozen=True)
+class _CouleurEtagee:
+    """Une couleur a une altitude. Sert a interdire la fusion d'une marche.
+
+    `_fusionner_ligne` regroupe par `.code` : en y mettant l'altitude, deux
+    tuiles de meme couleur mais d'etages differents cessent d'etre fusionnables
+    — ce qu'elles sont physiquement, puisqu'une piece unique ne peut pas etre a
+    deux hauteurs.
+    """
+
+    color: LegoColor
+    niveau: int
+
+    @property
+    def code(self):
+        return (self.color.code, self.niveau)
+
+
+def _verifier_relief(heights, studs_x: int, studs_y: int):
+    """Normalise et controle la carte d'elevations."""
+    if heights is None:
+        return [[0] * studs_x for _ in range(studs_y)]
+    if len(heights) != studs_y or any(len(ligne) != studs_x for ligne in heights):
+        raise ValueError(
+            f"la carte de relief doit faire {studs_x} x {studs_y}, comme l'oeuvre"
+        )
+    sortie = []
+    for ligne in heights:
+        rang = []
+        for valeur in ligne:
+            if isinstance(valeur, bool) or not isinstance(valeur, int) or valeur < 0:
+                raise ValueError(
+                    "une elevation est un entier positif d'epaisseurs de plate, "
+                    f"pas {valeur!r}"
+                )
+            rang.append(valeur)
+        sortie.append(rang)
+    return sortie
 
 
 def _fusionner_ligne(colors, disponibles):
@@ -746,6 +798,31 @@ def _verifier_fond(couches, studs_x, studs_y) -> None:
         )
 
 
+def _poser_couche_de_relief(add, prefixe, cellules, z, color) -> int:
+    """Pose une couche de RELIEF : un ensemble quelconque de cellules, en
+    plates fusionnees.
+
+    Les cellules ne forment pas un rectangle — c'est la silhouette de ce que
+    l'image veut relever. On part donc d'une plate 1x1 par cellule et on
+    fusionne, ce qui est licite quelle que soit la forme : fusionner des plates
+    deja posees est une contraction du graphe de liaison, et contracter ne
+    peut pas deconnecter (voir `_fusionner_plaques`).
+    """
+    poses = [(x, y, 1, 1, "3024") for x, y in sorted(cellules)]
+    poses = _fusionner_plaques(poses, PLAQUES_DE_FOND)
+    for numero, (x, y, largeur, profondeur, design) in enumerate(poses):
+        piece = CATALOG[design]
+        tournee = (piece.studs_x, piece.studs_y) != (largeur, profondeur)
+        add(*place_at(
+            f"{prefixe}_{numero}",
+            design,
+            (x * STUD_PITCH_LDU, y * STUD_PITCH_LDU, z),
+            orientation=ROT_Z_90 if tournee else None,
+            color_id=color,
+        ))
+    return len(poses)
+
+
 def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color,
            fusion: bool = True) -> int:
     """Pave l'emprise de l'oeuvre de plates sur un reseau ancre ailleurs.
@@ -786,8 +863,12 @@ def build(
     substrate_color: int = SUBSTRATE_COLOR,
     substrate: str = "crossed",
     tiles: Sequence[str] = TILE_SET_STANDARD,
+    heights: Optional[Sequence[Sequence[int]]] = None,
 ) -> Mosaic:
     """Grille de couleurs -> modele complet : substrat + tuiles.
+
+    `heights` donne l'elevation de chaque tuile, en epaisseurs de plate (3,2 mm
+    chacune). None ou tout a zero : oeuvre plate, comportement d'origine.
 
     Deux substrats, et le choix n'est pas cosmetique :
 
@@ -868,22 +949,49 @@ def build(
     # limite technique — la rotation existe — mais un choix : la notice se lit
     # ligne par ligne, et une tuile a cheval sur deux lignes obligerait a la
     # poser depuis deux pages differentes.
+    # Relief : une couche de plates par niveau, sous les tuiles qu'elle porte.
+    elevations = _verifier_relief(heights, studs_x, studs_y)
+    maximum = max((h for ligne in elevations for h in ligne), default=0)
+    for niveau in range(1, maximum + 1):
+        cellules = {
+            (column, studs_y - 1 - row)
+            for row in range(studs_y)
+            for column in range(studs_x)
+            if elevations[row][column] >= niveau
+        }
+        _poser_couche_de_relief(
+            enregistrer, f"R{niveau}", cellules,
+            tile_z + (niveau - 1) * PLATE_HEIGHT_LDU, substrate_color,
+        )
+
     poses: List[TilePlacement] = []
     for row, colors in enumerate(grid):
         y = (studs_y - 1 - row) * STUD_PITCH_LDU
-        for column, longueur, color in _fusionner_ligne(colors, longueurs):
+        # La fusion ne franchit pas une marche : deux tuiles de meme couleur a
+        # des altitudes differentes sont deux pieces, forcement.
+        marquees = tuple(
+            _CouleurEtagee(color, elevations[row][column])
+            for column, color in enumerate(colors)
+        )
+        for column, longueur, marquee in _fusionner_ligne(marquees, longueurs):
+            color = marquee.color
             design = par_longueur[longueur]
             placed, geometry, instance = place_at(
                 tile_id(row, column),
                 design,
-                (column * STUD_PITCH_LDU, y, tile_z),
+                (column * STUD_PITCH_LDU, y,
+                 tile_z + elevations[row][column] * PLATE_HEIGHT_LDU),
                 orientation=ROT_Z_90 if longueur > 1 else None,
                 color_id=color.code,
             )
             parts[placed.part_id] = placed
             geometries[placed.part_id] = geometry
             instances[placed.part_id] = instance
-            poses.append(TilePlacement(row, column, longueur, design, color))
+            poses.append(
+                TilePlacement(
+                    row, column, longueur, design, color, elevations[row][column]
+                )
+            )
 
     return Mosaic(
         studs_x, studs_y, grid, parts, geometries, instances, tuple(poses)
@@ -1081,7 +1189,44 @@ def cheapest_palette(
     return retenu.palette, retenu, reference
 
 
-def preview(mosaic: Mosaic, scale: int = 8, seams: bool = False) -> Image:
+def relief_from_luminance(
+    grid, levels: int = 2, invert: bool = False
+) -> List[List[int]]:
+    """Carte d'elevations tiree de la CLARTE des tuiles : clair = haut.
+
+    C'est une CONVENTION, pas une mesure. Une photo ne contient aucune
+    information de profondeur : rien dans le fichier ne dit qu'un visage est
+    devant un mur. Elever selon la clarte est le parti du bas-relief — celui
+    des medailles et des camees — et il fonctionne parce que l'oeil lit
+    spontanement le clair comme proche et l'ombre comme creux.
+
+    Il se trompe donc exactement la ou la photo contredit cette lecture : un
+    sujet sombre sur fond clair sortira en creux. `invert` retourne la
+    convention ; `build(heights=...)` accepte n'importe quelle carte si vous en
+    avez une meilleure.
+    """
+    if levels < 1:
+        raise ValueError("un relief compte au moins un niveau")
+    clartes = [[srgb_to_lab(c.rgb)[0] for c in ligne] for ligne in grid]
+    plancher = min(v for ligne in clartes for v in ligne)
+    plafond = max(v for ligne in clartes for v in ligne)
+    if plafond - plancher < 1e-9:
+        return [[0] * len(grid[0]) for _ in grid]
+    sortie = []
+    for ligne in clartes:
+        rang = []
+        for valeur in ligne:
+            part = (valeur - plancher) / (plafond - plancher)
+            if invert:
+                part = 1.0 - part
+            rang.append(min(levels, int(part * (levels + 1))))
+        sortie.append(rang)
+    return sortie
+
+
+def preview(
+    mosaic: Mosaic, scale: int = 8, seams: bool = False, relief: bool = False
+) -> Image:
     """Apercu du rendu, un carre par tenon. Sert a juger a l'oeil.
 
     `seams=True` trace les JOINTS REELS entre pieces, et pas la grille des
@@ -1108,6 +1253,32 @@ def preview(mosaic: Mosaic, scale: int = 8, seams: bool = False) -> Image:
         for color in row:
             ligne.extend(bytes(color.rgb) * scale)
         data.extend(ligne)
+
+    if relief and any(pose.level for pose in mosaic.tiles):
+        # Eclairage lambertien tres simple, lumiere en haut a gauche. C'est une
+        # SIMULATION destinee a juger le relief avant de le construire, pas un
+        # rendu physique : une marche de 3,2 mm ne projette pas cette ombre-la.
+        # Sans elle, une vue de dessus ne montre strictement rien du relief, et
+        # on ne peut pas decider s'il sert l'image.
+        etage = {}
+        for pose in mosaic.tiles:
+            for decalage in range(pose.length):
+                etage[(pose.row, pose.column + decalage)] = pose.level
+        for row in range(mosaic.studs_y):
+            for column in range(mosaic.studs_x):
+                ici = etage.get((row, column), 0)
+                haut = etage.get((row - 1, column), ici)
+                gauche = etage.get((row, column - 1), ici)
+                # Une face qui monte vers la lumiere s'eclaire, une qui
+                # s'en detourne s'assombrit.
+                facteur = 1.0 + RELIEF_LIGHTING * ((ici - haut) + (ici - gauche))
+                facteur = max(0.35, min(1.6, facteur))
+                if facteur == 1.0:
+                    continue
+                for dy in range(scale):
+                    debut = ((row * scale + dy) * width + column * scale) * 3
+                    for index in range(debut, debut + scale * 3):
+                        data[index] = max(0, min(255, round(data[index] * facteur)))
 
     if seams and scale >= 3:
         def assombrir(px: int, py: int) -> None:

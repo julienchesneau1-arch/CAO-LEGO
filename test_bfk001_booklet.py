@@ -143,27 +143,27 @@ class TestPiecesDUneLigne(unittest.TestCase):
         mosaique, _ = petite_mosaique(cote=16, graine=8)
         for row in range(mosaique.studs_y):
             attendu = [
-                (pose.length, pose.color.code)
+                (pose.length, pose.color.code, pose.level)
                 for pose in sorted(
                     (p for p in mosaique.tiles if p.row == row),
                     key=lambda p: p.column,
                 )
             ]
-            lu = [(n, c.code) for n, c in bk.row_runs(mosaique, row)]
+            lu = [(n, c.code, e) for n, c, e in bk.row_runs(mosaique, row)]
             self.assertEqual(lu, attendu, row)
 
     def test_la_ligne_est_couverte_exactement(self):
         mosaique, _ = petite_mosaique()
         for row in range(mosaique.studs_y):
             self.assertEqual(
-                sum(n for n, _ in bk.row_runs(mosaique, row)), mosaique.studs_x
+                sum(n for n, _, _ in bk.row_runs(mosaique, row)), mosaique.studs_x
             )
 
     def test_la_couleur_lue_est_celle_de_la_grille(self):
         mosaique, _ = petite_mosaique()
         for row in range(mosaique.studs_y):
             colonne = 0
-            for longueur, couleur in bk.row_runs(mosaique, row):
+            for longueur, couleur, _ in bk.row_runs(mosaique, row):
                 for decalage in range(longueur):
                     self.assertEqual(
                         mosaique.grid[row][colonne + decalage].code, couleur.code
@@ -215,7 +215,7 @@ class TestCodesCouleur(unittest.TestCase):
         texte = " ".join(lecture[0][1])
         attendu = " · ".join(
             f"{compte}{codes[color.code]}"
-            for compte, color in bk.row_runs(mosaique, 0)
+            for compte, color, _ in bk.row_runs(mosaique, 0)
         )
         self.assertEqual(texte, attendu)
         # Et pas les noms complets, qui se confondent deux a deux.

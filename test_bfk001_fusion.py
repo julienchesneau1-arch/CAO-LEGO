@@ -414,3 +414,146 @@ class TestCoutSansConstruire(unittest.TestCase):
             bfk.mosaic.cost_of_grid(grille, ("3070b", "3023"))
         with self.assertRaises(ValueError):
             bfk.mosaic.cost_of_grid(grille, ("2431",))
+
+
+class TestRelief(unittest.TestCase):
+    """Le volume : possible, mesure, et il ne casse pas le reste de la chaine."""
+
+    def grille(self, cote=16, graine=3):
+        random.seed(graine)
+        return bfk.mosaic.quantize(
+            bfk.Image(cote, cote,
+                      bytes(random.randrange(256) for _ in range(cote * cote * 3))),
+            bfk.PROVISIONAL_PALETTE.solids_only(), cote, cote,
+        )
+
+    def dome(self, cote=16):
+        return [
+            [2 if (x - cote // 2) ** 2 + (y - cote // 2) ** 2 < cote
+             else (1 if (x - cote // 2) ** 2 + (y - cote // 2) ** 2 < cote * 3 else 0)
+             for x in range(cote)]
+            for y in range(cote)
+        ]
+
+    def test_les_tuiles_montent_vraiment(self):
+        grille = self.grille()
+        plat = bfk.mosaic.build(grille)
+        relief = bfk.mosaic.build(grille, heights=self.dome())
+        self.assertEqual({p.aabb.min.z for p in plat.placed_parts.values()},
+                         {t.aabb.min.z for t in plat.placed_parts.values()})
+        altitudes = sorted({t.aabb.min.z for t in relief.placed_parts.values()})
+        self.assertGreater(len(altitudes), len(
+            {p.aabb.min.z for p in plat.placed_parts.values()}))
+        self.assertEqual(sorted({t.level for t in relief.tiles}), [0, 1, 2])
+
+    def test_le_relief_passe_les_six_invariants(self):
+        # Le point qui decide si c'est faisable « sans se perdre » : le noyau
+        # est un noyau 3D, il n'a rien a apprendre pour valider du volume.
+        for cote in (12, 16):
+            mosaique = bfk.mosaic.build(
+                self.grille(cote, cote), heights=self.dome(cote)
+            )
+            etat = bfk.assemble(
+                mosaique.placed_parts, bfk.LEGO_TOLERANCE,
+                search=bfk.LatticeSearchApproximation(),
+            )
+            violations = (
+                bfk.check_h2_collision(mosaique.placed_parts, mosaique.geometries)
+                + bfk.check_h3_authority_integrity(etat.graph)
+                + bfk.check_h4_floating(
+                    etat.graph,
+                    bfk.founded_part_ids(mosaique.placed_parts, mosaique.geometries))
+                + bfk.check_h5_disconnected(etat.graph)
+                + bfk.check_h6_foundation(mosaique.placed_parts, mosaique.geometries)
+            )
+            self.assertEqual([(v.invariant, v.detail) for v in violations], [], cote)
+
+    def test_la_fusion_ne_franchit_pas_une_marche(self):
+        # Une piece unique ne peut pas etre a deux hauteurs.
+        cote = 16
+        grille = tuple(
+            tuple(bfk.PROVISIONAL_PALETTE.colors[0] for _ in range(cote))
+            for _ in range(cote)
+        )
+        marches = [[0] * (cote // 2) + [1] * (cote // 2) for _ in range(cote)]
+        mosaique = bfk.mosaic.build(grille, heights=marches)
+        for pose in mosaique.tiles:
+            niveaux = {marches[pose.row][pose.column + d] for d in range(pose.length)}
+            self.assertEqual(len(niveaux), 1, f"tuile a cheval : {pose}")
+
+    def test_la_carte_est_controlee(self):
+        grille = self.grille()
+        for mauvaise in ([[0] * 3], [[0] * 16] * 3, [[-1] * 16] * 16,
+                         [[1.5] * 16] * 16, [[True] * 16] * 16):
+            with self.assertRaises(ValueError, msg=repr(mauvaise)[:40]):
+                bfk.mosaic.build(grille, heights=mauvaise)
+
+    def test_sans_relief_le_modele_est_inchange(self):
+        grille = self.grille()
+        for vide in (None, [[0] * 16 for _ in range(16)]):
+            self.assertEqual(
+                bfk.mosaic.build(grille, heights=vide).part_count,
+                bfk.mosaic.build(grille).part_count,
+            )
+
+    def test_la_clarte_donne_un_relief_borne(self):
+        grille = self.grille()
+        for niveaux in (1, 2, 3):
+            carte = bfk.mosaic.relief_from_luminance(grille, niveaux)
+            valeurs = {v for ligne in carte for v in ligne}
+            self.assertTrue(valeurs <= set(range(niveaux + 1)), valeurs)
+        # L'inversion retourne bien la convention.
+        droit = bfk.mosaic.relief_from_luminance(grille, 2)
+        inverse = bfk.mosaic.relief_from_luminance(grille, 2, invert=True)
+        self.assertNotEqual(droit, inverse)
+        with self.assertRaises(ValueError):
+            bfk.mosaic.relief_from_luminance(grille, 0)
+
+    def test_un_aplat_ne_donne_aucun_relief(self):
+        uni = tuple(
+            tuple(bfk.PROVISIONAL_PALETTE.colors[0] for _ in range(8))
+            for _ in range(8)
+        )
+        self.assertEqual(
+            {v for l in bfk.mosaic.relief_from_luminance(uni, 3) for v in l}, {0}
+        )
+
+    def test_l_apercu_montre_le_relief_et_seulement_sur_demande(self):
+        grille = self.grille()
+        mosaique = bfk.mosaic.build(grille, heights=self.dome())
+        plat = bfk.mosaic.preview(mosaique, 8)
+        ombre = bfk.mosaic.preview(mosaique, 8, relief=True)
+        self.assertNotEqual(plat.data, ombre.data)
+        # Sur une oeuvre sans relief, l'option ne change rien.
+        sans = bfk.mosaic.build(grille)
+        self.assertEqual(
+            bfk.mosaic.preview(sans, 8).data,
+            bfk.mosaic.preview(sans, 8, relief=True).data,
+        )
+
+    def test_la_notice_marque_les_etages(self):
+        from bfk001 import booklet as bk
+
+        grille = self.grille()
+        mosaique = bfk.mosaic.build(grille, heights=self.dome())
+        codes = bk.color_codes(mosaique)
+        lignes = [bk._lire_ligne(mosaique, r, codes) for r in range(16)]
+        self.assertTrue(any("^" in l for l in lignes),
+                        "un relief non marque ferait construire a plat")
+        # Et une oeuvre plate n'en porte aucun.
+        plate = bfk.mosaic.build(grille)
+        self.assertFalse(
+            any("^" in bk._lire_ligne(plate, r, bk.color_codes(plate))
+                for r in range(16))
+        )
+
+    def test_toute_la_chaine_survit_au_relief(self):
+        grille = self.grille()
+        mosaique = bfk.mosaic.build(grille, heights=self.dome())
+        etat = bfk.assemble(mosaique.placed_parts, bfk.LEGO_TOLERANCE,
+                            search=bfk.LatticeSearchApproximation())
+        plan = bfk.plan_build(mosaique.placed_parts, etat.graph, mosaique.instances)
+        self.assertTrue(plan.validate_dag())
+        bom = bfk.bill_of_materials(mosaique.instances, mosaique.placed_parts)
+        self.assertGreater(len(bfk.build_booklet(mosaique, plan, bom)), 1000)
+        self.assertGreater(len(bfk.dumps_ldr(mosaique.placed_parts, mosaique.instances)), 500)

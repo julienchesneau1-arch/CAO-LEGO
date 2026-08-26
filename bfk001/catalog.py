@@ -111,6 +111,13 @@ _DEFINITIONS = (
     # rouges que quatre 1x1 —, donc la fusion ne coute AUCUNE fidelite. Elle
     # divise le nombre de pieces par deux. References verifiees une a une
     # contre parts.lst de la bibliotheque LDraw officielle, jamais de memoire.
+    # La tuile RONDE : celle des mosaiques LEGO Art officielles. Meme emprise
+    # qu'une 1x1 carree — le noyau la traite comme un prisme carre, comme il
+    # traite deja les tenons cylindriques, ecart signale au README. Ce qui
+    # change est l'ASPECT : les rondes laissent un interstice sombre entre
+    # elles et donnent une trame de points ; les carrees donnent des aplats.
+    # Elles n'existent qu'en 1x1, donc elles interdisent toute fusion.
+    PartDefinition("98138", "Tile 1 x 1 Round with Groove", 1, 1, PLATE_HEIGHT_LDU, False),
     PartDefinition("3069b", "Tile 1 x 2 with Groove", 1, 2, PLATE_HEIGHT_LDU, False),
     PartDefinition("63864", "Tile 1 x 3 with Groove", 1, 3, PLATE_HEIGHT_LDU, False),
     PartDefinition("2431", "Tile 1 x 4 with Groove", 1, 4, PLATE_HEIGHT_LDU, False),

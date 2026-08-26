@@ -94,10 +94,17 @@ def main() -> int:
     analyseur.add_argument("--hauteur", type=int, default=None,
                            help="hauteur en tenons (defaut : carre)")
     analyseur.add_argument(
-        "--references", choices=("minimal", "standard", "large"), default="standard",
+        "--relief", type=int, default=0,
+        help="etages de relief tires de la clarte (0 = oeuvre plate). Une "
+             "CONVENTION de bas-relief : clair = haut. Une photo ne contient "
+             "aucune profondeur ; un sujet sombre sur fond clair sortira en creux.")
+    analyseur.add_argument(
+        "--references", choices=("minimal", "standard", "large", "art"),
+        default="standard",
         help="jeu de tuiles : minimal = 1x1 seule ; standard = 1x1, 1x2, 1x4 ; "
-             "large = jusqu'a 1x8. Fusionner ne change rien au rendu et divise "
-             "le nombre de pieces, mais multiplie les lots a commander.")
+             "large = jusqu'a 1x8 ; art = tuiles RONDES comme les mosaiques "
+             "LEGO Art, sans fusion possible donc au prix plein. Fusionner ne "
+             "change aucune couleur mais change les joints.")
     analyseur.add_argument(
         "--bricklink", type=pathlib.Path, default=None,
         help="table « code LDraw, code BrickLink » (deux colonnes). Produit "
@@ -217,11 +224,24 @@ def main() -> int:
         "minimal": bfk.mosaic.TILE_SET_MINIMAL,
         "standard": bfk.mosaic.TILE_SET_STANDARD,
         "large": bfk.mosaic.TILE_SET_LARGE,
+        "art": bfk.mosaic.TILE_SET_ART,
     }
-    mosaique = bfk.mosaic.from_image(
-        image, palette, options.studs, hauteur, dither=tramage, fit="stretch",
-        tiles=jeux[options.references],
+    grille = bfk.mosaic.quantize(
+        image, palette, options.studs, hauteur, tramage, "stretch"
     )
+    elevations = (
+        bfk.mosaic.relief_from_luminance(grille, options.relief)
+        if options.relief else None
+    )
+    mosaique = bfk.mosaic.build(
+        grille, tiles=jeux[options.references], heights=elevations
+    )
+    if options.relief:
+        print(
+            f"  relief  : {options.relief} etage(s), "
+            f"{bfk.ldu_to_mm(options.relief * 8):.1f} mm d'epaisseur — "
+            "convention du bas-relief, clair = haut"
+        )
     sans_fusion = mosaique.stud_count
     economie = 100 * (1 - mosaique.tile_count / sans_fusion)
     print(
@@ -266,6 +286,10 @@ def main() -> int:
         return 1
 
     options.sortie.mkdir(parents=True, exist_ok=True)
+    if options.relief:
+        (options.sortie / "apercu_relief.png").write_bytes(
+            bfk.write_png(bfk.mosaic.preview(mosaique, scale=8, relief=True))
+        )
     (options.sortie / "apercu_joints.png").write_bytes(
         bfk.write_png(bfk.mosaic.preview(mosaique, scale=12, seams=True))
     )
