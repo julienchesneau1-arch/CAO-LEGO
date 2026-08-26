@@ -29,7 +29,7 @@ import re
 from typing import List, Optional, Tuple
 
 from .imaging import Image, read_png, read_ppm, resample_median
-from .jpeg import read_jpeg_eighth
+from .jpeg import apply_orientation, exif_orientation, read_jpeg_eighth
 from .mosaic import _cadrer, etage_field, smooth_relief
 
 __all__ = [
@@ -169,6 +169,10 @@ def embedded_depth(data: bytes) -> Image:
     `Item:Semantic` vaut `Depth`, et elle se trouve en suivant les longueurs
     depuis la fin de l'image primaire.
 
+    La carte rendue est REDRESSEE comme la photo : elle est ecrite dans le
+    repere des pixels stockes et ne porte pas d'EXIF a elle, alors que la photo
+    decodee, elle, a deja subi sa rotation.
+
     Leve `NoEmbeddedDepth` quand il n'y en a pas — ce qui est le cas de la
     plupart des photos. C'est une absence, pas une erreur.
     """
@@ -196,7 +200,14 @@ def embedded_depth(data: bytes) -> Image:
             "XMP present mais sans carte de profondeur (ni GDepth:Data, ni "
             "un element Container de semantique Depth)"
         )
-    return read_depth_map(charge)
+    # La carte est ecrite dans le repere des PIXELS STOCKES de l'image
+    # primaire, pas dans celui de l'image redressee, et elle ne porte pas
+    # d'EXIF a elle. Sans cette ligne, la fonctionnalite echouait sur le cas
+    # le plus courant qui soit : toute photo de telephone prise en portrait,
+    # ou l'appareil stocke des pixels couches et note Orientation = 6. La
+    # photo sortait debout, la carte restait couchee, et `DepthMismatch`
+    # refusait — echec sur, mais echec.
+    return apply_orientation(read_depth_map(charge), exif_orientation(data))
 
 
 def _gdepth(xmp: bytes) -> Optional[bytes]:

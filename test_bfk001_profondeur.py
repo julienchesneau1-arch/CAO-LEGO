@@ -237,3 +237,50 @@ class TestProfondeurEmbarquee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestOrientationDeLaCarteEmbarquee(unittest.TestCase):
+    """Le cas le plus courant : une photo de telephone prise en portrait.
+
+    L'appareil stocke des pixels COUCHES et note Orientation = 6. La photo
+    decodee est redressee ; la carte de profondeur, elle, est ecrite dans le
+    repere des pixels stockes et ne porte aucun EXIF. Sans redressement, la
+    photo sort debout et la carte reste couchee — `DepthMismatch` refuse, et
+    la fonctionnalite ne sert jamais.
+    """
+
+    def exif(self, orientation):
+        import struct
+        tiff = b"II" + struct.pack("<HI", 0x2A, 8)
+        ifd = (struct.pack("<H", 1)
+               + struct.pack("<HHI", 0x0112, 3, 1)
+               + struct.pack("<HH", orientation, 0)
+               + struct.pack("<I", 0))
+        return b"Exif\x00\x00" + tiff + ifd
+
+    def fichier(self, orientation, largeur, hauteur):
+        charge = bfk.write_png(carte(largeur, hauteur))
+        xmp = XMP + (b'<x:xmpmeta><rdf:RDF><rdf:Description GDepth:Data="'
+                     + base64.b64encode(charge)
+                     + b'"/></rdf:RDF></x:xmpmeta>')
+        octets = b"\xff\xd8"
+        for paquet in (self.exif(orientation), xmp):
+            octets += b"\xff\xe1" + (len(paquet) + 2).to_bytes(2, "big") + paquet
+        return octets + b"\xff\xd9"
+
+    def test_la_carte_est_redressee_comme_la_photo(self):
+        lue = bfk.embedded_depth(self.fichier(6, 40, 20))
+        self.assertEqual((lue.width, lue.height), (20, 40),
+                         "une carte couchee sous une photo debout est inutile")
+
+    def test_sans_exif_rien_ne_bouge(self):
+        lue = bfk.embedded_depth(self.fichier(1, 40, 20))
+        self.assertEqual((lue.width, lue.height), (40, 20))
+
+    def test_et_la_carte_redressee_passe_le_controle_de_proportions(self):
+        # Le test qui dit que la correction sert a quelque chose : sans elle,
+        # ce meme appel levait DepthMismatch.
+        photo = photo_contraire(60, 120)
+        lue = bfk.embedded_depth(self.fichier(6, 40, 20))
+        hauteurs = bfk.heights_from_depth(lue, photo, 12, 24, 2)
+        self.assertEqual((len(hauteurs), len(hauteurs[0])), (24, 12))

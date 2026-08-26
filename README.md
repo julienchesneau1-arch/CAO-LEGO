@@ -583,9 +583,13 @@ Un téléphone en mode portrait *mesure* la profondeur et beaucoup d'appareils
 l'écrivent dans le fichier à côté de l'image. Les deux formats de Google se
 lisent : GDepth (base64 dans le XMP, réassemblé quand il déborde en segments
 étendus) et Dynamic Depth (le XMP est un annuaire, les images sont concaténées à
-la suite du fichier). Réserve honnête : les conteneurs de test sont fabriqués à
-la norme, ils vérifient l'analyseur contre le **format**, pas contre les
-particularités d'un appareil réel.
+la suite du fichier). La carte est **redressée** comme la photo : elle est
+écrite dans le repère des pixels stockés et ne porte pas d'EXIF à elle, alors
+que la photo décodée a déjà subi sa rotation — sans ce redressement, toute photo
+de téléphone prise en portrait échouait au contrôle de proportions. Réserve
+honnête : les conteneurs de test sont fabriqués à la norme, ils vérifient
+l'analyseur contre le **format**, pas contre les particularités d'un appareil
+réel.
 
 **Le contrôle qui compte.** La carte doit avoir les proportions de la photo à
 2 % près, sinon `DepthMismatch` refuse. Une carte issue d'un autre recadrage
