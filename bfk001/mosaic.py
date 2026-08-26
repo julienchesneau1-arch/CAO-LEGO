@@ -278,6 +278,100 @@ def _average(couleurs, count: int):
     return tuple(value // count for value in total)
 
 
+def _decouper_axe(ancre: int, pas: int, longueur: int) -> List[Tuple[int, int]]:
+    """Partition de [0, longueur) par un reseau de pas `pas` ancre en `ancre`.
+
+    Les cellules qui debordent sont ROGNEES, jamais fusionnees avec leur
+    voisine. Fusionner paraissait plus propre — ca evite les cellules d'un seul
+    tenon — mais ca replace les plates sur la phase de la couche du dessous, et
+    le fond entier se scinde alors en colonnes independantes. C'est le decalage
+    qui fait tenir le fond ; on ne touche pas a sa phase.
+    """
+    cellules: List[Tuple[int, int]] = []
+    borne = ancre
+    while borne < longueur:
+        debut, fin = max(borne, 0), min(borne + pas, longueur)
+        if fin > debut:
+            cellules.append((debut, fin))
+        borne += pas
+    return cellules
+
+
+def _profondeur_utile(reste: int) -> int:
+    """Longueur de la prochaine plate large, sans laisser un tenon seul."""
+    if reste >= 6 or reste == 4:
+        return 4
+    if reste in (3, 5):
+        return 3
+    return reste  # 1 ou 2
+
+
+def _plaques(largeur: int, profondeur: int, depart_y: int) -> List[Tuple[str, int, int]]:
+    """Rectangle -> plates du catalogue le recouvrant EXACTEMENT.
+
+    `depart_y` est l'ordonnee absolue du rectangle, en tenons. Elle n'est pas
+    decorative : une colonne large d'un seul tenon — ce que le rognage produit
+    au bord — ne peut relier la couche du dessous que dans l'autre sens, et une
+    plate 1x2 n'enjambe un joint du dessous (aux multiples de 4 tenons) que si
+    elle commence sur un tenon IMPAIR. Quand le depart est pair, on decale donc
+    d'une 1x1. Sans ce decalage, les bandes du fond restent independantes et H5
+    refuse le modele — verifie sur les 1521 formats de 2x2 a 40x40.
+
+    Aucune rotation : toutes ces references existent deja dans le bon sens.
+    """
+    pieces: List[Tuple[str, int, int]] = []
+    x = 0
+    while x < largeur:
+        if largeur - x >= 2:
+            y = 0
+            while y < profondeur:
+                d = _profondeur_utile(profondeur - y)
+                design = {4: "3020", 3: "3021", 2: "3022"}.get(d)
+                if design is None:  # profondeur 1 : oeuvre d'un seul tenon
+                    pieces.append(("3024", x, y))
+                    pieces.append(("3024", x + 1, y))
+                else:
+                    pieces.append((design, x, y))
+                y += d
+            x += 2
+        else:
+            y = 0
+            if depart_y % 2 == 0 and profondeur >= 3:
+                pieces.append(("3024", x, y))
+                y += 1
+            while y < profondeur:
+                if profondeur - y >= 2:
+                    pieces.append(("3023", x, y))
+                    y += 2
+                else:
+                    pieces.append(("3024", x, y))
+                    y += 1
+            x += 1
+    return pieces
+
+
+def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color) -> int:
+    """Pave l'emprise de l'oeuvre de plates sur un reseau ancre ailleurs.
+
+    Sans le rognage, la couche decalee depasse de un tenon en x et de deux en y
+    sur chaque bord : l'oeuvre finie porte un lisere de plate grise nue, visible,
+    et paye en pieces. Mesure sur une 48x48 : substrat x -20..980 pour une
+    mosaique x 0..960.
+    """
+    pose = 0
+    for x0, x1 in _decouper_axe(ancre_x, 2, studs_x):
+        for y0, y1 in _decouper_axe(ancre_y, 4, studs_y):
+            for design, dx, dy in _plaques(x1 - x0, y1 - y0, y0):
+                add(
+                    f"{prefixe}_{pose}",
+                    design,
+                    ((x0 + dx) * STUD_PITCH_LDU, (y0 + dy) * STUD_PITCH_LDU, z),
+                    color,
+                )
+                pose += 1
+    return pose
+
+
 def build(
     grid: Tuple[Tuple[LegoColor, ...], ...],
     substrate_color: int = SUBSTRATE_COLOR,
@@ -287,12 +381,13 @@ def build(
 
     Deux substrats, et le choix n'est pas cosmetique :
 
-    "crossed" (defaut) deux couches de plates 2x4 croisees. Cher en pieces —
-              613 pour une mosaique 48x48 — mais l'objet tient TOUT SEUL. Le
-              noyau le certifie sur les six invariants.
+    "crossed" (defaut) deux couches de plates 2x4 croisees, rognees a l'emprise
+              exacte de l'oeuvre. Cher en pieces — 657 pour une mosaique 48x48 —
+              mais l'objet tient TOUT SEUL, sans lisere gris au bord. Le noyau
+              le certifie sur les six invariants.
 
     "panels"  des plates 16x16, celles des sets LEGO Art officiels. Neuf pieces
-              au lieu de 613. Mais deux plates posees cote a cote ne se lient
+              au lieu de 657. Mais deux plates posees cote a cote ne se lient
               pas : H5 refusera le modele, et il aura raison. Les sets
               officiels tiennent par leur CADRE, qui n'est pas une piece LEGO
               structurelle et n'est pas modelise ici. Ce substrat n'est donc
@@ -326,28 +421,27 @@ def build(
         instances[part_id] = instance
 
     if substrate == "panels":
+        if studs_x % 16 or studs_y % 16:
+            raise ValueError(
+                "le substrat 'panels' pave en plates 16x16 : il exige des cotes "
+                f"multiples de 16, or {studs_x}x{studs_y} ne l'est pas. Un "
+                "panneau qui depasse laisse une plate nue au bord de l'oeuvre."
+            )
         panel = 16 * STUD_PITCH_LDU
         for i, x in enumerate(range(0, width, panel)):
             for j, y in enumerate(range(0, depth, panel)):
                 add(f"P_{i}_{j}", PANEL_DESIGN, (x, y, 0), substrate_color)
         tile_z = PLATE_HEIGHT_LDU
     else:
-        # Couche 0 : pavage de plates 2x4 (40 x 80 LDU), a partir de l'origine.
-        for i, x in enumerate(range(0, width, 2 * STUD_PITCH_LDU)):
-            for j, y in enumerate(range(0, depth, 4 * STUD_PITCH_LDU)):
-                add(f"S0_{i}_{j}", SUBSTRATE_DESIGN, (x, y, 0), substrate_color)
+        # Couche 0 : pavage de plates 2x4, a partir de l'origine.
+        _paver(add, "S0", 0, 0, studs_x, studs_y, 0, substrate_color)
 
         # Couche 1 : meme pavage decale d'un tenon en x et de deux en y. Chaque
         # plate y chevauche quatre plates de la couche 0 : c'est ce decalage, et
-        # lui seul, qui fait tenir le fond d'un seul tenant.
-        for i, x in enumerate(range(-STUD_PITCH_LDU, width, 2 * STUD_PITCH_LDU)):
-            for j, y in enumerate(range(-2 * STUD_PITCH_LDU, depth, 4 * STUD_PITCH_LDU)):
-                add(
-                    f"S1_{i}_{j}",
-                    SUBSTRATE_DESIGN,
-                    (x, y, PLATE_HEIGHT_LDU),
-                    substrate_color,
-                )
+        # lui seul, qui fait tenir le fond d'un seul tenant. Un pavage sans
+        # decalage, ou decale sur un seul axe, se scinde en bandes disjointes —
+        # H5 le voit.
+        _paver(add, "S1", -1, -2, studs_x, studs_y, PLATE_HEIGHT_LDU, substrate_color)
         tile_z = 2 * PLATE_HEIGHT_LDU
 
     # Derniere couche : la mosaique. La ligne 0 de l'image est en haut, donc au

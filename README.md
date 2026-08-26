@@ -57,6 +57,7 @@ pytest test_bfk001_conformance.py       # propriétés, sur tirages aléatoires
 pytest test_bfk001_lego_art.py          # mosaïque : ce que le noyau accepte et refuse
 pytest test_bfk001_pipeline.py          # photo → modèle → liste de course → notice
 pytest test_bfk001_booklet.py           # structure du PDF, rendu des pages, ordre vérifié
+pytest test_bfk001_substrat.py          # emprise exacte du fond et connexité, 1521 formats
 ```
 
 Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
@@ -290,6 +291,27 @@ des paires ne se recouvrent pas.
 vérifie donc l'**ordre de première entrée** dans chaque autorité de la chaîne,
 et qu'aucune n'est franchie deux fois (`geometric_relation`, `solid_overlap`,
 `collision_status` : exactement un appel chacune).
+
+---
+
+## Le fond de la mosaïque
+
+Deux couches de plates 2×4 croisées, **rognées à l'emprise exacte de l'œuvre**.
+Sans rognage, la couche décalée dépasse d'un tenon en x et de deux en y sur
+chaque bord : l'œuvre finie porte un liséré de plate grise nue.
+
+Le rognage n'est pas gratuit. Au bord, une cellule se réduit parfois à un tenon
+de large, et une plate 1×2 n'enjambe un joint de la couche du dessous — aux
+multiples de 4 tenons — que si elle commence sur un tenon **impair**. Les
+cellules de la couche décalée commencent à 4k+2, donc toujours sur un tenon
+pair : leurs plates s'arrêtent pile sur les joints au lieu de les enjamber, et
+le fond se scinde en bandes indépendantes. Une plate 1×1 en tête re-phase la
+colonne.
+
+Ce n'est pas une preuve, c'est une vérification : `test_bfk001_substrat.py`
+balaie les 1521 formats de 2×2 à 40×40 et vérifie que le fond couvre exactement
+l'emprise et reste d'un seul tenant. Le détail des deux variantes qui ont échoué
+est en § 5.22 du registre.
 
 ---
 

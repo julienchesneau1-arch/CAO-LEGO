@@ -355,7 +355,7 @@ non vérifié serait contraire à tout le reste.
 
 | Substrat | Pièces de fond (48×48) | Verdict du noyau |
 |---|---:|---|
-| `crossed` — deux couches de plates 2×4 croisées | 613 | **0 violation** : l'objet tient tout seul |
+| `crossed` — deux couches de plates 2×4 croisées, rognées | 657 | **0 violation** : l'objet tient tout seul |
 | `panels` — plates 16×16, celles des sets officiels | 9 | **2056 violations H5** : neuf îlots séparés |
 
 Soixante-huit fois moins de pièces, et un objet en neuf morceaux. Les sets LEGO
@@ -562,7 +562,7 @@ extrême où une seule ligne ne tiendrait pas — mosaïque très large et très
 bruitée —, la lecture continue sur une page de suite plutôt que d'être tronquée.
 Tronquer aurait perdu des tuiles silencieusement.
 
-### 5.22 Le substrat déborde de l'œuvre — défaut mesuré, non corrigé ici
+### 5.22 Le substrat débordait de l'œuvre — et le corriger a cassé le fond
 
 Rendre la couche de fond a révélé autre chose. Pour une mosaïque 48×48 :
 
@@ -578,8 +578,43 @@ pièces. Le décalage est nécessaire ; le débordement ne l'est pas : les cellu
 de bord peuvent être remplies par des plates plus courtes (2×2, 2×3, 1×2, 1×1),
 toutes au catalogue.
 
-Non corrigé dans le même travail que la notice, pour que les deux restent
-séparables. Consigné ici pour ne pas être oublié.
+**Corrigé — mais pas du premier coup, et l'échec est plus instructif que le
+correctif.**
+
+Premier essai : rogner les cellules qui débordent et remplir le rectangle
+restant de plates plus courtes. Emprise exacte, et **H5 refuse le modèle pour
+toutes les tailles impaires**. Cause : au coin, les deux couches se réduisent
+chacune à une plate 1×1, superposées ; une 1×1 ne chevauche rien, donc elle ne
+relie rien, et les trois pièces — plate du bas, plate du haut, tuile — forment
+une tour détachée du reste.
+
+Deuxième essai : fondre un reste d'un seul tenon dans la cellule voisine, pour
+n'avoir plus aucune cellule de largeur 1. **Pire : H5 refuse *toutes* les
+tailles.** Fondre replace les plates sur la phase de la couche du dessous. Or
+c'est le **décalage** qui fait tenir le fond : sans lui, chaque colonne de la
+couche 0 n'est reliée qu'à elle-même, et le fond se scinde en bandes
+indépendantes. On ne touche pas à la phase du décalage.
+
+Correctif retenu : garder le réseau nu, et **phaser la décomposition des
+colonnes d'un tenon de large**. Une plate 1×2 n'enjambe un joint de la couche
+du dessous — aux multiples de 4 tenons — que si elle commence sur un tenon
+**impair**. Les cellules de la couche décalée commencent à 4k+2, donc toujours
+sur un tenon pair : leurs 1×2 s'arrêtent pile sur les joints au lieu de les
+enjamber. Une 1×1 en tête re-phase la colonne, et tout le reste enjambe.
+
+| Variante | Échecs sur 1521 formats (2×2 à 40×40) |
+|---|---:|
+| Réseau nu, 1×1 en fin de colonne | 507 |
+| Réseau nu, 1×1 en tête si profondeur impaire | 59 |
+| Fusion des restes | 1222 |
+| **Réseau nu, 1×1 en tête selon la phase absolue** | **0** |
+
+Vérifié ensuite sur les six invariants du noyau pour toutes les tailles de 2×2
+à 33×33, plus 40×40 et 48×48 : emprise exacte, zéro violation. Coût : 657
+pièces de fond au lieu de 625 à emprise égale — et plus de liséré.
+
+C'est une vérification **exhaustive sur le domaine praticable**, pas une preuve.
+Elle est écrite comme telle.
 
 ---
 
@@ -638,7 +673,6 @@ et c'est vérifié à chaque génération.
 - **Pas de tramage** : les dégradés se posterisent. C'est visible sur l'aperçu.
 - **Substrat non optimisé** : un pavage plein de plates 2×4. Un solveur de coût
   choisirait mieux.
-- **Liseré de substrat nu** de 1 à 2 tenons autour de l'œuvre (§ 5.22).
 - **Notice en vue de dessus seulement.** C'est le bon choix pour une mosaïque
   — une perspective n'ajouterait rien à une œuvre plate — mais un assemblage
   en volume demanderait autre chose.
@@ -647,7 +681,7 @@ et c'est vérifié à chaque génération.
 
 1. **Importer LDConfig.ldr et un vrai catalogue** — débloque d'un coup la qualité du rendu et la justesse de la liste de course.
 2. **Tramage Floyd-Steinberg** contraint à la palette — le plus gros gain visuel pour le plus petit effort.
-3. **Supprimer le liseré de substrat** (§ 5.22) — plates plus courtes sur les bords.
+3. **Export BrickLink / Pick-a-Brick** — la liste de course devient commandable en un clic.
 
 ---
 
