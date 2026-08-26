@@ -523,7 +523,102 @@ def _plaques(largeur: int, profondeur: int, depart_y: int) -> List[Tuple[str, in
     return pieces
 
 
-def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color) -> int:
+# Plates de fond utilisables pour la fusion, de la plus grande a la plus petite.
+# Le fond ne se voit pas : sa seule qualite est de tenir. Le paver en 2x4
+# coutait 657 pieces sur une 48x48, soit un tiers du modele pour quelque chose
+# d'invisible. References verifiees contre parts.lst de LDraw.
+PLAQUES_DE_FOND = (
+    ("41539", 8, 8), ("3036", 6, 8), ("3958", 6, 6), ("3035", 4, 8),
+    ("3032", 4, 6), ("3031", 4, 4), ("3034", 2, 8), ("3795", 2, 6),
+    ("3020", 2, 4), ("3021", 2, 3), ("3022", 2, 2), ("3023", 1, 2),
+    ("3024", 1, 1),
+)
+
+
+def _formes_de_fond(disponibles):
+    """(largeur, profondeur, reference), plus grande aire d'abord, deux sens."""
+    formes = set()
+    for design, a, b in disponibles:
+        formes.add((a, b, design))
+        formes.add((b, a, design))
+    return sorted(formes, key=lambda f: (-(f[0] * f[1]), -min(f[0], f[1])))
+
+
+def _fusionner_plaques(poses, disponibles):
+    """Fusionne des plates VOISINES en plates plus grandes.
+
+    Le theoreme qui rend l'operation sure : contracter deux sommets d'un graphe
+    connexe laisse un graphe connexe. Fusionner des plates DEJA POSEES revient
+    exactement a contracter deux sommets du graphe de liaison — donc le fond ne
+    peut pas se scinder, quelle que soit la taille de l'oeuvre.
+
+    Repaver a partir de zero avec de grandes plates ne marche pas, et la mesure
+    dit precisement pourquoi. Un reseau grossier 8x8 decale de moitie tient
+    TOUJOURS tant qu'on le regarde au niveau du reseau : zero echec sur 441
+    formats. Mais les cellules rognees du bord ne sont pas des pieces reelles —
+    un rectangle 3x7 n'existe pas — et il faut les decouper en plates du
+    catalogue. C'est cette decoupe qui realigne les joints sur ceux de la
+    couche du dessous : 294 formats sur 441 se scindent alors.
+
+    La fusion ne cree jamais de joint nouveau. Elle ne peut donc rien
+    realigner, et le probleme ne se pose pas.
+
+    `poses` : liste de (x, y, largeur, profondeur, reference), en tenons.
+    """
+    proprietaire: Dict[Tuple[int, int], int] = {}
+    vivantes = list(poses)
+    for index, (x, y, w, h, _) in enumerate(vivantes):
+        for j in range(h):
+            for i in range(w):
+                proprietaire[(x + i, y + j)] = index
+
+    for largeur, profondeur, design in _formes_de_fond(disponibles):
+        for index in range(len(vivantes)):
+            piece = vivantes[index]
+            if piece is None:
+                continue
+            x0, y0 = piece[0], piece[1]
+            if piece[2] == largeur and piece[3] == profondeur:
+                continue
+            couverts = set()
+            entier = True
+            for j in range(profondeur):
+                for i in range(largeur):
+                    autre = proprietaire.get((x0 + i, y0 + j))
+                    if autre is None:
+                        entier = False
+                        break
+                    couverts.add(autre)
+                if not entier:
+                    break
+            if not entier or len(couverts) < 2:
+                continue
+            # Aucune des plates concernees ne doit deborder du rectangle vise :
+            # sinon la fusion n'est plus une contraction, elle est un repavage.
+            aire = 0
+            for autre in couverts:
+                voisine = vivantes[autre]
+                if voisine is None:
+                    entier = False
+                    break
+                vx, vy, vw, vh, _ = voisine
+                if vx < x0 or vy < y0 or vx + vw > x0 + largeur or vy + vh > y0 + profondeur:
+                    entier = False
+                    break
+                aire += vw * vh
+            if not entier or aire != largeur * profondeur:
+                continue
+            for autre in couverts:
+                vivantes[autre] = None
+            vivantes[index] = (x0, y0, largeur, profondeur, design)
+            for j in range(profondeur):
+                for i in range(largeur):
+                    proprietaire[(x0 + i, y0 + j)] = index
+    return [piece for piece in vivantes if piece is not None]
+
+
+def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color,
+           fusion: bool = True) -> int:
     """Pave l'emprise de l'oeuvre de plates sur un reseau ancre ailleurs.
 
     Sans le rognage, la couche decalee depasse de un tenon en x et de deux en y
@@ -531,18 +626,30 @@ def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color) -> int:
     et paye en pieces. Mesure sur une 48x48 : substrat x -20..980 pour une
     mosaique x 0..960.
     """
-    pose = 0
+    poses = []
     for x0, x1 in _decouper_axe(ancre_x, 2, studs_x):
         for y0, y1 in _decouper_axe(ancre_y, 4, studs_y):
             for design, dx, dy in _plaques(x1 - x0, y1 - y0, y0):
-                add(
-                    f"{prefixe}_{pose}",
-                    design,
-                    ((x0 + dx) * STUD_PITCH_LDU, (y0 + dy) * STUD_PITCH_LDU, z),
-                    color,
+                piece = CATALOG[design]
+                poses.append(
+                    (x0 + dx, y0 + dy, piece.studs_x, piece.studs_y, design)
                 )
-                pose += 1
-    return pose
+    if fusion:
+        poses = _fusionner_plaques(poses, PLAQUES_DE_FOND)
+
+    for pose, (x, y, largeur, profondeur, design) in enumerate(poses):
+        # La fusion peut avoir tourne une plate : on vise le coin, pas l'origine.
+        piece = CATALOG[design]
+        tournee = (piece.studs_x, piece.studs_y) != (largeur, profondeur)
+        placed, geometry, instance = place_at(
+            f"{prefixe}_{pose}",
+            design,
+            (x * STUD_PITCH_LDU, y * STUD_PITCH_LDU, z),
+            orientation=ROT_Z_90 if tournee else None,
+            color_id=color,
+        )
+        add(placed, geometry, instance)
+    return len(poses)
 
 
 def build(
@@ -601,13 +708,13 @@ def build(
     geometries: Dict[str, CollisionGeometry] = {}
     instances: Dict[str, PartInstance] = {}
 
+    def enregistrer(placed, geometry, instance) -> None:
+        parts[placed.part_id] = placed
+        geometries[placed.part_id] = geometry
+        instances[placed.part_id] = instance
+
     def add(part_id: str, design_id: str, translation, color: int) -> None:
-        placed, geometry, instance = place(
-            part_id, design_id, translation, color_id=color
-        )
-        parts[part_id] = placed
-        geometries[part_id] = geometry
-        instances[part_id] = instance
+        enregistrer(*place(part_id, design_id, translation, color_id=color))
 
     if substrate == "panels":
         if studs_x % 16 or studs_y % 16:
@@ -623,14 +730,17 @@ def build(
         tile_z = PLATE_HEIGHT_LDU
     else:
         # Couche 0 : pavage de plates 2x4, a partir de l'origine.
-        _paver(add, "S0", 0, 0, studs_x, studs_y, 0, substrate_color)
+        _paver(enregistrer, "S0", 0, 0, studs_x, studs_y, 0, substrate_color)
 
         # Couche 1 : meme pavage decale d'un tenon en x et de deux en y. Chaque
         # plate y chevauche quatre plates de la couche 0 : c'est ce decalage, et
         # lui seul, qui fait tenir le fond d'un seul tenant. Un pavage sans
         # decalage, ou decale sur un seul axe, se scinde en bandes disjointes —
         # H5 le voit.
-        _paver(add, "S1", -1, -2, studs_x, studs_y, PLATE_HEIGHT_LDU, substrate_color)
+        _paver(
+            enregistrer, "S1", -1, -2, studs_x, studs_y,
+            PLATE_HEIGHT_LDU, substrate_color,
+        )
         tile_z = 2 * PLATE_HEIGHT_LDU
 
     # Derniere couche : la mosaique. La ligne 0 de l'image est en haut, donc au

@@ -15,20 +15,18 @@ from bfk001.lego import STUD_PITCH_LDU
 from bfk001.mosaic import _decouper_axe, _paver, _plaques
 
 
-def pave(ancre_x, ancre_y, studs_x, studs_y):
+def pave(ancre_x, ancre_y, studs_x, studs_y, fusion=True):
     """Rectangles (en tenons) poses par _paver, sans passer par le noyau."""
     poses = []
     _paver(
-        lambda part_id, design, translation, color: poses.append(
-            (design, translation[0] // STUD_PITCH_LDU, translation[1] // STUD_PITCH_LDU)
-        ),
-        "X", ancre_x, ancre_y, studs_x, studs_y, 0, 71,
+        lambda placed, geometry, instance: poses.append(placed.aabb),
+        "X", ancre_x, ancre_y, studs_x, studs_y, 0, 71, fusion,
     )
-    rectangles = []
-    for design, x, y in poses:
-        piece = CATALOG[design]
-        rectangles.append((x, y, x + piece.studs_x, y + piece.studs_y))
-    return rectangles
+    return [
+        (b.min.x // STUD_PITCH_LDU, b.min.y // STUD_PITCH_LDU,
+         b.max.x // STUD_PITCH_LDU, b.max.y // STUD_PITCH_LDU)
+        for b in poses
+    ]
 
 
 def recouvre_exactement(rectangles, studs_x, studs_y):
@@ -199,3 +197,117 @@ class TestFond(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestFusionDesPlaques(unittest.TestCase):
+    """Fusionner des plates POSEES ne peut pas scindre le fond. Repaver, si."""
+
+    def couches(self, studs_x, studs_y, fusion=True):
+        return (
+            pave(0, 0, studs_x, studs_y, fusion),
+            pave(-1, -2, studs_x, studs_y, fusion),
+        )
+
+    def test_la_fusion_ne_change_ni_l_emprise_ni_la_connexite(self):
+        # Le theoreme : contracter deux sommets d'un graphe connexe laisse un
+        # graphe connexe. Fusionner des plates deja posees EST une contraction.
+        for studs_x in range(2, 33):
+            for studs_y in (studs_x, studs_x + 1):
+                brut = self.couches(studs_x, studs_y, fusion=False)
+                fondu = self.couches(studs_x, studs_y, fusion=True)
+                for couche in fondu:
+                    self.assertTrue(
+                        recouvre_exactement(couche, studs_x, studs_y),
+                        (studs_x, studs_y),
+                    )
+                self.assertTrue(fond_connexe(*fondu), (studs_x, studs_y))
+                self.assertLessEqual(
+                    len(fondu[0]) + len(fondu[1]), len(brut[0]) + len(brut[1])
+                )
+
+    def test_le_gain_est_massif_sur_une_grande_oeuvre(self):
+        brut = self.couches(48, 48, fusion=False)
+        fondu = self.couches(48, 48, fusion=True)
+        avant, apres = len(brut[0]) + len(brut[1]), len(fondu[0]) + len(fondu[1])
+        self.assertLess(apres, avant * 0.25, f"{avant} -> {apres}")
+
+    def test_toutes_les_references_employees_existent_au_catalogue(self):
+        # Une plate inventee passerait la geometrie et serait incommandable.
+        from bfk001.mosaic import PLAQUES_DE_FOND
+
+        for design, largeur, profondeur in PLAQUES_DE_FOND:
+            self.assertIn(design, CATALOG, design)
+            piece = CATALOG[design]
+            self.assertEqual(
+                sorted((piece.studs_x, piece.studs_y)),
+                sorted((largeur, profondeur)),
+                design,
+            )
+            self.assertTrue(piece.has_studs, f"{design} doit porter des tenons")
+
+    def test_c_est_la_decoupe_des_bords_qui_scinde_pas_le_reseau(self):
+        # Ce que ce test etablit, apres qu'une premiere version a affirme le
+        # contraire : un reseau grossier 8x8 decale de moitie tient TOUJOURS
+        # tant qu'on le regarde au niveau du reseau. Ce qui le scinde, c'est
+        # que les cellules rognees du bord ne sont pas des pieces reelles et
+        # doivent etre decoupees en plates du catalogue — et cette decoupe
+        # realigne les joints sur ceux de la couche du dessous.
+        #
+        # C'est la raison d'etre de la fusion : elle ne cree jamais de joint
+        # nouveau, donc elle ne peut pas realigner quoi que ce soit.
+        def repaver(ancre_x, ancre_y, pas, studs_x, studs_y):
+            rects = []
+            x = ancre_x
+            while x < studs_x:
+                y = ancre_y
+                while y < studs_y:
+                    x0, x1 = max(x, 0), min(x + pas, studs_x)
+                    y0, y1 = max(y, 0), min(y + pas, studs_y)
+                    if x1 > x0 and y1 > y0:
+                        rects.append((x0, y0, x1, y1))
+                    y += pas
+                x += pas
+            return rects
+
+        # On ne choisit pas un format qui arrange : on balaie et on compte.
+        formats = [(x, y) for x in range(4, 25) for y in range(4, 25)]
+        au_reseau = 0
+        for studs_x, studs_y in formats:
+            bas = repaver(0, 0, 8, studs_x, studs_y)
+            haut = repaver(-4, -4, 8, studs_x, studs_y)
+            self.assertTrue(recouvre_exactement(bas, studs_x, studs_y))
+            self.assertTrue(recouvre_exactement(haut, studs_x, studs_y))
+            if not fond_connexe(bas, haut):
+                au_reseau += 1
+        self.assertEqual(
+            au_reseau, 0,
+            "le reseau grossier tient toujours : ce n'est pas lui le probleme",
+        )
+        # Une fois les cellules de bord decoupees en vraies plates, en
+        # revanche, une large part des formats se scinde.
+        def decouper(rects, studs_x, studs_y):
+            sortie = []
+            for x0, y0, x1, y1 in rects:
+                for design, dx, dy in _plaques(x1 - x0, y1 - y0, y0):
+                    piece = CATALOG[design]
+                    sortie.append(
+                        (x0 + dx, y0 + dy,
+                         x0 + dx + piece.studs_x, y0 + dy + piece.studs_y)
+                    )
+            return sortie
+
+        scindes = 0
+        for studs_x, studs_y in formats:
+            bas = decouper(repaver(0, 0, 8, studs_x, studs_y), studs_x, studs_y)
+            haut = decouper(repaver(-4, -4, 8, studs_x, studs_y), studs_x, studs_y)
+            if not fond_connexe(bas, haut):
+                scindes += 1
+        self.assertGreater(
+            scindes, len(formats) // 4,
+            f"seulement {scindes}/{len(formats)} scindes apres decoupe",
+        )
+        # Et la fusion, elle, tient sur ces memes formats.
+        for studs_x, studs_y in formats[::17]:
+            self.assertTrue(
+                fond_connexe(*self.couches(studs_x, studs_y)), (studs_x, studs_y)
+            )

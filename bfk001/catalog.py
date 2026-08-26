@@ -93,6 +93,18 @@ _DEFINITIONS = (
     PartDefinition("3022", "Plate 2 x 2", 2, 2, PLATE_HEIGHT_LDU),
     PartDefinition("3021", "Plate 2 x 3", 2, 3, PLATE_HEIGHT_LDU),
     PartDefinition("3020", "Plate 2 x 4", 2, 4, PLATE_HEIGHT_LDU),
+    # Grandes plates de fond. Le substrat ne se voit pas : sa seule qualite est
+    # de tenir. Le paver en 2x4 coutait 657 pieces sur une 48x48, soit un tiers
+    # du modele pour quelque chose d'invisible. References verifiees une a une
+    # contre parts.lst de la bibliotheque LDraw officielle.
+    PartDefinition("3795", "Plate 2 x 6", 2, 6, PLATE_HEIGHT_LDU),
+    PartDefinition("3034", "Plate 2 x 8", 2, 8, PLATE_HEIGHT_LDU),
+    PartDefinition("3031", "Plate 4 x 4", 4, 4, PLATE_HEIGHT_LDU),
+    PartDefinition("3032", "Plate 4 x 6", 4, 6, PLATE_HEIGHT_LDU),
+    PartDefinition("3035", "Plate 4 x 8", 4, 8, PLATE_HEIGHT_LDU),
+    PartDefinition("3958", "Plate 6 x 6", 6, 6, PLATE_HEIGHT_LDU),
+    PartDefinition("3036", "Plate 6 x 8", 6, 8, PLATE_HEIGHT_LDU),
+    PartDefinition("41539", "Plate 8 x 8", 8, 8, PLATE_HEIGHT_LDU),
     PartDefinition("3070b", "Tile 1 x 1 with Groove", 1, 1, PLATE_HEIGHT_LDU, False),
     # Tuiles longues : elles couvrent plusieurs tenons d'un coup. Le rendu est
     # identique au tenon pres — une 1x4 rouge montre les memes quatre tenons

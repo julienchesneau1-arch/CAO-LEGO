@@ -435,6 +435,25 @@ def row_runs(mosaic: Mosaic, row: int) -> Tuple[Tuple[int, LegoColor], ...]:
     )
 
 
+def _lire_ligne(mosaic: Mosaic, row: int, codes: Mapping[int, str]) -> str:
+    """Une ligne en toutes lettres, pieces identiques consecutives regroupees.
+
+    Depuis la fusion, un ciel uni donne neuf tuiles 1x4 de suite, et la lecture
+    brute repetait « 4B · 4B · 4B · 4B · 4B · 4B · 4B · 4B · 4B ». Personne ne
+    compte neuf occurrences identiques sans se tromper : on ecrit « 9x4B ».
+    """
+    morceaux: List[Tuple[int, str]] = []
+    for longueur, color in row_runs(mosaic, row):
+        piece = f"{longueur}{codes[color.code]}"
+        if morceaux and morceaux[-1][1] == piece:
+            morceaux[-1] = (morceaux[-1][0] + 1, piece)
+        else:
+            morceaux.append((1, piece))
+    return " · ".join(
+        piece if compte == 1 else f"{compte}x{piece}" for compte, piece in morceaux
+    )
+
+
 def color_codes(mosaic: Mosaic) -> Dict[int, str]:
     """Couleur -> code court, la plus employee en premier.
 
@@ -710,9 +729,12 @@ def _pages_substrat(
         for part_id in couche:
             design = mosaic.instances[part_id].design_id
             references[design] = references.get(design, 0) + 1
+        # Trie par quantite decroissante et coupe : la liste des references
+        # d'une couche de fond fusionnee tient rarement sur une ligne, et une
+        # ligne qui deborde de la page est une ligne perdue.
         detail = " · ".join(
             f"{n} x {CATALOG[d].name if d in CATALOG else d}"
-            for d, n in sorted(references.items())
+            for d, n in sorted(references.items(), key=lambda kv: (-kv[1], kv[0]))
         )
         textes: List[TextLine] = [
             (MARGE, A4_HEIGHT - 60, CORPS_TITRE * 0.75,
@@ -723,11 +745,17 @@ def _pages_substrat(
             (MARGE, A4_HEIGHT - 93, CORPS_LIGNE,
              "Le decalage entre les couches est ce qui fait tenir le fond.",
              False),
-            (MARGE, 128.0, CORPS_TEXTE, f"{len(couche)} pieces : {detail}", False),
         ]
+        y = 128.0
+        largeur = A4_WIDTH - 2 * MARGE
+        textes.append((MARGE, y, CORPS_TEXTE, f"{len(couche)} pieces :", True))
+        for morceau in _couper(detail, CORPS_TEXTE, largeur):
+            y -= INTERLIGNE + 1.0
+            textes.append((MARGE, y, CORPS_TEXTE, morceau, False))
         if rang > 1:
-            textes.append((MARGE, 112.0, CORPS_LIGNE,
-                           "En pale : la couche precedente, deja posee.", False))
+            textes.append((MARGE, y - INTERLIGNE - 4.0, CORPS_LIGNE,
+                           "En clair : les joints de la couche precedente. Chaque "
+                           "plate doit les enjamber.", False))
         pages.append((PdfPage(tuple(textes), (), vue, cadre), couche))
         deja = list(deja) + list(couche)
     return pages
@@ -764,14 +792,7 @@ def _lecture(
     return [
         (
             row,
-            _couper(
-                " · ".join(
-                    f"{compte}{codes[color.code]}"
-                    for compte, color in row_runs(mosaic, row)
-                ),
-                CORPS_LIGNE,
-                largeur,
-            ),
+            _couper(_lire_ligne(mosaic, row, codes), CORPS_LIGNE, largeur),
         )
         for row in rows
     ]

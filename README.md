@@ -410,7 +410,16 @@ au lieu de 80 coûtent 0,09 ΔE de justesse tonale — imperceptible — et
 
 ## Le fond de la mosaïque
 
-Deux couches de plates 2×4 croisées, **rognées à l'emprise exacte de l'œuvre**.
+Deux couches de plates croisées, **rognées à l'emprise exacte de l'œuvre**, puis
+**fusionnées en grandes plates** — 128 pièces au lieu de 657 sur une 48×48, pour
+un fond que personne ne verra.
+
+La fusion est sûre par construction, pas par balayage : contracter deux sommets
+d'un graphe connexe laisse un graphe connexe, et fusionner des plates déjà
+posées **est** une contraction. Repaver de zéro, en revanche, scinde le fond —
+non pas à cause du réseau, qui tient toujours, mais parce que les cellules
+rognées du bord doivent être découpées en pièces réelles, et cette découpe
+réaligne les joints sur ceux de la couche du dessous (294 formats sur 441).
 Sans rognage, la couche décalée dépasse d'un tenon en x et de deux en y sur
 chaque bord : l'œuvre finie porte un liséré de plate grise nue.
 

@@ -1046,6 +1046,66 @@ suite de couleurs elle-même.
 
 ---
 
+### 5.26 Le fond coûtait un tiers du modèle pour quelque chose d'invisible
+
+657 plates 2×4 sur une 48×48, soit 36 % des pièces — pour un substrat que
+personne ne verra jamais. Sa seule qualité est de tenir.
+
+Premier réflexe : repaver en grandes plates. Un réseau 8×8 décalé de moitié
+donne 85 pièces au lieu de 613, couvre exactement… et **scinde le fond sur 992
+formats sur 1521**. Même piège qu'au § 5.22.
+
+La mesure dit précisément où est le piège, et ce n'est pas où je l'avais dit
+d'abord. Au niveau du **réseau**, le pavage grossier tient toujours : zéro
+échec sur 441 formats. Mais une cellule rognée du bord n'est pas une pièce
+réelle — un rectangle 3×7 n'existe pas — et il faut la découper en plates du
+catalogue. **C'est cette découpe qui réaligne les joints** sur ceux de la
+couche du dessous : 294 formats sur 441 se scindent alors. La première version
+de ce paragraphe accusait le réseau ; le test l'a démentie.
+
+D'où la solution, qui repose sur un théorème et non sur un balayage :
+
+> Contracter deux sommets d'un graphe connexe laisse un graphe connexe.
+
+Fusionner des plates **déjà posées** est exactement une contraction du graphe
+de liaison. Le fond ne peut donc pas se scinder, quelle que soit la taille de
+l'œuvre — ce n'est plus une vérification empirique, c'est une garantie. Et la
+fusion ne crée jamais de joint nouveau, donc elle ne peut rien réaligner.
+
+| Côté | Fond avant | Fond après |
+|---:|---:|---:|
+| 16×16 | 105 | 28 |
+| 32×32 | 325 | 70 |
+| 48×48 | **657** | **128** |
+| 64×64 | 1105 | 202 |
+
+Vérifié sur tous les formats de 2×2 à 48×48 plus 56 et 64 : emprise exacte,
+fond d'un seul tenant, zéro violation sur les six invariants.
+
+### 5.27 Bilan de la passe d'optimisation
+
+Sur la même photo, en 48×48 :
+
+| | Avant | Après |
+|---|---:|---:|
+| Pièces totales | 2961 | **1300** |
+| Tuiles de mosaïque | 2304 | 1172 |
+| Plates de fond | 657 | 128 |
+| Écart par tuile | 23,9 ΔE | **8,4 ΔE** |
+| Justesse tonale | — | 4,4 moyen, 8,5 au pire |
+
+**−56 % de pièces et un écart divisé par près de trois**, sans qu'aucun tenon
+de l'œuvre ne change de couleur par rapport à ce que la palette permet.
+
+Trois défauts trouvés en écrivant les tests de cette passe, tous des
+affirmations de ma part que la mesure a démenties : le réseau accusé à la place
+de la découpe (§ 5.26), le proxy de palette qui optimisait le mauvais critère
+(§ 5.25), et le générateur aléatoire du test de conformité qui tirait à
+l'aveugle puis renonçait — inoffensif tant que le catalogue ne contenait que
+de petites pièces, muet dès qu'on y a ajouté des plates 8×8.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

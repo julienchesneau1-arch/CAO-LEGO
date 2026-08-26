@@ -350,7 +350,11 @@ def test_panel_substrate_is_refused_because_it_does_not_hold():
     substrat_croise = croise.part_count - croise.tile_count
     substrat_panneaux = panneaux.part_count - panneaux.tile_count
     assert substrat_panneaux == 4, "32x32 tenons = quatre plates 16x16"
-    assert substrat_croise > 20 * substrat_panneaux, "le substrat croise est cher"
+    # Le croise reste plus cher — il faut deux couches qui s'enjambent —, mais
+    # depuis la fusion des plates l'ecart n'a plus rien d'un facteur vingt :
+    # 70 pieces contre 4 sur une 32x32, la ou le pavage en 2x4 en demandait 325.
+    assert substrat_croise > 4 * substrat_panneaux, "le substrat croise reste plus cher"
+    assert substrat_croise < 30 * substrat_panneaux, "la fusion doit avoir joue"
 
     for mosaique, attendu in ((croise, True), (panneaux, False)):
         etat = bfk.assemble(

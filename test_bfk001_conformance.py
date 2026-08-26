@@ -75,16 +75,25 @@ def random_state(rng, part_count):
 
     for index in range(part_count):
         part_id = f"P{index}"
-        design_id = rng.choice(design_ids)
-        definition = bfk.CATALOG[design_id]
         # L'audit H1 est quadratique EN CONNECTEURS, par conception : il ne
         # presume rien de ce qu'il verifie. Une seule plate 16x16 en apporte
         # 512 et suffit a faire exploser le cout. On borne donc l'etat tire,
         # pas la rigueur de l'audit.
-        cout = 2 * definition.studs_x * definition.studs_y
-        if cout > budget:
-            continue
-        budget -= cout
+        #
+        # Le tirage regarde le budget AVANT de choisir. Tirer a l'aveugle puis
+        # renoncer marchait tant que le catalogue etait fait de petites pieces ;
+        # depuis qu'il contient des plates 8x8, l'aveugle renoncait presque a
+        # chaque fois et l'etat tire ne contenait plus assez de liaisons pour
+        # que l'audit ait quoi que ce soit a auditer.
+        abordables = [
+            d for d in design_ids
+            if 2 * bfk.CATALOG[d].studs_x * bfk.CATALOG[d].studs_y <= budget
+        ]
+        if not abordables:
+            break
+        design_id = rng.choice(abordables)
+        definition = bfk.CATALOG[design_id]
+        budget -= 2 * definition.studs_x * definition.studs_y
         height = definition.body_height_ldu
 
         if rng.randrange(3):  # deux fois sur trois : pose alignee sur un site
