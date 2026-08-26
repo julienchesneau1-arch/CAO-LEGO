@@ -307,23 +307,58 @@ class TestCoutDeLaPalette(unittest.TestCase):
         # Une couleur unique ne peut pas battre six couleurs sur le ton.
         self.assertGreater(courbe[0].tonal_mean, courbe[-1].tonal_mean)
 
+    def test_la_palette_entiere_est_candidate(self):
+        # Elle etait absente, et sur un portrait elle se trouve etre a la fois
+        # la plus fidele ET la moins chere en pieces : reduire la palette
+        # elargit les ecarts, ce qui declenche le tramage, ce qui brise les
+        # suites de meme couleur, ce qui multiplie les pieces. Une fonction qui
+        # promet le meilleur cout ne peut pas ignorer ce candidat-la.
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        _, _, reference = bfk.mosaic.cheapest_palette(
+            self.image(), palette, 16, 16, tolerance=0.0, maximum=4
+        )
+        self.assertEqual(len(reference.palette), len(palette))
+
+    def test_le_critere_est_le_cout_pas_la_taille_de_palette(self):
+        # Une palette plus petite n'est pas moins chere par definition. Le
+        # retenu doit etre le moins cher des admissibles, pas le plus petit.
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        image = self.image()
+        courbe = list(bfk.mosaic.palette_cost_curve(image, palette, 16, 16, maximum=6))
+        retenu_palette, retenu, reference = bfk.mosaic.cheapest_palette(
+            image, palette, 16, 16, tolerance=1.0, maximum=6
+        )
+        admissibles = [
+            c for c in courbe + [reference]
+            if c.per_tile <= reference.per_tile + 1.0
+            and c.tonal_mean <= reference.tonal_mean + 1.0
+        ]
+        self.assertEqual(
+            (retenu.tiles, retenu.lots),
+            min((c.tiles, c.lots) for c in admissibles),
+        )
+
     def test_le_choix_economique_dit_ce_qu_il_abandonne(self):
         palette = bfk.PROVISIONAL_PALETTE.solids_only()
-        petite, retenu, meilleur = bfk.mosaic.cheapest_palette(
+        _, retenu, reference = bfk.mosaic.cheapest_palette(
             self.image(), palette, 16, 16, tolerance=0.5, maximum=6
         )
-        self.assertLessEqual(len(petite), len(meilleur.palette))
-        self.assertLessEqual(retenu.tonal_mean, meilleur.tonal_mean + 0.5 + 1e-9)
-        self.assertLessEqual(retenu.lots, meilleur.lots)
+        # Le contrat : ni l'ecart par tuile ni la justesse tonale ne se
+        # degradent de plus que la tolerance, et le cout ne monte pas.
+        self.assertLessEqual(retenu.per_tile, reference.per_tile + 0.5 + 1e-9)
+        self.assertLessEqual(retenu.tonal_mean, reference.tonal_mean + 0.5 + 1e-9)
+        self.assertLessEqual((retenu.tiles, retenu.lots),
+                             (reference.tiles, reference.lots))
 
     def test_une_tolerance_plus_large_ne_coute_jamais_plus_cher(self):
         palette = bfk.PROVISIONAL_PALETTE.solids_only()
-        tailles = [
-            len(bfk.mosaic.cheapest_palette(
-                self.image(), palette, 16, 16, tolerance=t, maximum=6)[0])
-            for t in (0.1, 1.0, 5.0)
+        couts = [
+            bfk.mosaic.cheapest_palette(
+                self.image(), palette, 16, 16, tolerance=t, maximum=6)[1]
+            for t in (0.0, 1.0, 8.0)
         ]
-        self.assertEqual(tailles, sorted(tailles, reverse=True), tailles)
+        pieces = [c.tiles for c in couts]
+        self.assertEqual(pieces, sorted(pieces, reverse=True), pieces)
 
     def test_tolerance_negative_refusee(self):
         with self.assertRaises(ValueError):

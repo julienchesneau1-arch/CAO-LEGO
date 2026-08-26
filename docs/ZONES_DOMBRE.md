@@ -1253,6 +1253,52 @@ tramée — et deux tiers de ce travail étaient identiques.
 
 **2,17 s → 0,89 s**, à résultat identique.
 
+### 5.38 `cheapest_palette` ne minimisait pas le coût
+
+Sur le portrait, `--couleurs auto` retenait 7 couleurs et **1458 tuiles** — alors
+que la palette entière n'en demandait que **776**. La fonction censée réduire le
+coût le doublait.
+
+La chaîne causale, mesurée : moins de couleurs ⟹ écarts à la palette plus grands
+⟹ le tramage automatique se déclenche ⟹ la diffusion d'erreur brise les suites
+de même couleur ⟹ la fusion des tuiles ne rend plus rien ⟹ deux fois plus de
+pièces. Trois décisions correctes prises séparément, un résultat absurde une
+fois enchaînées.
+
+| Couleurs | ΔE/tuile | Ton moyen | Tuiles | Lots |
+|---:|---:|---:|---:|---:|
+| 4 | 9,04 | 8,42 | 687 | 19 |
+| 7 | 8,58 | 4,75 | 1458 | 28 |
+| 10 | 8,49 | 4,65 | 1491 | 34 |
+| **80** | **7,89** | 7,01 | **776** | 43 |
+
+Trois défauts distincts, chacun révélé par une mesure qui contredisait le code :
+
+1. **La palette entière n'était pas candidate.** Elle est ici la plus fidèle
+   *et* la moins chère en pièces. Une fonction qui promet le meilleur coût ne
+   peut pas ignorer ce candidat-là.
+2. **Le critère était la taille de la palette, pas le coût.** L'hypothèse
+   implicite — « plus petite palette = moins cher » — est fausse dès que le
+   tramage entre en jeu.
+3. **La référence était le meilleur de chaque critère pris séparément.** Or les
+   deux critères sont optimisés par des palettes différentes (80 couleurs pour
+   l'écart par tuile, 10 pour la justesse tonale) : exiger d'être à 0,5 ΔE du
+   meilleur des deux ne laissait, sur ce portrait, **aucune candidate
+   admissible**.
+
+Corrigé : la référence est la palette entière, une candidate est admissible si
+elle ne dégrade ni l'un ni l'autre critère de plus que la tolérance, et parmi
+les admissibles on prend la **moins chère** — pièces d'abord, lots ensuite.
+
+Résultat, tolérance 1,0 : le paysage descend à 12 couleurs (−10 % de pièces,
+−19 % de lots, 0,61 ΔE tonal abandonné), le portrait **garde la palette
+entière** parce que rien de moins cher ne vaut le coup. Une fonction
+d'optimisation qui répond « ne changez rien » quand c'est vrai vaut mieux
+qu'une qui trouve toujours quelque chose à couper.
+
+*(Rectificatif : le message du commit précédent annonçait 193 tests verts, il y
+en avait 192.)*
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :

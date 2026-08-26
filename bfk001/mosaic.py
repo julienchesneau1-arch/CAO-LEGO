@@ -944,20 +944,31 @@ def palette_cost_curve(
     pixels = [reduite.pixel(x, y) for y in range(studs_y) for x in range(studs_x)]
     courbe = palette.subset_curve(pixels, maximum)
 
-    sortie = []
-    for rang in range(1, len(courbe) + 1):
-        sous = Palette(couleur for couleur, _ in courbe[:rang])
-        grille = quantize(image, sous, studs_x, studs_y, **quantize_options)
-        modele = build(grille, tiles=tiles)
-        par_tuile = fidelity(grille, image, 1)[0]
-        tonal_moyen, tonal_pire = fidelity(grille, image, 4)
-        sortie.append(
-            PaletteCost(
-                sous, par_tuile, tonal_moyen, tonal_pire, modele.tile_count,
-                len(bill_of_materials(modele.instances, modele.placed_parts)),
-            )
+    return tuple(
+        _mesurer_palette(
+            image,
+            Palette(couleur for couleur, _ in courbe[:rang]),
+            studs_x, studs_y, tiles, quantize_options,
         )
-    return tuple(sortie)
+        for rang in range(1, len(courbe) + 1)
+    )
+
+
+def _mesurer_palette(image, palette, studs_x, studs_y, tiles, options) -> PaletteCost:
+    """Construit la mosaique et mesure ce qu'elle coute et ce qu'elle rend."""
+    from .catalog import bill_of_materials
+
+    grille = quantize(image, palette, studs_x, studs_y, **options)
+    modele = build(grille, tiles=tiles)
+    tonal_moyen, tonal_pire = fidelity(grille, image, 4)
+    return PaletteCost(
+        palette,
+        fidelity(grille, image, 1)[0],
+        tonal_moyen,
+        tonal_pire,
+        modele.tile_count,
+        len(bill_of_materials(modele.instances, modele.placed_parts)),
+    )
 
 
 def cheapest_palette(
@@ -970,25 +981,51 @@ def cheapest_palette(
     tiles: Sequence[str] = TILE_SET_STANDARD,
     **quantize_options,
 ) -> Tuple[Palette, PaletteCost, PaletteCost]:
-    """La plus petite palette qui reste a `tolerance` du meilleur, SUR LES DEUX
-    criteres — ecart par tuile et justesse tonale.
+    """La palette la MOINS CHERE dont le rendu reste proche de la reference.
 
-    Rend aussi la mesure retenue et la meilleure mesure atteignable, pour que
-    l'appelant puisse dire ce qu'il abandonne au lieu de l'affirmer.
+    Trois corrections par rapport a la version precedente, chacune revelee par
+    une mesure qui la contredisait :
+
+    1. La palette ENTIERE fait partie des candidates. Elle etait absente, et
+       sur un portrait elle se trouve etre a la fois la plus fidele et la MOINS
+       chere en pieces — 776 tuiles contre 1458 pour sept couleurs. Reduire la
+       palette elargit les ecarts, ce qui declenche le tramage, ce qui brise
+       les suites de meme couleur, ce qui multiplie les pieces. Une fonction
+       qui promet le meilleur cout ne peut pas ignorer ce candidat-la.
+
+    2. Le critere retenu est le COUT — pieces d'abord, lots ensuite — et non la
+       taille de la palette. Une palette plus petite n'est pas moins chere par
+       definition ; c'etait pourtant l'hypothese implicite.
+
+    3. La reference est la palette entiere, pas le meilleur de chaque critere
+       pris separement. Les deux criteres sont optimises par des palettes
+       differentes : exiger d'etre a `tolerance` du meilleur des DEUX ne
+       laissait, sur un portrait, aucune candidate admissible.
+
+    Une candidate est admissible si elle ne degrade NI l'ecart par tuile NI la
+    justesse tonale de plus de `tolerance` par rapport a la palette entiere.
+    Parmi les admissibles, on prend la moins chere.
     """
     if tolerance < 0:
         raise ValueError("une tolerance est positive")
-    courbe = palette_cost_curve(
-        image, palette, studs_x, studs_y, maximum, tiles, **quantize_options
+    courbe = list(
+        palette_cost_curve(
+            image, palette, studs_x, studs_y, maximum, tiles, **quantize_options
+        )
     )
-    meilleur_tuile = min(c.per_tile for c in courbe)
-    meilleur_tonal = min(c.tonal_mean for c in courbe)
-    reference = min(courbe, key=lambda c: (c.tonal_mean, c.per_tile))
-    for cout in courbe:
-        if (cout.per_tile <= meilleur_tuile + tolerance
-                and cout.tonal_mean <= meilleur_tonal + tolerance):
-            return cout.palette, cout, reference
-    return reference.palette, reference, reference  # pragma: no cover
+    if len(palette) > len(courbe):
+        courbe.append(
+            _mesurer_palette(image, palette, studs_x, studs_y, tiles, quantize_options)
+        )
+    reference = courbe[-1]
+    admissibles = [
+        cout
+        for cout in courbe
+        if cout.per_tile <= reference.per_tile + tolerance
+        and cout.tonal_mean <= reference.tonal_mean + tolerance
+    ]
+    retenu = min(admissibles or [reference], key=lambda c: (c.tiles, c.lots))
+    return retenu.palette, retenu, reference
 
 
 def preview(mosaic: Mosaic, scale: int = 8, seams: bool = False) -> Image:

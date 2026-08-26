@@ -101,7 +101,7 @@ def main() -> int:
              "programme ne connait ni les prix ni les stocks : si vous savez "
              "ce que votre fournisseur a en tuile, dites-le ici et toute "
              "l'optimisation se fera a l'interieur de cette contrainte.")
-    analyseur.add_argument("--tolerance", type=float, default=0.5,
+    analyseur.add_argument("--tolerance", type=float, default=1.0,
                            help="avec --couleurs auto : ecart en delta E qu'on "
                                 "accepte de perdre pour economiser un sachet")
     analyseur.add_argument("--couleurs", default=None,
@@ -172,13 +172,21 @@ def main() -> int:
         palette, retenu, meilleur = bfk.mosaic.cheapest_palette(
             image, palette, options.studs, hauteur, tolerance=options.tolerance
         )
-        print(
-            f"  palette reduite a {len(palette)} couleurs sur {len(complete)} : "
-            f"{retenu.tiles} tuiles et {retenu.lots} lots au lieu de "
-            f"{meilleur.tiles} et {meilleur.lots}, en abandonnant "
-            f"{max(0.0, retenu.tonal_mean - meilleur.tonal_mean):.2f} delta E "
-            "de justesse tonale"
-        )
+        if len(palette) == len(complete):
+            print(
+                f"  palette gardee entiere ({len(complete)} couleurs) : aucune "
+                "reduction ne coute moins cher a cette tolerance. Reduire la "
+                "palette elargit les ecarts, ce qui declenche le tramage, ce "
+                "qui brise les suites et multiplie les pieces."
+            )
+        else:
+            print(
+                f"  palette reduite a {len(palette)} couleurs sur {len(complete)} : "
+                f"{retenu.tiles} tuiles et {retenu.lots} lots au lieu de "
+                f"{meilleur.tiles} et {meilleur.lots}, en abandonnant "
+                f"{max(0.0, retenu.tonal_mean - meilleur.tonal_mean):.2f} delta E "
+                "de justesse tonale"
+            )
     elif options.couleurs:
         palette = palette.best_subset(pixels, int(options.couleurs))
         print(f"  palette reduite aux {len(palette)} meilleures couleurs pour cette image")

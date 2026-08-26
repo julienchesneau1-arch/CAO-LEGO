@@ -511,3 +511,44 @@ def test_document_round_trips_part_identity():
     corrupted["parts"][0]["color_id"] = "rouge"
     with pytest.raises(ValueError):
         bfk.from_document(corrupted)
+
+
+def test_serialisation_preserve_les_pieces_tournees():
+    """Depuis la fusion, la mosaique pose des tuiles TOURNEES d'un quart de
+    tour. Une serialisation qui perdrait l'orientation rendrait un modele
+    d'apparence saine et geometriquement faux — les tuiles longues seraient
+    couchees dans le mauvais sens et se chevaucheraient."""
+    import random
+
+    random.seed(2)
+    pixels = bytes(random.randrange(256) for _ in range(16 * 16 * 3))
+    grille = bfk.mosaic.quantize(
+        bfk.Image(16, 16, pixels), bfk.PROVISIONAL_PALETTE.solids_only(), 16, 16
+    )
+    mosaique = bfk.mosaic.build(grille)
+
+    identite = bfk.Orientation.identity()
+    tournees = [
+        p for p in mosaique.placed_parts.values() if p.pose[1] != identite
+    ]
+    assert tournees, "sans piece tournee, ce test ne verifie rien"
+
+    parts, geometries, _ = bfk.loads_model(
+        bfk.dumps_model(
+            mosaique.placed_parts, mosaique.geometries, mosaique.instances
+        )
+    )
+    assert len(parts) == mosaique.part_count
+    for part_id, avant in mosaique.placed_parts.items():
+        apres = parts[part_id]
+        assert apres.pose == avant.pose, part_id
+        assert apres.aabb == avant.aabb, part_id
+        assert len(apres.connectors) == len(avant.connectors), part_id
+
+    # Et le modele relu tient toujours : la preuve que rien de geometrique
+    # n'a ete perdu en chemin.
+    etat = bfk.assemble(
+        parts, bfk.LEGO_TOLERANCE, search=bfk.LatticeSearchApproximation()
+    )
+    assert bfk.check_h2_collision(parts, geometries) == ()
+    assert bfk.check_h5_disconnected(etat.graph) == ()
