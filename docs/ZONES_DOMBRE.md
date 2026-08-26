@@ -618,6 +618,47 @@ Elle est écrite comme telle.
 
 ---
 
+### 5.23 Quatre défauts de plus, tous trouvés en regardant les pages
+
+Le PDF passait toutes les vérifications structurelles et tous les tests de
+débordement. Ces quatre-là ne sont sortis qu'en **rendant les pages en image** —
+un aperçu grossier où le texte est figuré par une barre grise, ce qui suffit à
+voir les collisions, les trous et l'équilibre.
+
+1. **La couverture montrait l'œuvre délavée.** Elle appelait la vue
+   d'avancement avec « toutes les lignes sauf la dernière déjà posées » — or
+   cette vue *pâlit* le déjà-posé. La couverture promettait donc une version
+   décolorée de ce qu'on allait construire. Elle emploie maintenant
+   `mosaic.preview`, qui rend les couleurs pleines.
+
+2. **Un trou de 300 points au milieu des pages de bande.** Le plafond de la vue
+   était fixé à 430 pt. Dès que la lecture est courte — c'est-à-dire dès qu'il
+   s'agit d'une photo, où « 48 A » tient sur une ligne — le reste de la page
+   restait blanc. Le plafond est maintenant plus haut que la largeur utile :
+   c'est le rapport de forme qui borne, plus une constante arbitraire.
+
+3. **La réglette des numéros de lignes tombait dans la marge non imprimable.**
+   Vue pleine largeur, les numéros se retrouvaient à 25 pt du bord, sous les
+   10 mm qu'une imprimante de bureau ne rend pas. Le constructeur aurait perdu
+   son seul repère vertical. La vue réserve désormais 20 pt à sa gauche.
+
+4. **Le pied de page et un sous-titre débordaient de la même zone sûre.** Le
+   test ne vérifiait que « dans la page », ce qui ne veut rien dire pour un
+   document destiné à être imprimé. Il vérifie maintenant les 28 pt (10 mm)
+   de marge sûre sur les quatre côtés — et c'est ce durcissement qui a révélé
+   les deux défauts.
+
+Au passage, la lecture est passée des noms complets à des **codes courts avec
+légende** : « 3 Light Bluish Gray · 5 Dark Bluish Gray » devient « 3A · 5B ».
+Les deux noms ne diffèrent que par leur premier mot et se confondent à la
+lecture ; les grilles de point de croix emploient des symboles pour exactement
+cette raison. Le nom complet reste dans la légende, présente sur **chaque**
+page, et dans la liste de course — là où l'on commande. Effet de bord mesuré :
+la lecture d'une photo passe de deux lignes à une, ce qui rend la place à la
+vue.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -629,9 +670,9 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | Photo → analyse | **~85 %** | JPEG (décodé au huitième), PNG, PPM, orientation EXIF, rééchantillonnage par moyenne, quantification CIE L\*a\*b\*. Manque : cadrage assisté. |
 | → modélisation LEGO Art | **~80 %** | Solveur + substrat validé H1–H6, palette officielle importable, sélection des N meilleures couleurs, diagnostic des manques. Manque : découpe multi-panneaux, fusion de tuiles, volume 3D. |
 | → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
-| → notice de montage | **~75 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles, pose du fond, mosaïque bande par bande avec réglettes et comptage des suites), ordre vérifié contre le plan. Manque : ligne graphique LEGO, repérage de la pièce de départ. |
+| → notice de montage | **~80 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes, codes couleur et légende sur chaque page), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
-**Environ 79 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
+**Environ 81 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 

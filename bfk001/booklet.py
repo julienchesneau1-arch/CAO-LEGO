@@ -43,6 +43,7 @@ from .palette import LegoColor, Palette
 
 __all__ = [
     "TextLine",
+    "color_codes",
     "RectFill",
     "PdfPage",
     "write_pdf",
@@ -432,6 +433,91 @@ def row_runs(colors: Sequence[LegoColor]) -> Tuple[Tuple[int, LegoColor], ...]:
     return tuple(runs)
 
 
+def color_codes(mosaic: Mosaic) -> Dict[int, str]:
+    """Couleur -> code court, la plus employee en premier.
+
+    « 3A · 5B · 12C » se lit et se pointe ; « 3 Light Bluish Gray · 5 Dark
+    Bluish Gray » se lit mal et se confond — les deux noms ne different que par
+    leur premier mot. Les grilles de point de croix emploient des symboles pour
+    exactement cette raison. Le nom complet reste dans la legende et dans la
+    liste de course, la ou on commande.
+    """
+    compte: Dict[int, int] = {}
+    for ligne in mosaic.grid:
+        for color in ligne:
+            compte[color.code] = compte.get(color.code, 0) + 1
+    ordonnees = sorted(compte, key=lambda code: (-compte[code], code))
+    codes: Dict[int, str] = {}
+    for rang, code in enumerate(ordonnees):
+        lettres = ""
+        reste = rang
+        while True:
+            lettres = chr(ord("A") + reste % 26) + lettres
+            reste = reste // 26 - 1
+            if reste < 0:
+                break
+        codes[code] = lettres
+    return codes
+
+
+def _couleurs_employees(mosaic: Mosaic) -> List[LegoColor]:
+    """Couleurs presentes dans l'oeuvre, dans l'ordre des codes."""
+    vues: Dict[int, LegoColor] = {}
+    for ligne in mosaic.grid:
+        for color in ligne:
+            vues.setdefault(color.code, color)
+    codes = color_codes(mosaic)
+    return [vues[code] for code in sorted(vues, key=lambda c: codes[c])]
+
+
+def _legende(
+    couleurs: Sequence[LegoColor], codes: Mapping[int, str], bas: float
+) -> Tuple[List[TextLine], List[RectFill], float]:
+    """Bloc de correspondance code -> pastille + nom. Rend aussi sa hauteur."""
+    par_rang = 4
+    pas_x = (A4_WIDTH - 2 * MARGE) / par_rang
+    rangs = (len(couleurs) + par_rang - 1) // par_rang
+    hauteur = rangs * LEGENDE_PAS + LEGENDE_TITRE
+    textes: List[TextLine] = [
+        (MARGE, bas + hauteur - LEGENDE_TITRE + 2.0, CORPS_LIGNE, "Couleurs", True)
+    ]
+    rects: List[RectFill] = []
+    for index, color in enumerate(couleurs):
+        x = MARGE + (index % par_rang) * pas_x
+        y = bas + hauteur - LEGENDE_TITRE - (index // par_rang + 1) * LEGENDE_PAS + 2.0
+        rects.append((x, y - 1.5, 8.0, 8.0, color.rgb))
+        textes.append((x + 12.0, y, CORPS_LIGNE, codes[color.code], True))
+        textes.append((x + 26.0, y, CORPS_LIGNE, color.name, False))
+    return textes, rects, hauteur
+
+
+@dataclass(frozen=True)
+class _Mise:
+    """Ce que toutes les pages doivent partager : codes, legende, sa hauteur.
+
+    Calcule une fois. Deux pages qui ne s'accorderaient pas sur les codes
+    rendraient la notice illisible, et une legende de hauteur variable ferait
+    danser les vues d'une page a l'autre.
+    """
+
+    codes: Mapping[int, str]
+    couleurs: Tuple[LegoColor, ...]
+    textes: Tuple[TextLine, ...]
+    rects: Tuple[RectFill, ...]
+    hauteur: float
+
+    @property
+    def reserve(self) -> float:
+        return self.hauteur + ECART_LEGENDE
+
+
+def _mise_en_page(mosaic: Mosaic) -> _Mise:
+    codes = color_codes(mosaic)
+    couleurs = tuple(_couleurs_employees(mosaic))
+    textes, rects, hauteur = _legende(couleurs, codes, BAS_TEXTE)
+    return _Mise(codes, couleurs, tuple(textes), tuple(rects), hauteur)
+
+
 def _couper(texte: str, corps: float, largeur: float) -> List[str]:
     """Decoupe sur les separateurs. Largeur estimee, donc coupe un peu tot."""
     par_ligne = max(8, int(largeur / (corps * LARGEUR_CARACTERE)))
@@ -450,21 +536,33 @@ def _couper(texte: str, corps: float, largeur: float) -> List[str]:
     return lignes
 
 
+PIED_Y = 30.0  # au-dessus des 10 mm qu'une imprimante de bureau ne rend pas
+
+
 def _pied(page: int, total: int, titre: str) -> List[TextLine]:
     return [
-        (MARGE, 26.0, CORPS_LIGNE, titre, False),
-        (A4_WIDTH - MARGE - 40, 26.0, CORPS_LIGNE, f"{page} / {total}", False),
+        (MARGE, PIED_Y, CORPS_LIGNE, titre, False),
+        (A4_WIDTH - MARGE - 40, PIED_Y, CORPS_LIGNE, f"{page} / {total}", False),
     ]
 
 
-def _cadre_image(image: Image, haut: float, bas: float) -> Tuple[float, float, float, float]:
-    """Place l'image entre deux ordonnees, centree, sans la deformer."""
-    utile_l = A4_WIDTH - 2 * MARGE
+def _cadre_image(
+    image: Image, haut: float, bas: float, reserve_gauche: float = 0.0
+) -> Tuple[float, float, float, float]:
+    """Place l'image entre deux ordonnees, centree, sans la deformer.
+
+    `reserve_gauche` garde la place des numeros de lignes. Sans elle, une vue
+    pleine largeur repousse la reglette dans la marge non imprimable — environ
+    10 mm sur une imprimante de bureau —, et le constructeur perd les numeros
+    de lignes, c'est-a-dire le seul reperage vertical de la page.
+    """
+    gauche = MARGE + reserve_gauche
+    utile_l = A4_WIDTH - MARGE - gauche
     utile_h = haut - bas
     echelle = min(utile_l / image.width, utile_h / image.height)
     largeur = image.width * echelle
     hauteur = image.height * echelle
-    return ((A4_WIDTH - largeur) / 2, haut - hauteur, largeur, hauteur)
+    return (gauche + (utile_l - largeur) / 2, haut - hauteur, largeur, hauteur)
 
 
 def _reglette(
@@ -496,44 +594,63 @@ def _reglette(
 
 
 def _page_couverture(
-    mosaic: Mosaic, titre: str, pieces: int, couleurs: Sequence[LegoColor]
+    mosaic: Mosaic,
+    titre: str,
+    pieces: int,
+    couleurs: Sequence[LegoColor],
+    codes: Mapping[int, str],
 ) -> PdfPage:
     from .lego import ldu_to_mm, STUD_PITCH_LDU
 
+    from .mosaic import preview
+
     largeur_mm = ldu_to_mm(mosaic.studs_x * STUD_PITCH_LDU)
     hauteur_mm = ldu_to_mm(mosaic.studs_y * STUD_PITCH_LDU)
-    apercu = render_progress(mosaic, mosaic.studs_y - 1, mosaic.studs_y - 1)
-    cadre = _cadre_image(apercu, A4_HEIGHT - 200.0, 240.0)
+    # L'OEUVRE FINIE, en couleurs pleines. Pas une vue d'avancement : celle-ci
+    # palit tout ce qui est deja pose, et la couverture montrerait une version
+    # delavee de ce qu'on est en train de promettre.
+    apercu = preview(mosaic, scale=max(3, min(12, 640 // max(1, mosaic.studs_x))))
+    hauteur_liste = 44.0 + 16.0 * ((len(couleurs) + 3) // 4)
+    cadre = _cadre_image(apercu, A4_HEIGHT - 140.0, BAS_TEXTE + hauteur_liste)
 
     textes: List[TextLine] = [
-        (MARGE, A4_HEIGHT - 90, CORPS_TITRE, titre, True),
-        (MARGE, A4_HEIGHT - 112, CORPS_SOUS_TITRE,
+        (MARGE, A4_HEIGHT - 80, CORPS_TITRE, titre, True),
+        (MARGE, A4_HEIGHT - 102, CORPS_SOUS_TITRE,
          f"{mosaic.studs_x} x {mosaic.studs_y} tenons  "
          f"({largeur_mm / 10:.1f} x {hauteur_mm / 10:.1f} cm)", False),
-        (MARGE, A4_HEIGHT - 128, CORPS_SOUS_TITRE,
+        (MARGE, A4_HEIGHT - 118, CORPS_SOUS_TITRE,
          f"{mosaic.tile_count} tuiles  ·  {pieces} pieces au total  ·  "
          f"{len(couleurs)} couleurs", False),
-        (MARGE, 200.0, CORPS_TEXTE, "Couleurs employees", True),
+        (MARGE, BAS_TEXTE + hauteur_liste - 14.0, CORPS_TEXTE,
+         "Couleurs employees", True),
     ]
     rects: List[RectFill] = []
-    x, y = MARGE, 176.0
+    x, y = MARGE, BAS_TEXTE + hauteur_liste - 30.0
     for color in couleurs:
         if x > A4_WIDTH - MARGE - 130:
             x, y = MARGE, y - 16.0
+        if y < BAS_TEXTE:  # pragma: no cover - la hauteur est calculee dessus
+            break
         rects.append((x, y - 2.0, 10.0, 10.0, color.rgb))
-        textes.append((x + 14.0, y + 0.5, CORPS_LIGNE, color.name, False))
+        textes.append((x + 14.0, y + 0.5, CORPS_LIGNE, codes[color.code], True))
+        textes.append((x + 28.0, y + 0.5, CORPS_LIGNE, color.name, False))
         x += 130.0
     return PdfPage(tuple(textes), tuple(rects), apercu, cadre)
 
 
 def _pages_liste(
-    bom: Sequence[BomLine], palette: Optional[Palette]
+    bom: Sequence[BomLine],
+    palette: Optional[Palette],
+    codes: Mapping[int, str],
 ) -> List[PdfPage]:
     """Liste de course : reference, pastille, couleur, quantite."""
     par_page = 34
+    # Groupe par reference, et dans chaque reference le plus gros lot d'abord :
+    # c'est l'ordre dans lequel on remplit un panier, pas l'ordre alphabetique.
+    ordonnee = sorted(bom, key=lambda ligne: (ligne.design_id, -ligne.quantity))
     pages: List[PdfPage] = []
-    for debut in range(0, len(bom), par_page):
-        tranche = bom[debut : debut + par_page]
+    for debut in range(0, len(ordonnee), par_page):
+        tranche = ordonnee[debut : debut + par_page]
         textes: List[TextLine] = [
             (MARGE, A4_HEIGHT - 60, CORPS_TITRE * 0.75, "Liste de course", True),
             (MARGE, A4_HEIGHT - 82, CORPS_LIGNE,
@@ -560,7 +677,10 @@ def _pages_liste(
             textes.append((MARGE + 92, y, CORPS_TEXTE, ligne.name, False))
             if couleur is not None:
                 rects.append((MARGE + 270, y - 1.5, 9.0, 9.0, couleur.rgb))
-                textes.append((MARGE + 284, y, CORPS_TEXTE, couleur.name, False))
+                code = codes.get(ligne.color_id)
+                if code:
+                    textes.append((MARGE + 284, y, CORPS_TEXTE, code, True))
+                textes.append((MARGE + 302, y, CORPS_TEXTE, couleur.name, False))
             else:
                 textes.append((MARGE + 270, y, CORPS_TEXTE,
                                f"code {ligne.color_id}", False))
@@ -597,7 +717,9 @@ def _pages_substrat(
              f"Fond — couche {rang} sur {len(couches)}", True),
             (MARGE, A4_HEIGHT - 82, CORPS_LIGNE,
              "Poser toutes les plates de cette couche avant de passer a la "
-             "suivante. Le decalage entre couches est ce qui fait tenir le fond.",
+             "suivante.", False),
+            (MARGE, A4_HEIGHT - 93, CORPS_LIGNE,
+             "Le decalage entre les couches est ce qui fait tenir le fond.",
              False),
             (MARGE, 128.0, CORPS_TEXTE, f"{len(couche)} pieces : {detail}", False),
         ]
@@ -611,14 +733,24 @@ def _pages_substrat(
 
 IMAGE_HAUT = A4_HEIGHT - 116.0   # bord superieur de la vue
 IMAGE_MIN = 200.0                # en dessous, la vue devient illisible
-IMAGE_MAX = 430.0
+# Plafond volontairement plus haut que la largeur utile (515 pt) : c'est
+# `_cadre_image` qui borne pour de bon, en respectant les proportions. Un
+# plafond plus bas laissait un trou de 300 pt au milieu de la page des que la
+# lecture etait courte — et une lecture courte, c'est le cas d'une photo.
+IMAGE_MAX = 620.0
 BAS_TEXTE = 44.0                 # au-dessus du pied de page
 ECART_VUE_TEXTE = 26.0
 RETRAIT_LECTURE = 34.0           # apres l'etiquette « L12 »
+RESERVE_REGLETTE = 20.0          # a gauche de la vue, pour les numeros de lignes
 ECART_LIGNES = 3.5               # respiration entre deux lignes de mosaique
+LEGENDE_PAS = 11.0               # hauteur d'un rang de legende
+LEGENDE_TITRE = 14.0
+ECART_LEGENDE = 8.0
 
 
-def _lecture(mosaic: Mosaic, rows: Sequence[int]) -> List[Tuple[int, List[str]]]:
+def _lecture(
+    mosaic: Mosaic, rows: Sequence[int], codes: Mapping[int, str]
+) -> List[Tuple[int, List[str]]]:
     """Lecture des lignes demandees : par ligne, ses morceaux deja coupes.
 
     Produite AVANT la mise en page, parce que c'est elle qui la commande : une
@@ -632,7 +764,7 @@ def _lecture(mosaic: Mosaic, rows: Sequence[int]) -> List[Tuple[int, List[str]]]
             row,
             _couper(
                 " · ".join(
-                    f"{compte} {color.name}"
+                    f"{compte}{codes[color.code]}"
                     for compte, color in row_runs(mosaic.grid[row])
                 ),
                 CORPS_LIGNE,
@@ -649,20 +781,24 @@ def _hauteur_lecture(lecture: Sequence[Tuple[int, List[str]]]) -> float:
     return lignes * INTERLIGNE + len(lecture) * ECART_LIGNES
 
 
-def _hauteur_vue(hauteur_lecture: float) -> Optional[float]:
-    """Hauteur de vue laissant la place a la lecture.
+def _hauteur_vue(
+    hauteur_lecture: float, hauteur_legende: float = 0.0
+) -> Optional[float]:
+    """Hauteur de vue laissant la place a la lecture et a la legende.
 
     None si meme la vue minimale ne suffit pas : c'est le signal qu'il faut
     mettre moins de lignes de mosaique sur cette page.
     """
-    disponible = IMAGE_HAUT - BAS_TEXTE - ECART_VUE_TEXTE - hauteur_lecture
+    disponible = (
+        IMAGE_HAUT - BAS_TEXTE - ECART_VUE_TEXTE - hauteur_lecture - hauteur_legende
+    )
     if disponible < IMAGE_MIN:
         return None
     return min(IMAGE_MAX, disponible)
 
 
 def _pages_bande(
-    mosaic: Mosaic, rows: Sequence[int], numero: int, total: int
+    mosaic: Mosaic, rows: Sequence[int], numero: int, total: int, mise: _Mise
 ) -> List[PdfPage]:
     """La page d'une bande, et ses pages de suite si la lecture deborde.
 
@@ -672,10 +808,13 @@ def _pages_bande(
     de perdre des tuiles —, on continue sur une page de suite sans vue.
     """
     first_row, last_row = rows[0], rows[-1]
-    lecture = _lecture(mosaic, rows)
-    hauteur = _hauteur_vue(_hauteur_lecture(lecture))
+    lecture = _lecture(mosaic, rows, mise.codes)
+    bas_lecture = BAS_TEXTE + mise.reserve
+    hauteur = _hauteur_vue(_hauteur_lecture(lecture), mise.reserve)
     vue = render_progress(mosaic, first_row, last_row)
-    cadre = _cadre_image(vue, IMAGE_HAUT, IMAGE_HAUT - (hauteur or IMAGE_MIN))
+    cadre = _cadre_image(
+        vue, IMAGE_HAUT, IMAGE_HAUT - (hauteur or IMAGE_MIN), RESERVE_REGLETTE
+    )
 
     entete = [
         (MARGE, A4_HEIGHT - 60, CORPS_TITRE * 0.75,
@@ -690,15 +829,24 @@ def _pages_bande(
     )
 
     pages: List[PdfPage] = []
+
+    def fermer(courantes: List[TextLine]) -> None:
+        premiere = not pages
+        pages.append(
+            PdfPage(
+                tuple(courantes) + mise.textes,
+                mise.rects,
+                vue if premiere else None,
+                cadre if premiere else None,
+            )
+        )
+
     y = cadre[1] - ECART_VUE_TEXTE
     for row, morceaux in lecture:
         etiquette = f"L{row + 1}"
         for index, morceau in enumerate(morceaux):
-            if y < BAS_TEXTE:
-                pages.append(
-                    PdfPage(tuple(textes), (), vue if not pages else None,
-                            cadre if not pages else None)
-                )
+            if y < bas_lecture:
+                fermer(textes)
                 textes = list(entete)
                 textes.append(
                     (MARGE, A4_HEIGHT - 104, CORPS_LIGNE, "(suite)", False)
@@ -710,15 +858,12 @@ def _pages_bande(
             y -= INTERLIGNE
         y -= ECART_LIGNES
 
-    pages.append(
-        PdfPage(tuple(textes), (), vue if not pages else None,
-                cadre if not pages else None)
-    )
+    fermer(textes)
     return pages
 
 
 def _decouper_bandes(
-    mosaic: Mosaic, maximum: int
+    mosaic: Mosaic, maximum: int, mise: _Mise
 ) -> List[Tuple[int, ...]]:
     """Regroupe les lignes en bandes qui TIENNENT sur une page.
 
@@ -729,7 +874,9 @@ def _decouper_bandes(
     courante: List[int] = []
     for row in range(mosaic.studs_y):
         candidate = courante + [row]
-        tient = _hauteur_vue(_hauteur_lecture(_lecture(mosaic, candidate)))
+        tient = _hauteur_vue(
+            _hauteur_lecture(_lecture(mosaic, candidate, mise.codes)), mise.reserve
+        )
         if len(candidate) <= maximum and tient is not None:
             courante = candidate
         else:
@@ -806,16 +953,12 @@ def build_booklet(
         )
     couches = [par_altitude[z] for z in sorted(par_altitude)]
 
-    couleurs_vues: Dict[int, LegoColor] = {}
-    for ligne in mosaic.grid:
-        for color in ligne:
-            couleurs_vues.setdefault(color.code, color)
-    couleurs = [couleurs_vues[c] for c in sorted(couleurs_vues)]
+    mise = _mise_en_page(mosaic)
 
     pages: List[PdfPage] = [
-        _page_couverture(mosaic, title, mosaic.part_count, couleurs)
+        _page_couverture(mosaic, title, mosaic.part_count, mise.couleurs, mise.codes)
     ]
-    pages.extend(_pages_liste(bom, palette))
+    pages.extend(_pages_liste(bom, palette, mise.codes))
     page_de: Dict[str, int] = {}
 
     for page, couche in _pages_substrat(mosaic, couches, palette):
@@ -823,9 +966,9 @@ def build_booklet(
         for part_id in couche:
             page_de[part_id] = len(pages) - 1
 
-    bandes = _decouper_bandes(mosaic, rows_per_page)
+    bandes = _decouper_bandes(mosaic, rows_per_page, mise)
     for index, rows in enumerate(bandes, start=1):
-        pages.extend(_pages_bande(mosaic, rows, index, len(bandes)))
+        pages.extend(_pages_bande(mosaic, rows, index, len(bandes), mise))
         for row in rows:
             for column in range(mosaic.studs_x):
                 page_de[mosaic.tile_id(row, column)] = len(pages) - 1

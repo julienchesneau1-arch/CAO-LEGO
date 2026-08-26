@@ -348,6 +348,15 @@ registre) :
 Les chiffres des réglettes sont du **texte PDF**, pas des pixels : nets à
 l'impression, et rien à embarquer comme fonte matricielle.
 
+La lecture emploie des **codes courts avec légende** — « 3A · 5B · 12C » — et
+non les noms LDraw complets : « Light Bluish Gray » et « Dark Bluish Gray » ne
+diffèrent que par leur premier mot et se confondent à la lecture. Le nom complet
+reste dans la légende, sur chaque page, et dans la liste de course.
+
+Tout le contenu est vérifié à l'intérieur d'une **marge sûre de 10 mm**, celle
+qu'une imprimante de bureau ne rend pas — vérifier « dans la page » ne veut rien
+dire pour un document destiné au papier.
+
 ---
 
 ## Points restés ouverts (Sections N et Q)

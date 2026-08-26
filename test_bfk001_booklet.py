@@ -158,6 +158,52 @@ class TestSuitesDeCouleur(unittest.TestCase):
             self.assertEqual(sum(n for n, _ in bk.row_runs(ligne)), len(ligne))
 
 
+class TestCodesCouleur(unittest.TestCase):
+    def test_la_plus_employee_recoit_A(self):
+        mosaique, _ = petite_mosaique(cote=16, graine=5)
+        codes = bk.color_codes(mosaique)
+        comptes = {}
+        for ligne in mosaique.grid:
+            for color in ligne:
+                comptes[color.code] = comptes.get(color.code, 0) + 1
+        dominante = max(comptes, key=lambda c: (comptes[c], -c))
+        self.assertEqual(codes[dominante], "A")
+
+    def test_codes_uniques_et_stables(self):
+        mosaique, _ = petite_mosaique(cote=16, graine=5)
+        codes = bk.color_codes(mosaique)
+        self.assertEqual(len(set(codes.values())), len(codes))
+        self.assertEqual(codes, bk.color_codes(mosaique))
+
+    def test_au_dela_de_vingt_six_couleurs(self):
+        # A..Z puis AA, AB… : jamais deux couleurs sous le meme code.
+        couleurs = [
+            bfk.LegoColor(code, f"C{code}", (code % 256, 0, 0))
+            for code in range(60)
+        ]
+        grille = tuple(
+            tuple(couleurs[(ligne * 60 + colonne) % 60] for colonne in range(60))
+            for ligne in range(1)
+        )
+        faux = type("M", (), {"grid": grille})()
+        codes = bk.color_codes(faux)
+        self.assertEqual(len(set(codes.values())), 60)
+        self.assertIn("AA", codes.values())
+
+    def test_la_lecture_emploie_les_codes(self):
+        mosaique, _ = petite_mosaique(cote=12, graine=5)
+        codes = bk.color_codes(mosaique)
+        lecture = bk._lecture(mosaique, [0], codes)
+        texte = " ".join(lecture[0][1])
+        attendu = " · ".join(
+            f"{compte}{codes[color.code]}"
+            for compte, color in bk.row_runs(mosaique.grid[0])
+        )
+        self.assertEqual(texte, attendu)
+        # Et pas les noms complets, qui se confondent deux a deux.
+        self.assertNotIn("Bluish", texte)
+
+
 class TestRenduAvancement(unittest.TestCase):
     def setUp(self):
         self.mosaique, self.palette = petite_mosaique()
@@ -281,14 +327,14 @@ class TestFascicule(unittest.TestCase):
 
     def test_toutes_les_tuiles_recoivent_une_page(self):
         mosaique, palette = petite_mosaique()
-        bandes = bk._decouper_bandes(mosaique, 4)
+        bandes = bk._decouper_bandes(mosaique, 4, bk._mise_en_page(mosaique))
         couvertes = sorted(row for bande in bandes for row in bande)
         self.assertEqual(couvertes, list(range(mosaique.studs_y)))
         self.assertTrue(all(len(b) <= 4 for b in bandes))
 
     def test_decoupage_toujours_progressif(self):
         mosaique, _ = petite_mosaique()
-        bandes = bk._decouper_bandes(mosaique, 4)
+        bandes = bk._decouper_bandes(mosaique, 4, bk._mise_en_page(mosaique))
         self.assertTrue(all(len(b) >= 1 for b in bandes))
         plat = [row for bande in bandes for row in bande]
         self.assertEqual(plat, sorted(plat))
@@ -306,6 +352,17 @@ class TestFascicule(unittest.TestCase):
         with self.assertRaises(ValueError):
             bk._verifier_ordre(plan, {"a": 5, "b": 4})
 
+    def test_la_legende_figure_sur_chaque_page_de_bande(self):
+        mosaique, palette = petite_mosaique(cote=16, graine=6)
+        mise = bk._mise_en_page(mosaique)
+        pages = bk._pages_bande(mosaique, [0, 1], 1, 1, mise)
+        for page in pages:
+            for color in mise.couleurs:
+                self.assertIn(color.rgb, [r[4] for r in page.rects], color.name)
+                self.assertIn(
+                    mise.codes[color.code], [t[3] for t in page.texts], color.name
+                )
+
     def test_rien_ne_deborde_de_la_page(self):
         mosaique, palette = petite_mosaique(cote=32, graine=9)
         plan = plan_de(mosaique)
@@ -318,19 +375,27 @@ class TestFascicule(unittest.TestCase):
         finally:
             bk.write_pdf = vrai
         self.assertGreater(len(pages), 4)
+        # 28 points = 10 mm : la zone qu'une imprimante de bureau ne rend pas.
+        # Verifier « dans la page » ne suffit pas — ce qui tombe la est perdu.
+        SUR = 28.0
         for numero, page in enumerate(pages, start=1):
             for x, y, corps, texte, _ in page.texts:
                 largeur = len(texte) * corps * bk.LARGEUR_CARACTERE
-                self.assertGreaterEqual(y, 20.0, (numero, texte))
-                self.assertLessEqual(y + corps, bk.A4_HEIGHT - 20.0, (numero, texte))
-                self.assertGreaterEqual(x, 10.0, (numero, texte))
-                self.assertLessEqual(x + largeur, bk.A4_WIDTH - 10.0, (numero, texte))
+                self.assertGreaterEqual(y, SUR, (numero, texte))
+                self.assertLessEqual(y + corps, bk.A4_HEIGHT - SUR, (numero, texte))
+                self.assertGreaterEqual(x, SUR, (numero, texte))
+                self.assertLessEqual(x + largeur, bk.A4_WIDTH - SUR, (numero, texte))
+            for x, y, w, h, _ in page.rects:
+                self.assertGreaterEqual(y, SUR, numero)
+                self.assertGreaterEqual(x, SUR, numero)
+                self.assertLessEqual(x + w, bk.A4_WIDTH - SUR, numero)
+                self.assertLessEqual(y + h, bk.A4_HEIGHT - SUR, numero)
             if page.image_rect is not None:
                 x, y, w, h = page.image_rect
-                self.assertGreaterEqual(x, 0.0)
-                self.assertGreaterEqual(y, 0.0)
-                self.assertLessEqual(x + w, bk.A4_WIDTH)
-                self.assertLessEqual(y + h, bk.A4_HEIGHT)
+                self.assertGreaterEqual(x, SUR, numero)
+                self.assertGreaterEqual(y, SUR, numero)
+                self.assertLessEqual(x + w, bk.A4_WIDTH - SUR, numero)
+                self.assertLessEqual(y + h, bk.A4_HEIGHT - SUR, numero)
 
     def test_lecture_trop_longue_passe_en_page_de_suite(self):
         # Plutot que de tronquer — c'est-a-dire de perdre des tuiles.
@@ -338,7 +403,9 @@ class TestFascicule(unittest.TestCase):
         minimum = bk.IMAGE_MIN
         try:
             bk.IMAGE_MIN = 640.0  # etrangle la place laissee a la lecture
-            pages = bk._pages_bande(mosaique, list(range(8)), 1, 1)
+            pages = bk._pages_bande(
+                mosaique, list(range(8)), 1, 1, bk._mise_en_page(mosaique)
+            )
         finally:
             bk.IMAGE_MIN = minimum
         self.assertGreater(len(pages), 1)
@@ -347,8 +414,9 @@ class TestFascicule(unittest.TestCase):
 
     def test_bande_par_defaut_tient_sur_une_page(self):
         mosaique, _ = petite_mosaique(cote=48, graine=12)
-        for bande in bk._decouper_bandes(mosaique, 4):
-            self.assertEqual(len(bk._pages_bande(mosaique, bande, 1, 1)), 1)
+        mise = bk._mise_en_page(mosaique)
+        for bande in bk._decouper_bandes(mosaique, 4, mise):
+            self.assertEqual(len(bk._pages_bande(mosaique, bande, 1, 1, mise)), 1)
 
 
 if __name__ == "__main__":
