@@ -5,6 +5,7 @@ Une tuile 1x4 rouge montre les memes quatre tenons rouges que quatre tuiles
 verifie d'abord, parce que c'est la seule chose qui pourrait la disqualifier.
 """
 
+import pathlib
 import random
 import unittest
 from collections import Counter
@@ -674,3 +675,103 @@ class TestReliefEnPlateaux(unittest.TestCase):
             + bfk.check_h6_foundation(mosaique.placed_parts, mosaique.geometries)
         )
         self.assertEqual([(v.invariant, v.detail) for v in violations], [])
+
+
+class TestDeterminisme(unittest.TestCase):
+    """La meme photo et les memes reglages doivent donner le meme modele.
+
+    Ce n'est pas une exigence de confort. Une liste de courses qui change
+    d'une execution a l'autre ne correspond plus a la notice qu'on a imprimee,
+    ni au fichier LDraw qu'on a ouvert. Le defaut etait reel et mesure : trois
+    executions de la meme commande donnaient deux listes differentes.
+
+    La cause etait un tri NON TOTAL sur un ensemble contenant des chaines.
+    Python departage les ex aequo par l'ordre d'iteration de l'ensemble, et
+    cet ordre depend de PYTHONHASHSEED — donc du lancement.
+    """
+
+    def test_l_ordre_des_formes_de_fond_est_total(self):
+        # La cle REELLE, pas une copie : un test qui recopierait la cle ne
+        # verifierait que sa propre copie.
+        from bfk001.mosaic import PLAQUES_DE_FOND, _cle_de_forme, _formes_de_fond
+        formes = _formes_de_fond(PLAQUES_DE_FOND)
+        cles = [_cle_de_forme(f) for f in formes]
+        self.assertEqual(len(set(cles)), len(formes),
+                         "deux formes a egalite : l'ordre redevient celui du "
+                         "hachage, donc du lancement")
+
+    def test_l_ordre_ne_depend_pas_de_l_ordre_d_entree(self):
+        from bfk001.mosaic import PLAQUES_DE_FOND, _formes_de_fond
+        reference = _formes_de_fond(PLAQUES_DE_FOND)
+        melange = list(PLAQUES_DE_FOND)
+        for graine in range(5):
+            random.seed(graine)
+            random.shuffle(melange)
+            self.assertEqual(_formes_de_fond(melange), reference)
+
+    def test_le_modele_en_relief_ne_depend_pas_de_l_ordre_du_catalogue(self):
+        # Le test de bout en bout : c'est celui-la qui aurait attrape le
+        # defaut, parce qu'il mesure ce qui compte — la nomenclature livree.
+        from bfk001 import mosaic
+        random.seed(3)
+        cote = 16
+        grille = bfk.mosaic.quantize(
+            bfk.Image(cote, cote,
+                      bytes(random.randrange(256) for _ in range(cote * cote * 3))),
+            bfk.PROVISIONAL_PALETTE.solids_only(), cote, cote,
+        )
+        elevations = [[(x + y) // 6 % 3 for x in range(cote)] for y in range(cote)]
+
+        def nomenclature():
+            modele = bfk.mosaic.build(grille, heights=elevations)
+            return sorted(
+                (l.design_id, l.color_id, l.quantity)
+                for l in bfk.bill_of_materials(modele.instances, modele.placed_parts)
+            )
+
+        reference = nomenclature()
+        originales = mosaic.PLAQUES_DE_FOND
+        try:
+            for graine in range(4):
+                melange = list(originales)
+                random.seed(100 + graine)
+                random.shuffle(melange)
+                mosaic.PLAQUES_DE_FOND = melange
+                self.assertEqual(nomenclature(), reference,
+                                 "la nomenclature depend de l'ordre du catalogue")
+        finally:
+            mosaic.PLAQUES_DE_FOND = originales
+
+    def test_la_chaine_complete_est_reproductible_sous_un_autre_hachage(self):
+        # Reproduction directe du symptome d'origine : deux processus, deux
+        # graines de hachage, la meme photo. Les tests en memoire ne peuvent
+        # pas voir ce defaut — PYTHONHASHSEED est fixe au demarrage.
+        import os
+        import subprocess
+        import sys
+        programme = (
+            "import sys; sys.path.insert(0, %r)\n"
+            "import random, hashlib\n"
+            "import bfk001 as bfk\n"
+            "random.seed(3)\n"
+            "cote = 16\n"
+            "grille = bfk.mosaic.quantize(bfk.Image(cote, cote, bytes(\n"
+            "    random.randrange(256) for _ in range(cote*cote*3))),\n"
+            "    bfk.PROVISIONAL_PALETTE.solids_only(), cote, cote)\n"
+            "h = [[(x + y) // 6 %% 3 for x in range(cote)] for y in range(cote)]\n"
+            "m = bfk.mosaic.build(grille, heights=h)\n"
+            "lignes = sorted('%%s,%%s,%%s' %% (l.design_id, l.color_id, l.quantity)\n"
+            "                for l in bfk.bill_of_materials(m.instances, m.placed_parts))\n"
+            "print(hashlib.md5('\\n'.join(lignes).encode()).hexdigest())\n"
+        ) % str(pathlib.Path(__file__).parent)
+        empreintes = set()
+        for graine in ("0", "1", "2"):
+            env = dict(os.environ, PYTHONHASHSEED=graine)
+            sortie = subprocess.run(
+                [sys.executable, "-c", programme],
+                capture_output=True, text=True, env=env, timeout=120,
+            )
+            self.assertEqual(sortie.returncode, 0, sortie.stderr[-500:])
+            empreintes.add(sortie.stdout.strip())
+        self.assertEqual(len(empreintes), 1,
+                         f"nomenclatures differentes selon le hachage : {empreintes}")

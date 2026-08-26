@@ -667,12 +667,43 @@ PLAQUES_DE_FOND = (
 
 
 def _formes_de_fond(disponibles):
-    """(largeur, profondeur, reference), plus grande aire d'abord, deux sens."""
+    """(largeur, profondeur, reference), plus grande aire d'abord, deux sens.
+
+    Le tri doit etre TOTAL, et il ne l'etait pas. La cle « aire, puis plus
+    petit cote » laisse a egalite les deux orientations d'une meme plate — une
+    2x4 et une 4x2 ont la meme aire et le meme petit cote. Huit des vingt-et-une
+    formes etaient dans ce cas. Python departage alors les ex aequo par l'ordre
+    d'iteration de l'ensemble, et cet ordre depend du hachage des CHAINES, donc
+    de PYTHONHASHSEED, donc du lancement.
+
+    Consequence mesuree avant correction : la meme photo, la meme commande, et
+    des listes de courses differentes d'une execution a l'autre. Une notice
+    imprimee ne correspondait plus forcement aux pieces commandees. Le defaut
+    ne se voyait qu'avec du relief, seul chemin qui appelle cette fonction sur
+    des formes de tailles variees.
+
+    Les deux derniers termes de la cle n'ont donc aucune signification
+    esthetique : ils ne sont la que pour rendre l'ordre total. A aire et petit
+    cote egaux, on prend la reference dans l'ordre alphabetique, puis
+    l'orientation la moins large.
+    """
     formes = set()
     for design, a, b in disponibles:
         formes.add((a, b, design))
         formes.add((b, a, design))
-    return sorted(formes, key=lambda f: (-(f[0] * f[1]), -min(f[0], f[1])))
+    return sorted(formes, key=_cle_de_forme)
+
+
+def _cle_de_forme(forme):
+    """Ordre des formes de fond. Doit etre TOTAL — voir `_formes_de_fond`.
+
+    Nommee plutot qu'ecrite en lambda pour que le test puisse verifier son
+    injectivite sur le catalogue reel. Une cle a egalite rend le modele
+    dependant du hachage, et un test qui recopierait la cle ne verifierait
+    que sa propre copie.
+    """
+    largeur, profondeur, design = forme
+    return (-(largeur * profondeur), -min(largeur, profondeur), design, largeur)
 
 
 def _fusionner_plaques(poses, disponibles):

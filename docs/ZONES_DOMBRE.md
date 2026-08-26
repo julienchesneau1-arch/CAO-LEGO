@@ -1594,6 +1594,59 @@ commande elle-même.
 
 ---
 
+### 5.49 La même photo donnait deux listes de courses différentes
+
+Trouvé en factorisant la chaîne pour l'interface : le résultat du refactor ne
+correspondait pas à celui de la commande. J'ai d'abord cherché l'erreur dans mon
+refactor. Elle n'y était pas — **la chaîne n'était pas déterministe.**
+
+Trois exécutions de la *même* commande sur la *même* photo :
+
+```
+5d7c2c0a719c6888c019d7564f2f9860  liste_de_course.csv
+da12b4039865a333eba3a5005ca8143d  liste_de_course.csv
+5d7c2c0a719c6888c019d7564f2f9860  liste_de_course.csv
+```
+
+Ce n'est pas un défaut de confort. Une liste de courses qui change d'une
+exécution à l'autre ne correspond plus à la notice qu'on a imprimée ni au
+fichier LDraw qu'on a ouvert. **On commande des pièces qui ne sont pas celles
+du plan.**
+
+**La cause.** `_formes_de_fond` triait un `set` avec une clé *non totale* :
+« aire décroissante, puis plus petit côté ». Les deux orientations d'une même
+plate — une 2×4 et une 4×2 — ont la même aire et le même petit côté. Huit des
+vingt-et-une formes étaient à égalité. Python départage alors par l'ordre
+d'itération de l'ensemble, et cet ordre dépend du hachage des **chaînes** (les
+références de pièces), donc de `PYTHONHASHSEED`, donc du lancement.
+
+```
+seed 0 : b0dc16b6d72b723f      seed 2 : 4f633cb0a187cfb3
+seed 1 : 0ba194e8b8978106      seed 3 : c2a9dcca61aebe24
+```
+
+Le défaut ne se voyait **qu'avec du relief** : c'est le seul chemin qui appelle
+cette fonction sur des formes de tailles variées. Le substrat plat, lui, était
+stable — ce qui explique qu'il ait survécu à tout le reste du développement.
+
+**Le remède** est d'une ligne : rendre l'ordre total. Les deux termes ajoutés
+n'ont aucune signification esthétique, ils ne sont là que pour cela. La clé est
+désormais une fonction nommée, `_cle_de_forme`, et non une lambda — pour qu'un
+test puisse vérifier son injectivité sur le catalogue réel. Un test qui
+recopierait la clé ne vérifierait que sa propre copie.
+
+**Ce que je retiens.** Aucun de mes 280 tests ne pouvait voir ce défaut :
+`PYTHONHASHSEED` est fixé au démarrage du processus, donc tout ce qui tourne
+dans un seul processus est parfaitement reproductible. Le test ajouté lance
+donc de vrais sous-processus avec des graines différentes. Vérifié dans les
+deux sens : il échoue quand on remet l'ancienne clé, il passe avec la nouvelle.
+
+Et une leçon de méthode : c'est le refactor qui a révélé le défaut, en
+produisant deux fois le même calcul par deux chemins. Comparer deux
+implémentations est un détecteur que la relecture ne remplace pas.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
