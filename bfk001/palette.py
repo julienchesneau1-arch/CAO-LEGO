@@ -28,6 +28,7 @@ __all__ = [
     "PROVISIONAL_PALETTE",
     "load_ldconfig",
     "srgb_to_lab",
+    "delta_e",
 ]
 
 Rgb = Tuple[int, int, int]
@@ -69,6 +70,21 @@ def srgb_to_lab(rgb: Rgb) -> Tuple[float, float, float]:
 
     fx, fy, fz = f(x), f(y), f(z)
     return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+
+
+def delta_e(first: Rgb, second: Rgb) -> float:
+    """Ecart percu entre deux couleurs (CIE76).
+
+    Repere de lecture, etabli par la litterature colorimetrique :
+      < 1   imperceptible          2-10  perceptible au premier coup d'oeil
+      1-2   perceptible a l'oeil exerce   > 10  couleurs franchement differentes
+
+    Sans cette mesure, « rendu fidele » n'est qu'une opinion.
+    """
+    a, b = srgb_to_lab(first), srgb_to_lab(second)
+    return (
+        (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
+    ) ** 0.5
 
 
 class Palette:

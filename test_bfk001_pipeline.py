@@ -20,7 +20,7 @@ def image_test(width=64, height=64):
         for x in range(width):
             centered = (x - width // 2) ** 2 + (y - height // 2) ** 2
             pixels.append((220, 30, 20) if centered < (width // 4) ** 2 else (30, 60, 180))
-    return bfk.Image(width, height, tuple(pixels))
+    return bfk.Image.from_pixels(width, height, pixels)
 
 
 # =============================================================================
@@ -33,9 +33,9 @@ def test_png_round_trip_and_box_resampling():
     assert bfk.read_png(bfk.write_png(image)) == image
 
     # Moyenne de bloc : un damier noir/blanc devient uniformement gris.
-    damier = bfk.Image(
+    damier = bfk.Image.from_pixels(
         4, 4,
-        tuple((255, 255, 255) if (x + y) % 2 else (0, 0, 0) for y in range(4) for x in range(4)),
+        ((255, 255, 255) if (x + y) % 2 else (0, 0, 0) for y in range(4) for x in range(4)),
     )
     assert bfk.resample_box(damier, 2, 2).pixels == ((127, 127, 127),) * 4
 
@@ -53,9 +53,9 @@ def test_quantization_is_perceptual_and_ordered():
     # ensuite. Un damier rouge/blanc a pour moyenne (255, 127, 127) ; la tuile
     # doit porter la couleur de palette la plus proche de CETTE moyenne, et non
     # l'une des deux couleurs d'origine choisie au hasard.
-    damier = bfk.Image(
+    damier = bfk.Image.from_pixels(
         4, 4,
-        tuple((255, 0, 0) if (x + y) % 2 else (255, 255, 255) for y in range(4) for x in range(4)),
+        ((255, 0, 0) if (x + y) % 2 else (255, 255, 255) for y in range(4) for x in range(4)),
     )
     moyenne = bfk.resample_box(damier, 1, 1).pixel(0, 0)
     assert moyenne == (255, 127, 127)
@@ -203,3 +203,198 @@ def test_plan_groups_by_colour_to_spare_the_builder():
 
     with pytest.raises(ValueError):
         bfk.plan_build(mosaique.placed_parts, state.graph, max_parts_per_step=0)
+
+
+# =============================================================================
+# Fidelite : mesurer plutot que juger
+# =============================================================================
+
+
+def image_modulee(width=96, height=96):
+    """Visage stylise : des teintes qui n'existent dans aucune palette LEGO."""
+    pixels = []
+    for y in range(height):
+        for x in range(width):
+            centered = (x - width // 2) ** 2 + (y - height // 2) ** 2
+            if centered < (width // 3) ** 2:
+                t = 1 - centered / (width // 3) ** 2
+                pixels.append((int(175 + 65 * t), int(135 + 55 * t), int(105 + 45 * t)))
+            else:
+                pixels.append((40 + y // 3, 70 + y // 4, 150))
+    return bfk.Image.from_pixels(width, height, pixels)
+
+
+def test_viewing_distance_settles_the_dithering_question():
+    """La physique de l'oeil tranche, pas le gout.
+
+    Un tenon fait 8 mm. Deux tuiles voisines ne se confondent qu'a 55 m : a
+    toute distance humaine, l'oeil voit chaque tuile. Mesurer la fidelite a
+    une distance de regard superieure a une tuile, c'est evaluer une mosaique
+    depuis un autre departement.
+    """
+    assert bfk.mosaic.blending_tiles(0.5) == 1
+    assert bfk.mosaic.blending_tiles(1.5) == 1
+    assert bfk.mosaic.blending_tiles(3.0) == 1
+    # Il faut soit reculer enormement, soit une maille bien plus fine.
+    assert bfk.mosaic.blending_tiles(60.0) >= 2
+    assert bfk.mosaic.blending_tiles(1.5, stud_mm=0.2) >= 2
+
+    with pytest.raises(ValueError):
+        bfk.mosaic.blending_tiles(0)
+
+
+def test_dithering_is_a_measured_trade_off_not_an_improvement():
+    """Le tramage gagne a distance et perd de pres. Les deux sont verifies."""
+    palette = bfk.PROVISIONAL_PALETTE
+    plat = image_test()          # deux aplats francs
+    module = image_modulee()     # teintes absentes de la palette
+
+    sans_plat = bfk.mosaic.quantize(plat, palette, 32, 32, dither=False)
+    avec_plat = bfk.mosaic.quantize(plat, palette, 32, 32, dither=True)
+    adaptatif_plat = bfk.mosaic.quantize(plat, palette, 32, 32, dither="adaptive")
+
+    # De pres — la seule distance reelle — tramer un aplat le degrade.
+    proche = bfk.mosaic.blending_tiles(1.5)
+    assert bfk.mosaic.fidelity(sans_plat, plat, proche)[0] < bfk.mosaic.fidelity(
+        avec_plat, plat, proche
+    )[0]
+    # L'adaptatif, lui, laisse les aplats tranquilles : il colle au direct.
+    assert bfk.mosaic.fidelity(adaptatif_plat, plat, proche)[0] < bfk.mosaic.fidelity(
+        avec_plat, plat, proche
+    )[0]
+
+    # A distance de fusion — situation qui n'existe pas en LEGO, mais qui
+    # existerait sur un medium a maille fine — le tramage ecrase le direct.
+    sans_module = bfk.mosaic.quantize(module, palette, 32, 32, dither=False)
+    avec_module = bfk.mosaic.quantize(module, palette, 32, 32, dither=True)
+    assert bfk.mosaic.fidelity(avec_module, module, 4)[0] < bfk.mosaic.fidelity(
+        sans_module, module, 4
+    )[0]
+
+    # Le defaut de la chaine est donc la quantification directe.
+    assert bfk.mosaic.quantize(plat, palette, 16, 16) == bfk.mosaic.quantize(
+        plat, palette, 16, 16, dither=False
+    )
+
+    with pytest.raises(ValueError):
+        bfk.mosaic.quantize(plat, palette, 16, 16, dither="peut-etre")
+    with pytest.raises(ValueError):
+        bfk.mosaic.fidelity(sans_plat, plat, block=0)
+
+
+# =============================================================================
+# Substrat : le noyau arbitre, il ne suggere pas
+# =============================================================================
+
+
+def test_panel_substrate_is_refused_because_it_does_not_hold():
+    """Neuf plates 16x16 au lieu de 613 pieces — et un objet en neuf morceaux.
+
+    C'est le substrat des sets LEGO Art officiels. Ils tiennent par leur cadre,
+    qui n'est pas une piece structurelle. Le noyau refuse de certifier ce qu'un
+    cadre absent est cense tenir : c'est exactement son role.
+    """
+    tolerance = bfk.LEGO_TOLERANCE
+    grille = bfk.mosaic.quantize(image_test(), bfk.PROVISIONAL_PALETTE, 32, 32)
+    # 32x32 est la plus petite taille ou un panneau 16x16 a du sens.
+
+    croise = bfk.mosaic.build(grille, substrate="crossed")
+    panneaux = bfk.mosaic.build(grille, substrate="panels")
+
+    substrat_croise = croise.part_count - croise.tile_count
+    substrat_panneaux = panneaux.part_count - panneaux.tile_count
+    assert substrat_panneaux == 4, "32x32 tenons = quatre plates 16x16"
+    assert substrat_croise > 20 * substrat_panneaux, "le substrat croise est cher"
+
+    for mosaique, attendu in ((croise, True), (panneaux, False)):
+        etat = bfk.assemble(
+            mosaique.placed_parts, tolerance, search=bfk.LatticeSearchApproximation()
+        )
+        # Aucune penetration dans les deux cas : la geometrie est saine.
+        assert bfk.check_h2_collision(mosaique.placed_parts, mosaique.geometries) == ()
+        connexe = bfk.check_h5_disconnected(etat.graph) == ()
+        assert connexe is attendu
+
+    with pytest.raises(ValueError):
+        bfk.mosaic.build(grille, substrate="carton")
+
+
+# =============================================================================
+# Decodage PNG : les filtres que produisent les vrais appareils
+# =============================================================================
+
+
+def encode_png_avec_filtre(image, filtre):
+    """Encodeur de test imposant un filtre donne.
+
+    `write_png` du noyau n'emet que le filtre 0. Se contenter de ses propres
+    fichiers pour tester son decodeur, c'est ne tester qu'un cinquieme du
+    format — et pas celui que produisent les appareils photo, qui utilisent
+    Sub et Paeth.
+    """
+    import struct
+    import zlib
+
+    from bfk001.imaging import _paeth
+
+    stride = image.width * 3
+    raw = bytearray()
+    precedente = bytearray(stride)
+    for y in range(image.height):
+        ligne = bytearray(image.data[y * stride : (y + 1) * stride])
+        sortie = bytearray(stride)
+        for i in range(stride):
+            a = ligne[i - 3] if i >= 3 else 0
+            b = precedente[i]
+            c = precedente[i - 3] if i >= 3 else 0
+            if filtre == 1:
+                sortie[i] = (ligne[i] - a) & 0xFF
+            elif filtre == 2:
+                sortie[i] = (ligne[i] - b) & 0xFF
+            elif filtre == 3:
+                sortie[i] = (ligne[i] - (a + b) // 2) & 0xFF
+            elif filtre == 4:
+                sortie[i] = (ligne[i] - _paeth(a, b, c)) & 0xFF
+            else:
+                sortie[i] = ligne[i]
+        raw.append(filtre)
+        raw.extend(sortie)
+        precedente = ligne
+
+    def bloc(genre, charge):
+        return (
+            len(charge).to_bytes(4, "big")
+            + genre
+            + charge
+            + zlib.crc32(genre + charge).to_bytes(4, "big")
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + bloc(b"IHDR", struct.pack(">IIBBBBB", image.width, image.height, 8, 2, 0, 0, 0))
+        + bloc(b"IDAT", zlib.compress(bytes(raw), 6))
+        + bloc(b"IEND", b"")
+    )
+
+
+def test_png_decoder_handles_every_filter_exactly():
+    """Les cinq filtres PNG, au bit pres."""
+    source = image_modulee(24, 24)
+    for filtre in (0, 1, 2, 3, 4):
+        relu = bfk.read_png(encode_png_avec_filtre(source, filtre))
+        assert relu.data == source.data, f"filtre {filtre}"
+
+    with pytest.raises(ValueError):
+        bfk.read_png(encode_png_avec_filtre(source, 9))
+
+
+def test_image_is_stored_as_bytes_not_tuples():
+    """Une photo de 12 Mpx en tuples demanderait 860 Mo. En octets : 36 Mo."""
+    image = image_test(16, 16)
+    assert isinstance(image.data, bytes)
+    assert len(image.data) == 16 * 16 * 3
+    assert image.pixel(0, 0) == image.pixels[0]
+    assert image.pixel(15, 15) == image.pixels[-1]
+
+    with pytest.raises(ValueError):
+        bfk.Image(4, 4, b"trop court")

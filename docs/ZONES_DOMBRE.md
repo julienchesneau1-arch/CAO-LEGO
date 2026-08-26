@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 74 tests verts, chaîne complète photo → notice.
+Version du noyau : **BFK-001 v3.3.2** — 79 tests verts, chaîne complète photo → notice.
 
 ---
 
@@ -301,6 +301,67 @@ Le tirage aléatoire de conformité a également été rendu réaliste : deux ti
 des pièces sont désormais posées sur la face supérieure d'une pièce déjà
 placée. Un générateur uniforme ne produisait presque aucune liaison — il
 testait H1 sur des états sans bond, donc sur rien.
+
+### 5.11 Troisième passe — la qualité du rendu, mesurée puis corrigée
+
+Cette passe portait sur ce qui plafonne le résultat : la fidélité. Elle a
+produit un instrument, une erreur de méthode, et une réfutation par la physique.
+
+**L'instrument.** `fidelity()` mesure l'écart perçu en ΔE CIE76 entre la
+mosaïque et l'image. Sans lui, « rendu fidèle » n'est qu'une opinion.
+
+**L'erreur de méthode.** L'instrument a d'abord condamné le tramage : ΔE 33,3
+sans, 45,5 avec. Normal — je mesurais tuile à tuile, or le tramage rend chaque
+tuile *délibérément* fausse pour que le voisinage soit juste. J'ai donc ajouté
+une distance de regard, et le verdict s'est inversé : sur un visage, à trois
+tuiles de distance, 21,7 → **6,1**. Tout indiquait qu'il fallait l'activer.
+
+**La réfutation.** Un tenon fait 8 mm ; l'œil sépare une minute d'arc. Deux
+tuiles voisines ne se confondent qu'à **55 mètres** — une toile de 38 cm vue
+depuis l'autre bout d'un terrain de football. La distance de regard qui rendait
+le tramage gagnant n'existe pas. À distance humaine (`blending_tiles(1,5 m) = 1`),
+la quantification directe gagne partout : 13,4 contre 16,1 ΔE. Et l'image le
+confirme sans appel — le tramage damier le fond et mouchette le visage.
+
+Le défaut est donc `dither=False`, et la raison est écrite dans le code sous
+forme exécutable (`blending_tiles`), pas en commentaire. Le tramage reste
+disponible : il redevient juste dès que la maille passe sous le pouvoir
+séparateur de l'œil.
+
+**Un critère adaptatif réfuté en chemin.** La première version pondérait le
+tramage par le contraste local de l'image. La mesure l'a réfutée : un aplat
+gris-vert parfaitement uniforme gagnait énormément au tramage. La raison est
+évidente après coup — ce qui appelle le tramage n'est pas que l'image varie,
+c'est que la couleur voulue **n'existe pas dans la palette**. Le critère est
+donc l'erreur de quantification. Corrigé, l'adaptatif devient le meilleur ou à
+égalité partout à distance de fusion, et bat les deux stratégies pures sur une
+image mixte (5,9 contre 8,4 et 12,3).
+
+### 5.12 Quatrième passe — l'échelle d'une vraie photo
+
+| Défaut | Mesure | Correction |
+|---|---|---|
+| Un tuple par pixel : **24× la place utile** | Une photo de 12 Mpx demandait ~860 Mo | `Image` stocke des `bytes` : **36 Mo**. C'est la différence entre un outil qui marche et un processus tué par le système. |
+| Décodage PNG pixel par pixel | 5,9 s pour 4,3 Mpx | Extraction des canaux par tranches (niveau C), `bytes.translate` pour les palettes, Paeth déroulé sur place : **0,04 s** sur filtre 0, **3,35 s** sur Paeth |
+| **Trou de couverture** : mon encodeur n'émet que le filtre 0 | Je testais mon décodeur sur un cinquième du format — et pas celui des appareils photo | Test des cinq filtres, au bit près |
+| Le catalogue enrichi a rendu la suite **6× plus lente** | Une plate 16×16 apporte 512 connecteurs, et l'audit H1 est quadratique en connecteurs, par conception | Le tirage aléatoire est borné en connecteurs. L'audit garde sa rigueur ; c'est l'état tiré qui est borné. |
+
+**Plancher assumé** : décoder une photo de 12 Mpx filtrée en Paeth coûte ~9 s en
+Python pur. C'est incompressible sans extension C. Je n'ai pas ajouté de chemin
+rapide optionnel via Pillow : je ne peux pas le tester ici, et livrer du code
+non vérifié serait contraire à tout le reste.
+
+### 5.13 Le substrat : le noyau arbitre, il ne suggère pas
+
+| Substrat | Pièces de fond (48×48) | Verdict du noyau |
+|---|---:|---|
+| `crossed` — deux couches de plates 2×4 croisées | 613 | **0 violation** : l'objet tient tout seul |
+| `panels` — plates 16×16, celles des sets officiels | 9 | **2056 violations H5** : neuf îlots séparés |
+
+Soixante-huit fois moins de pièces, et un objet en neuf morceaux. Les sets LEGO
+Art officiels tiennent par leur **cadre**, qui n'est pas une pièce structurelle
+et n'est pas modélisé. Le noyau refuse de certifier ce qu'un cadre absent est
+censé tenir — c'est exactement son rôle.
 
 ---
 

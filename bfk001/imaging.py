@@ -22,22 +22,48 @@ Rgb = Tuple[int, int, int]
 
 @dataclass(frozen=True)
 class Image:
-    """Image matricielle en RVB 8 bits. Value object."""
+    """Image matricielle en RVB 8 bits. Value object.
+
+    Les pixels sont stockes en `bytes` bruts, trois octets par pixel, et non en
+    tuples. Ce n'est pas un detail d'implementation : un tuple Python coute
+    environ 72 octets pour trois nombres, soit 24 fois la place utile. Une
+    photo de telephone de 12 Mpx demanderait 860 Mo en tuples contre 36 Mo en
+    octets — la difference entre un outil qui marche et un processus tue par le
+    systeme.
+    """
 
     width: int
     height: int
-    pixels: Tuple[Rgb, ...]
+    data: bytes
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.height <= 0:
             raise ValueError("dimensions d'image invalides")
-        if len(self.pixels) != self.width * self.height:
+        if len(self.data) != self.width * self.height * 3:
             raise ValueError(
-                f"{len(self.pixels)} pixels pour {self.width}x{self.height}"
+                f"{len(self.data)} octets pour {self.width}x{self.height} en RVB"
             )
 
+    @classmethod
+    def from_pixels(cls, width: int, height: int, pixels) -> "Image":
+        """Construction depuis une suite de triplets. Pratique, pas econome."""
+        data = bytearray()
+        for pixel in pixels:
+            data.extend(pixel)
+        return cls(width, height, bytes(data))
+
     def pixel(self, x: int, y: int) -> Rgb:
-        return self.pixels[y * self.width + x]
+        index = (y * self.width + x) * 3
+        return (self.data[index], self.data[index + 1], self.data[index + 2])
+
+    @property
+    def pixels(self) -> Tuple[Rgb, ...]:
+        """Vue en triplets. A reserver aux petites images : c'est 24 fois la
+        place des octets bruts."""
+        return tuple(
+            (self.data[i], self.data[i + 1], self.data[i + 2])
+            for i in range(0, len(self.data), 3)
+        )
 
 
 def _paeth(a: int, b: int, c: int) -> int:
@@ -85,43 +111,89 @@ def read_png(data: bytes) -> Image:
     raw = zlib.decompress(b"".join(idat))
     stride = width * channels
     previous = bytearray(stride)
-    pixels: List[Rgb] = []
+    data = bytearray(width * height * 3)
     offset = 0
+    paeth = _paeth
 
-    for _ in range(height):
+    # Tables de correspondance pour une image a palette : bytes.translate fait
+    # la conversion au niveau C, pixel par pixel serait cent fois plus lent.
+    if color_type == 3:
+        tables = tuple(
+            bytes(
+                palette[index * 3 + canal] if index * 3 + canal < len(palette) else 0
+                for index in range(256)
+            )
+            for canal in range(3)
+        )
+
+    for row in range(height):
         filter_type = raw[offset]
         line = bytearray(raw[offset + 1 : offset + 1 + stride])
         offset += 1 + stride
-        for i in range(stride):
-            left = line[i - channels] if i >= channels else 0
-            up = previous[i]
-            up_left = previous[i - channels] if i >= channels else 0
-            if filter_type == 1:
-                line[i] = (line[i] + left) & 0xFF
-            elif filter_type == 2:
-                line[i] = (line[i] + up) & 0xFF
-            elif filter_type == 3:
-                line[i] = (line[i] + (left + up) // 2) & 0xFF
-            elif filter_type == 4:
-                line[i] = (line[i] + _paeth(left, up, up_left)) & 0xFF
-            elif filter_type != 0:
-                raise ValueError(f"filtre PNG inconnu : {filter_type}")
+
+        # Les filtres 1, 3 et 4 sont sequentiels par octet : aucune astuce ne
+        # les vectorise en Python pur. Le filtre 0 et le filtre 2 sur la
+        # premiere ligne, eux, ne demandent aucun travail.
+        if filter_type == 2:
+            for i in range(stride):
+                line[i] = (line[i] + previous[i]) & 0xFF
+        elif filter_type == 1:
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 0xFF
+        elif filter_type == 3:
+            for i in range(channels):
+                line[i] = (line[i] + previous[i] // 2) & 0xFF
+            for i in range(channels, stride):
+                line[i] = (line[i] + (line[i - channels] + previous[i]) // 2) & 0xFF
+        elif filter_type == 4:
+            for i in range(channels):
+                line[i] = (line[i] + previous[i]) & 0xFF
+            # Paeth deroule sur place. L'appel de fonction et le test de bord
+            # coutaient plus cher que le calcul lui-meme : sur une photo de
+            # 4 Mpx, treize millions d'appels.
+            for i in range(channels, stride):
+                a = line[i - channels]
+                b = previous[i]
+                c = previous[i - channels]
+                p = a + b - c
+                pa = p - a
+                if pa < 0:
+                    pa = -pa
+                pb = p - b
+                if pb < 0:
+                    pb = -pb
+                pc = p - c
+                if pc < 0:
+                    pc = -pc
+                if pa <= pb and pa <= pc:
+                    line[i] = (line[i] + a) & 0xFF
+                elif pb <= pc:
+                    line[i] = (line[i] + b) & 0xFF
+                else:
+                    line[i] = (line[i] + c) & 0xFF
+        elif filter_type != 0:
+            raise ValueError(f"filtre PNG inconnu : {filter_type}")
         previous = line
 
-        for x in range(width):
-            base = x * channels
-            if color_type in (0, 4):
-                value = line[base]
-                pixels.append((value, value, value))
-            elif color_type == 3:
-                index = line[base] * 3
-                pixels.append(
-                    (palette[index], palette[index + 1], palette[index + 2])
-                )
-            else:
-                pixels.append((line[base], line[base + 1], line[base + 2]))
+        # Extraction des canaux par tranches : tout se passe au niveau C.
+        start = row * width * 3
+        destination = memoryview(data)[start : start + width * 3]
+        if color_type in (0, 4):
+            gris = line[0::channels]
+            destination[0::3] = gris
+            destination[1::3] = gris
+            destination[2::3] = gris
+        elif color_type == 3:
+            indices = bytes(line[0::channels])
+            for canal in range(3):
+                destination[canal::3] = indices.translate(tables[canal])
+        elif channels == 3:
+            destination[:] = line
+        else:
+            for canal in range(3):
+                destination[canal::3] = line[canal::channels]
 
-    return Image(width, height, tuple(pixels))
+    return Image(width, height, bytes(data))
 
 
 def read_ppm(data: bytes) -> Image:
@@ -145,20 +217,16 @@ def read_ppm(data: bytes) -> Image:
     if maximum != 255:
         raise ValueError("PPM : seule la profondeur 255 est supportee")
     position += 1
-    body = data[position : position + width * height * 3]
-    pixels = tuple(
-        (body[i], body[i + 1], body[i + 2]) for i in range(0, len(body), 3)
-    )
-    return Image(width, height, pixels)
+    return Image(width, height, data[position : position + width * height * 3])
 
 
 def write_png(image: Image) -> bytes:
     """Encode un PNG RVB 8 bits. Sert a produire un apercu du rendu."""
     raw = bytearray()
+    stride = image.width * 3
     for y in range(image.height):
         raw.append(0)  # filtre None : l'apercu n'a pas besoin d'etre compact
-        for x in range(image.width):
-            raw.extend(image.pixel(x, y))
+        raw.extend(image.data[y * stride : (y + 1) * stride])
 
     def chunk(kind: bytes, payload: bytes) -> bytes:
         return (
@@ -187,21 +255,28 @@ def resample_box(image: Image, width: int, height: int) -> Image:
     if width <= 0 or height <= 0:
         raise ValueError("dimensions de sortie invalides")
 
-    pixels: List[Rgb] = []
+    source = image.data
+    source_width = image.width
+    output = bytearray(width * height * 3)
+    cursor = 0
+
     for out_y in range(height):
         y0 = out_y * image.height // height
         y1 = max(y0 + 1, (out_y + 1) * image.height // height)
         for out_x in range(width):
-            x0 = out_x * image.width // width
-            x1 = max(x0 + 1, (out_x + 1) * image.width // width)
-            red = green = blue = count = 0
+            x0 = out_x * source_width // width
+            x1 = max(x0 + 1, (out_x + 1) * source_width // width)
+            red = green = blue = 0
+            count = (y1 - y0) * (x1 - x0)
             for y in range(y0, y1):
-                row = y * image.width
-                for x in range(x0, x1):
-                    r, g, b = image.pixels[row + x]
-                    red += r
-                    green += g
-                    blue += b
-                    count += 1
-            pixels.append((red // count, green // count, blue // count))
-    return Image(width, height, tuple(pixels))
+                debut = (y * source_width + x0) * 3
+                fin = (y * source_width + x1) * 3
+                bande = source[debut:fin]
+                red += sum(bande[0::3])
+                green += sum(bande[1::3])
+                blue += sum(bande[2::3])
+            output[cursor] = red // count
+            output[cursor + 1] = green // count
+            output[cursor + 2] = blue // count
+            cursor += 3
+    return Image(width, height, bytes(output))

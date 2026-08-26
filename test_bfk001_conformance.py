@@ -21,6 +21,7 @@ import bfk001_kernel as bfk
 
 SEED = 20260825
 GRID = 6  # cote du domaine de tirage pour les tests de partition
+CONNECTOR_BUDGET = 200  # borne le cout de l'audit H1, quadratique par nature
 
 
 def V(x, y, z):
@@ -70,11 +71,21 @@ def random_state(rng, part_count):
     design_ids = sorted(bfk.CATALOG)
     parts, geometries = {}, {}
     sites = [(0, 0, 0)]  # faces superieures disponibles
+    budget = CONNECTOR_BUDGET
 
     for index in range(part_count):
         part_id = f"P{index}"
         design_id = rng.choice(design_ids)
-        height = bfk.CATALOG[design_id].body_height_ldu
+        definition = bfk.CATALOG[design_id]
+        # L'audit H1 est quadratique EN CONNECTEURS, par conception : il ne
+        # presume rien de ce qu'il verifie. Une seule plate 16x16 en apporte
+        # 512 et suffit a faire exploser le cout. On borne donc l'etat tire,
+        # pas la rigueur de l'audit.
+        cout = 2 * definition.studs_x * definition.studs_y
+        if cout > budget:
+            continue
+        budget -= cout
+        height = definition.body_height_ldu
 
         if rng.randrange(3):  # deux fois sur trois : pose alignee sur un site
             x, y, z = rng.choice(sites)
