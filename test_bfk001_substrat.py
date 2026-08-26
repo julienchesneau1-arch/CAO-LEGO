@@ -311,3 +311,54 @@ class TestFusionDesPlaques(unittest.TestCase):
             self.assertTrue(
                 fond_connexe(*self.couches(studs_x, studs_y)), (studs_x, studs_y)
             )
+
+
+class TestRefusDesFormatsQuiNeTiennentPas(unittest.TestCase):
+    """`build` refuse un fond scinde au lieu de le livrer aux invariants."""
+
+    def grille(self, studs_x, studs_y):
+        random.seed(1)
+        pixels = bytes(random.randrange(256) for _ in range(8 * 8 * 3))
+        return bfk.mosaic.quantize(
+            bfk.Image(8, 8, pixels),
+            bfk.PROVISIONAL_PALETTE.solids_only(),
+            studs_x,
+            studs_y,
+        )
+
+    def test_le_refus_suit_exactement_la_connexite_reelle(self):
+        # Aucune regle en dur : on compare le refus de `build` a ce que la
+        # connexite du fond dit vraiment, format par format.
+        for studs_x in range(1, 9):
+            for studs_y in range(1, 9):
+                bas = pave(0, 0, studs_x, studs_y)
+                haut = pave(-1, -2, studs_x, studs_y)
+                tient = fond_connexe(bas, haut)
+                grille = self.grille(studs_x, studs_y)
+                if tient:
+                    bfk.mosaic.build(grille)
+                else:
+                    with self.assertRaises(ValueError, msg=f"{studs_x}x{studs_y}"):
+                        bfk.mosaic.build(grille)
+
+    def test_le_message_dit_quoi_faire(self):
+        with self.assertRaises(ValueError) as capture:
+            bfk.mosaic.build(self.grille(1, 8))
+        message = str(capture.exception)
+        self.assertIn("1 x 8", message)
+        self.assertIn("ne tient pas ensemble", message)
+        self.assertIn("Elargissez", message)
+
+    def test_un_format_normal_n_est_jamais_refuse(self):
+        for cote in (8, 16, 24, 32, 48):
+            bfk.mosaic.build(self.grille(cote, cote))
+
+    def test_le_garde_fou_ne_coute_presque_rien(self):
+        # Union-find sur les tenons : lineaire. S'il devenait quadratique, une
+        # grande mosaique le paierait et personne ne le verrait venir.
+        import time
+
+        grille = self.grille(48, 48)
+        depart = time.perf_counter()
+        bfk.mosaic.build(grille)
+        self.assertLess(time.perf_counter() - depart, 5.0)

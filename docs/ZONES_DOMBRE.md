@@ -1124,6 +1124,58 @@ dégradé, dégradé diagonal → oui.
 de même couleur, donc la fusion des tuiles rend davantage. Le portrait passe de
 1567 à **776 tuiles** — le bon réglage de tramage divise aussi le coût par deux.
 
+### 5.34 Deux hypothèses spatiales de plus sur le tramage, réfutées
+
+Après avoir établi la décision par image (§ 5.33), j'ai cherché à faire mieux :
+un critère **spatial**, qui tramerait certaines zones et pas d'autres. Deux
+tentatives, deux réfutations par la mesure. Consignées pour qu'on ne les
+retente pas.
+
+1. **Moduler par le contraste local de la photo.** Première implémentation
+   mal orientée : dans un dégradé lisse, la variation d'une tuile à sa voisine
+   est *minuscule*, donc le critère supprimait le tramage exactement là où le
+   bandage apparaît. Corrigé, il abandonne quand même presque tout le gain du
+   paysage (5,30 contre 3,73 de justesse tonale) pour ne récupérer que du grain.
+
+2. **Moduler par l'écart entre les deux couleurs mélangées.** L'idée : mélanger
+   deux couleurs proches donne un fondu, mélanger deux couleurs éloignées donne
+   du poivre et sel. Mesure des zones réelles :
+
+   | Zone | Écart palette | Écart entre les deux | Rendu observé |
+   |---|---:|---:|---|
+   | Ciel dégradé (haut) | 8,4 | 16,0 | **bon** |
+   | Fond portrait (haut) | 7,1 | 11,9 | **mauvais** |
+   | Peau à l'ombre | 9,7 | 15,3 | mauvais |
+
+   Le critère ne sépare pas les cas : la zone au plus grand écart est celle qui
+   rend le mieux. Réfuté.
+
+La décision par image reste donc la meilleure connue. Ce n'est pas une preuve
+qu'aucun critère spatial ne marche — c'est le constat que les deux plus
+évidents ne marchent pas, et qu'il faudra une hypothèse qui prédise ces
+mesures-là pour prétendre faire mieux.
+
+### 5.35 `build` livrait des modèles qu'il savait invalides
+
+Le balayage adverse a trouvé deux formats — 1×12 et 12×1 — pour lesquels
+`build` rendait un modèle que les invariants du noyau refusaient ensuite. Une
+mosaïque d'un seul tenon de large ne peut pas être tenue par un substrat
+croisé : il n'y a pas de place pour croiser.
+
+La règle exacte est biscornue — un tenon de large tient jusqu'à 4 de long, deux
+de haut tient jusqu'à 2 de large — et l'écrire en dur serait une devinette à
+maintenir. `build` **constate** donc, par union-find sur les tenons : le fond
+est connexe si et seulement si le graphe biparti « couche 0 ↔ couche 1, arête
+dès qu'elles partagent un tenon » l'est. Linéaire, exact.
+
+Vérifié sur les 64 formats de 1×1 à 8×8 : le refus coïncide exactement avec la
+connexité réelle, 10 refusés et 54 acceptés. Le test ne compare pas à une liste
+écrite à la main, il compare à la mesure.
+
+L'information était disponible dans `build`, et gratuite. La livrer quand même
+et laisser le noyau la refuser trois étapes plus loin, c'était perdre le
+message utile en chemin.
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :

@@ -641,6 +641,62 @@ def _fusionner_plaques(poses, disponibles):
     return [piece for piece in vivantes if piece is not None]
 
 
+def _verifier_fond(couches, studs_x, studs_y) -> None:
+    """Refuse un fond qui ne tient pas d'un seul tenant.
+
+    Deux plates posees cote a cote dans la meme couche ne se lient PAS : seul
+    le recouvrement d'une couche a l'autre lie. Le fond est donc connexe si et
+    seulement si le graphe biparti « couche 0 <-> couche 1, arete des qu'elles
+    partagent un tenon » l'est. On le verifie par union-find en parcourant les
+    tenons une fois : lineaire, exact, et ca ne code aucune regle biscornue.
+
+    La regle biscornue existe pourtant — une mosaique d'un tenon de large tient
+    jusqu'a quatre tenons de long et pas au-dela, deux tenons de haut jusqu'a
+    deux de large — mais l'ecrire en dur serait une devinette a maintenir. Mieux
+    vaut constater.
+
+    Sans ce garde-fou, `build` rendait un modele que les invariants du noyau
+    refusaient ensuite : l'information etait disponible ici, et gratuite.
+    """
+    if len(couches) != 2:  # pragma: no cover - le substrat croise en a deux
+        return
+    parent: Dict[Tuple[int, int], Tuple[int, int]] = {}
+
+    def racine(noeud):
+        while parent[noeud] != noeud:
+            parent[noeud] = parent[parent[noeud]]
+            noeud = parent[noeud]
+        return noeud
+
+    occupant: List[Dict[Tuple[int, int], Tuple[int, int]]] = []
+    for rang, couche in enumerate(couches):
+        carte = {}
+        for index, (x, y, largeur, profondeur, _) in enumerate(couche):
+            parent[(rang, index)] = (rang, index)
+            for j in range(profondeur):
+                for i in range(largeur):
+                    carte[(x + i, y + j)] = (rang, index)
+        occupant.append(carte)
+
+    for tenon, bas in occupant[0].items():
+        haut = occupant[1].get(tenon)
+        if haut is None:
+            continue
+        a, b = racine(bas), racine(haut)
+        if a != b:
+            parent[a] = b
+
+    composantes = {racine(noeud) for noeud in parent}
+    if len(composantes) > 1:
+        raise ValueError(
+            f"une mosaique {studs_x} x {studs_y} ne tient pas ensemble : son "
+            f"fond se scinde en {len(composantes)} morceaux independants. "
+            "Une oeuvre d'un seul tenon de large ne peut pas etre tenue par un "
+            "substrat croise au-dela de quelques tenons — il n'y a pas de place "
+            "pour croiser. Elargissez-la."
+        )
+
+
 def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color,
            fusion: bool = True) -> int:
     """Pave l'emprise de l'oeuvre de plates sur un reseau ancre ailleurs.
@@ -673,7 +729,7 @@ def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color,
             color_id=color,
         )
         add(placed, geometry, instance)
-    return len(poses)
+    return poses
 
 
 def build(
@@ -754,17 +810,20 @@ def build(
         tile_z = PLATE_HEIGHT_LDU
     else:
         # Couche 0 : pavage de plates 2x4, a partir de l'origine.
-        _paver(enregistrer, "S0", 0, 0, studs_x, studs_y, 0, substrate_color)
+        couche_basse = _paver(
+            enregistrer, "S0", 0, 0, studs_x, studs_y, 0, substrate_color
+        )
 
         # Couche 1 : meme pavage decale d'un tenon en x et de deux en y. Chaque
         # plate y chevauche quatre plates de la couche 0 : c'est ce decalage, et
         # lui seul, qui fait tenir le fond d'un seul tenant. Un pavage sans
         # decalage, ou decale sur un seul axe, se scinde en bandes disjointes —
         # H5 le voit.
-        _paver(
+        couche_haute = _paver(
             enregistrer, "S1", -1, -2, studs_x, studs_y,
             PLATE_HEIGHT_LDU, substrate_color,
         )
+        _verifier_fond((couche_basse, couche_haute), studs_x, studs_y)
         tile_z = 2 * PLATE_HEIGHT_LDU
 
     # Derniere couche : la mosaique. La ligne 0 de l'image est en haut, donc au
