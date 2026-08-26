@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 67 tests verts.
+Version du noyau : **BFK-001 v3.3.2** — 74 tests verts, chaîne complète photo → notice.
 
 ---
 
@@ -308,52 +308,64 @@ testait H1 sur des états sans bond, donc sur rien.
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
 
+La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48`.
+
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse (segmentation, palette, profondeur) | **0 %** | Tout. Couche perception, hors noyau. |
-| → modélisation LEGO Art | **~25 %** | La **garantie** existe et tient à l'échelle réelle ; le **générateur** n'existe pas. Manquent : palette LEGO complète, mapping couleur, solveur de placement. |
-| → liste de course | **~30 %** | Mécanique complète (identité, agrégation, garde-fou) mais 10 références et 9 couleurs seulement. Manquent : import catalogue, palette complète, export BrickLink / Pick-a-Brick, prix. |
-| → notice de montage | **~5 %** | `InstructionGraph.validate_dag` seul. Manquent : `BuildStep` concret, découpage en étapes, sous-assemblages, rendu isométrique, PDF. |
+| Photo → analyse | **~70 %** | Lecture PNG/PPM et rééchantillonnage par moyenne de bloc, quantification en CIE L\*a\*b\*. Manquent : tramage (dithering), cadrage assisté. |
+| → modélisation LEGO Art | **~70 %** | Solveur mosaïque + substrat croisé, validé H1–H6 à l'échelle officielle. Manquent : fusion des tuiles en plates plus grandes (coût), découpe multi-plaques, et tout le volume 3D. |
+| → liste de course | **~55 %** | Nomenclature agrégée, export CSV, garde-fou anti-omission. Manquent : import catalogue réel, palette complète, export BrickLink, prix. |
+| → notice de montage | **~30 %** | Plan acyclique, ordre physiquement exécutable, regroupement par couleur, rendu texte. Manquent : vues isométriques, PDF, ligne graphique LEGO. |
 
-**Environ 15 % de la demande, et ~100 % de sa fondation.** Ce qui est bâti est
-la partie qui rend les 85 % restants dignes de confiance : sans elle, un
-générateur produit des modèles qui s'affichent parfaitement et s'effondrent.
+**Environ 55 % de la demande.** Le bond depuis les ~15 % precedents n'est pas un
+tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
+volume 3D — de loin le plus lourd — n'en fait pas partie.
 
-### 6.1 Ce que le noyau encaisse déjà, mesuré
+Ce qui reste est domine par deux choses tres differentes : du **rendu
+graphique** pour la notice, et de la **donnee reelle** (palette officielle,
+catalogue, prix). Aucune des deux n'est un probleme d'architecture.
 
-LEGO Art au format officiel 48×48 — 2304 tuiles 1×1 sur substrat, **2917
-pièces**, 4608 liaisons :
+### 6.1 Mesures de bout en bout
 
-| Étape | Temps |
-|---|---:|
-| Assemblage (recherche + oracle) | 0,21 s |
-| H2 collision | 2,76 s |
-| H3 + H4 + H5 + H6 | 2,84 s |
-| **Validation complète** | **5,80 s** |
-| Nomenclature | instantanée |
+Photo 256×256 → mosaïque 48×48 (format LEGO Art officiel) :
 
-L'audit H1, lui, reste quadratique **par conception** : 4,2 s pour 144 pièces,
-donc plusieurs heures à cette échelle. C'est un harnais de conformité pour
-valider une implémentation de recherche, pas un contrôle de modèle. J'ai
-refusé de l'accélérer en lui faisant présumer la règle de compatibilité des
-`ctype` : il perdrait son indépendance vis-à-vis de ce qu'il audite, et c'est
-tout ce qui fait sa valeur.
+| Étape | Résultat |
+|---|---|
+| Modèle | 2917 pièces (2304 tuiles + substrat), 4608 liaisons |
+| Génération | 0,40 s |
+| Validation H1–H6 | 4,90 s, **0 violation** |
+| Liste de course | 10 références, instantanée |
+| Notice | 126 étapes, DAG validé |
+| Document `.json` | 1,15 Mo (9,6 Mo avant mise en facteur des géométries) |
+
+Le modèle n'est **écrit que s'il passe les six invariants**. Une mosaïque qui ne
+tiendrait pas ensemble n'est pas livrée — c'est tout l'intérêt d'avoir bâti le
+noyau d'abord.
 
 ### 6.2 Ce que la mosaïque a révélé sur la demande elle-même
 
 Une mosaïque naïve — les tuiles posées côte à côte sur le plan, exactement ce
 que produit un « pixel art → briques » — passe H2, H4 et H6 sans un seul
 défaut, **et n'est pas un objet** : 64 tuiles, 64 composants séparés. Seul H5
-le voit. Un générateur LEGO Art devra donc produire un substrat (deux couches
-de plates croisées suffisent, c'est testé), sinon il livrera un tas de pièces
-qui s'affiche parfaitement à l'écran. C'est une contrainte de conception pour
-l'étape 2, découverte par le noyau et non par un client mécontent.
+le voit. Le solveur impose donc un substrat de deux couches de plates croisées,
+et c'est vérifié à chaque génération.
 
-### 6.3 Le chemin le plus court vers la demande
+### 6.3 Les limites honnêtes de ce qui est livré
 
-1. **Palette LEGO réelle + import catalogue** — débloque à la fois la liste de course et le mapping couleur du générateur.
-2. **Solveur mosaïque 2D** — LEGO Art est un problème 2D : quantification sur la palette, tuile par tenon, substrat imposé. Infiniment plus court que le volume 3D, et c'est exactement la demande.
-3. **`BuildStep` + découpage en étapes** — la notice ; le graphe de dépendances existe déjà, il lui manque son type concret et un rendu.
+- **Palette provisoire de 12 couleurs**, recopiées à la main — le même geste qui
+  avait produit l'erreur 3021. `load_ldconfig()` importe la palette officielle
+  en une ligne ; tant qu'elle n'est pas fournie, la finesse du rendu est
+  plafonnée par la palette, pas par l'algorithme.
+- **Pas de tramage** : les dégradés se posterisent. C'est visible sur l'aperçu.
+- **Substrat non optimisé** : un pavage plein de plates 2×4. Un solveur de coût
+  choisirait mieux.
+- **Notice sans images.** La structure est juste, le rendu graphique reste à faire.
+
+### 6.4 Le chemin le plus court pour la suite
+
+1. **Importer LDConfig.ldr et un vrai catalogue** — débloque d'un coup la qualité du rendu et la justesse de la liste de course.
+2. **Tramage Floyd-Steinberg** contraint à la palette — le plus gros gain visuel pour le plus petit effort.
+3. **Rendu de la notice** — vues isométriques par étape ; c'est du rendu 3D, pas de la CAO.
 
 ---
 

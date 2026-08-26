@@ -351,7 +351,11 @@ def test_document_never_carries_a_bond():
 
     document = json.loads(payload)
     assert document["version"] == bfk.DOCUMENT_VERSION
-    assert set(document) == {"version", "parts"}
+    assert set(document) == {"version", "geometries", "connector_sets", "parts"}
+    # Les geometries sont mises en facteur : deux briques identiques ne
+    # dupliquent pas leurs vingt-deux vides dans le fichier.
+    assert len(document["geometries"]) == 1
+    assert len(document["parts"]) == 2
 
     reloaded_parts, reloaded_geometries, reloaded_instances = bfk.loads_model(payload)
     assert reloaded_parts == parts
@@ -386,9 +390,15 @@ def test_document_validation_rejects_corrupted_input():
         bfk.from_document(reflected)  # determinant -1 : reflexion
 
     skewed = json.loads(json.dumps(document))
-    skewed["parts"][0]["connectors"][0]["local_normal"] = [1, 1, 0]
+    premier_jeu = next(iter(skewed["connector_sets"]))
+    skewed["connector_sets"][premier_jeu][0]["local_normal"] = [1, 1, 0]
     with pytest.raises(ValueError):
         bfk.from_document(skewed)  # normale non axiale
+
+    orphelin = json.loads(json.dumps(document))
+    orphelin["parts"][0]["connectors_ref"] = "inconnu"
+    with pytest.raises(ValueError):
+        bfk.from_document(orphelin)
 
     duplicated = json.loads(json.dumps(document))
     duplicated["parts"].append(duplicated["parts"][0])
@@ -396,9 +406,15 @@ def test_document_validation_rejects_corrupted_input():
         bfk.from_document(duplicated)
 
     inverted = json.loads(json.dumps(document))
-    inverted["parts"][0]["geometry"]["exterior"]["min"] = [999, 999, 999]
+    premiere = next(iter(inverted["geometries"]))
+    inverted["geometries"][premiere]["exterior"]["min"] = [999, 999, 999]
     with pytest.raises(ValueError):
         bfk.from_document(inverted)  # min > max
+
+    orpheline = json.loads(json.dumps(document))
+    orpheline["parts"][0]["geometry_ref"] = "inconnue"
+    with pytest.raises(ValueError):
+        bfk.from_document(orpheline)
 
 
 # =============================================================================
@@ -418,6 +434,18 @@ def test_catalog_parts_are_buildable_and_valid():
         geometries = {"base": base_geometry, "top": top_geometry}
 
         state = bfk.assemble(placed, tolerance)
+
+        if not part.has_studs:
+            # Une tuile est une piece de finition : rien ne s'y accroche.
+            # Deux tuiles empilees ne forment donc pas un objet, et H5 doit le
+            # dire — c'est la meme verite que pour la mosaique naive.
+            assert state.graph.edges == (), f"{design_id} ({part.name})"
+            assert bfk.check_h5_disconnected(state.graph), (
+                f"{design_id} : deux pieces sans liaison ne sont pas un objet"
+            )
+            assert bfk.check_h2_collision(placed, geometries) == ()
+            continue
+
         expected_bonds = part.studs_x * part.studs_y
         assert [(a, b, len(bonds)) for a, b, bonds in state.graph.edges] == [
             ("base", "top", expected_bonds)

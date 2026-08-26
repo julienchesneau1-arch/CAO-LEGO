@@ -19,6 +19,10 @@ Decoupage (Section O, DAG acyclique) :
     orchestration --     composition d'etats (hors contrat)
     lego          --     metrologie du systeme LEGO et pieces (hors contrat)
     catalog       --     references, couleurs, nomenclature (hors contrat)
+    imaging       --     lecture et reechantillonnage d'images (hors contrat)
+    palette       --     palette LEGO et quantification perceptuelle (hors contrat)
+    mosaic        --     solveur LEGO Art : image -> modele (hors contrat)
+    instructions  --     plan de montage acyclique (hors contrat)
     rotations     --     les 24 rotations discretes, nommees (hors contrat)
     fast_search   --     recherche O(n) conforme H1 (hors contrat, H.4)
     serialization --     persistance sans bond (hors contrat)
@@ -29,6 +33,7 @@ elle reexporte l'integralite de cette API publique.
 
 from __future__ import annotations
 
+from . import imaging, instructions, mosaic, palette
 from .catalog import (
     CATALOG,
     LDRAW_COLORS,
@@ -66,7 +71,9 @@ from .geometry import (
     transform_local_to_world,
     transform_world_to_local,
 )
-from .graph import BuildStep, ConstructionGraph, InstructionGraph
+from .graph import ConstructionGraph, InstructionGraph
+from .imaging import Image, read_png, read_ppm, resample_box, write_png
+from .instructions import BuildStep, plan_build, render_text
 from .lego import (
     BRICK_HEIGHT_LDU,
     HALF_STUD_LDU,
@@ -84,7 +91,15 @@ from .lego import (
     mm_to_ldu,
     place_brick,
 )
+from .mosaic import Mosaic
 from .oracle import PhysicalBond, evaluate_connector_pair, is_oracle_issued
+from .palette import (
+    PROVISIONAL_PALETTE,
+    LegoColor,
+    Palette,
+    load_ldconfig,
+    srgb_to_lab,
+)
 from .orchestration import (
     PlacementVerdict,
     add_part,
@@ -198,7 +213,6 @@ __all__ = [
     "LatticeSearchApproximation",
     # Section I
     "ConstructionGraph",
-    "BuildStep",
     "InstructionGraph",
     # Section J
     "SpatialSnapshot",
@@ -228,6 +242,25 @@ __all__ = [
     "definition",
     "place",
     "bill_of_materials",
+    # Perception, solveur mosaique et notice (hors contrat)
+    "imaging",
+    "palette",
+    "mosaic",
+    "instructions",
+    "Image",
+    "read_png",
+    "read_ppm",
+    "write_png",
+    "resample_box",
+    "LegoColor",
+    "Palette",
+    "PROVISIONAL_PALETTE",
+    "load_ldconfig",
+    "srgb_to_lab",
+    "Mosaic",
+    "BuildStep",
+    "plan_build",
+    "render_text",
     # Systeme LEGO (hors contrat)
     "LDU_MM",
     "STUD_PITCH_LDU",

@@ -50,12 +50,17 @@ class PartDefinition:
     studs_x: int
     studs_y: int
     body_height_ldu: int
+    has_studs: bool = True
 
     def geometry(self) -> CollisionGeometry:
-        return brick_geometry(self.studs_x, self.studs_y, self.body_height_ldu)
+        return brick_geometry(
+            self.studs_x, self.studs_y, self.body_height_ldu, self.has_studs
+        )
 
     def connectors(self) -> Tuple[Connector, ...]:
-        return brick_connectors(self.studs_x, self.studs_y, self.body_height_ldu)
+        return brick_connectors(
+            self.studs_x, self.studs_y, self.body_height_ldu, self.has_studs
+        )
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,7 @@ _DEFINITIONS = (
     PartDefinition("3022", "Plate 2 x 2", 2, 2, PLATE_HEIGHT_LDU),
     PartDefinition("3021", "Plate 2 x 3", 2, 3, PLATE_HEIGHT_LDU),
     PartDefinition("3020", "Plate 2 x 4", 2, 4, PLATE_HEIGHT_LDU),
+    PartDefinition("3070b", "Tile 1 x 1 with Groove", 1, 1, PLATE_HEIGHT_LDU, False),
 )
 # ATTENTION — reference corrigee : le document de reflexion produit listait
 # « 3021 Plate 2x4 ». C'est faux : 3021 est une Plate 2x3, et la Plate 2x4 porte

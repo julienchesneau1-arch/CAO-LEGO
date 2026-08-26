@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **67 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **74 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire).
 
 Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
@@ -15,6 +15,22 @@ Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
 preuve, soit nommée avec la décision qui lui manque.
 
 ---
+
+## La chaîne complète, en une commande
+
+```bash
+python3 demo_lego_art.py photo.png --studs 48 --sortie resultat/
+```
+
+Produit `apercu.png`, `liste_de_course.csv`, `notice.txt` et `modele.json` —
+**mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
+qui ne tiendrait pas ensemble n'est pas livrée.
+
+Sur une photo 256×256 en 48×48 tenons : 2917 pièces, 4608 liaisons, 0 violation,
+10 références, 126 étapes de montage, le tout en ~5 s.
+
+Aucune dépendance : PNG, palette, quantification et rendu sont en bibliothèque
+standard.
 
 ## Exécution
 
@@ -25,6 +41,7 @@ pytest test_bfk001_integration.py       # Phase 7, invariants H1–H6
 pytest test_bfk001_cad.py               # couche CAO (hors contrat)
 pytest test_bfk001_conformance.py       # propriétés, sur tirages aléatoires
 pytest test_bfk001_lego_art.py          # mosaïque : ce que le noyau accepte et refuse
+pytest test_bfk001_pipeline.py          # photo → modèle → liste de course → notice
 ```
 
 Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
@@ -52,6 +69,10 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/fast_search.py` | H.4 | `LatticeSearchApproximation` : recherche O(n) avec preuve de complétude (**hors contrat**) |
 | `bfk001/catalog.py` | — | Références LEGO, couleurs, nomenclature (**hors contrat**) |
 | `bfk001/serialization.py` | — | Persistance JSON sans aucune liaison (**hors contrat**) |
+| `bfk001/imaging.py` | — | Lecture PNG/PPM, rééchantillonnage par moyenne de bloc (**hors contrat**) |
+| `bfk001/palette.py` | — | Palette LEGO, import LDConfig, quantification CIE L\*a\*b\* (**hors contrat**) |
+| `bfk001/mosaic.py` | — | Solveur LEGO Art : image → modèle avec substrat (**hors contrat**) |
+| `bfk001/instructions.py` | — | Plan de montage acyclique, ordonné par portance (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.

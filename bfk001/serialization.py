@@ -35,7 +35,12 @@ __all__ = [
     "loads_model",
 ]
 
-DOCUMENT_VERSION = "BFK-001/3.3.2"
+DOCUMENT_VERSION = "BFK-001/3.3.2+geom-table"
+
+# Les geometries sont mises en facteur dans une table, et les pieces s'y
+# referent. Un modele reel compte des milliers de pieces pour une poignee de
+# geometries distinctes : ecrire la geometrie complete a chaque piece produisait
+# 9,6 Mo la ou 300 Ko suffisent. Trouve en utilisant l'outil, pas en le testant.
 
 
 def _vector_to_json(vector: LDUVector) -> list:
@@ -91,9 +96,38 @@ def to_document(
     sans elle un document est constructible mais pas achetable.
     """
     instances = {} if instances is None else instances
+
+    shapes: Dict[CollisionGeometry, str] = {}
+    shape_table: Dict[str, Any] = {}
+    connector_sets: Dict[tuple, str] = {}
+    connector_table: Dict[str, Any] = {}
     parts = []
+
     for part_id, part in sorted(placed_parts.items()):
         geometry = geometries.get(part_id)
+        if geometry is None:
+            raise ValueError(
+                f"{part_id} : geometrie absente, le document serait inexploitable"
+            )
+        if geometry not in shapes:
+            reference = f"g{len(shapes)}"
+            shapes[geometry] = reference
+            shape_table[reference] = {
+                "exterior": _aabb_to_json(geometry.exterior),
+                "voids": [_aabb_to_json(void) for void in geometry.voids],
+            }
+        if part.connectors not in connector_sets:
+            reference = f"c{len(connector_sets)}"
+            connector_sets[part.connectors] = reference
+            connector_table[reference] = [
+                {
+                    "ctype": connector.ctype,
+                    "local_pos": _vector_to_json(connector.local_pos),
+                    "local_normal": _vector_to_json(connector.local_normal),
+                }
+                for connector in part.connectors
+            ]
+
         instance = instances.get(part_id)
         parts.append(
             {
@@ -101,23 +135,17 @@ def to_document(
                 "design_id": None if instance is None else instance.design_id,
                 "color_id": None if instance is None else instance.color_id,
                 "pose": _pose_to_json(part.pose),
-                "connectors": [
-                    {
-                        "ctype": connector.ctype,
-                        "local_pos": _vector_to_json(connector.local_pos),
-                        "local_normal": _vector_to_json(connector.local_normal),
-                    }
-                    for connector in part.connectors
-                ],
-                "geometry": None
-                if geometry is None
-                else {
-                    "exterior": _aabb_to_json(geometry.exterior),
-                    "voids": [_aabb_to_json(void) for void in geometry.voids],
-                },
+                "geometry_ref": shapes[geometry],
+                "connectors_ref": connector_sets[part.connectors],
             }
         )
-    return {"version": DOCUMENT_VERSION, "parts": parts}
+
+    return {
+        "version": DOCUMENT_VERSION,
+        "geometries": shape_table,
+        "connector_sets": connector_table,
+        "parts": parts,
+    }
 
 
 def from_document(
@@ -134,6 +162,25 @@ def from_document(
             f"version de document non supportee : {document.get('version')!r}"
         )
 
+    shape_table = {
+        reference: CollisionGeometry(
+            exterior=_aabb_from_json(shape["exterior"]),
+            voids=tuple(_aabb_from_json(void) for void in shape["voids"]),
+        )
+        for reference, shape in document["geometries"].items()
+    }
+    connector_table = {
+        reference: tuple(
+            Connector(
+                connector["ctype"],
+                _vector_from_json(connector["local_pos"]),
+                _vector_from_json(connector["local_normal"]),
+            )
+            for connector in connectors
+        )
+        for reference, connectors in document["connector_sets"].items()
+    }
+
     placed_parts: Dict[str, PlacedPart] = {}
     geometries: Dict[str, CollisionGeometry] = {}
     instances: Dict[str, PartInstance] = {}
@@ -145,24 +192,12 @@ def from_document(
             raise ValueError(f"identifiant duplique dans le document : {part_id}")
 
         pose = _pose_from_json(entry["pose"])
-        connectors = tuple(
-            Connector(
-                connector["ctype"],
-                _vector_from_json(connector["local_pos"]),
-                _vector_from_json(connector["local_normal"]),
-            )
-            for connector in entry["connectors"]
-        )
-
-        geometry_data = entry.get("geometry")
-        if geometry_data is None:
-            raise ValueError(
-                f"{part_id} : geometrie absente, l'AABB monde ne peut etre recalcule"
-            )
-        geometry = CollisionGeometry(
-            exterior=_aabb_from_json(geometry_data["exterior"]),
-            voids=tuple(_aabb_from_json(void) for void in geometry_data["voids"]),
-        )
+        if entry["connectors_ref"] not in connector_table:
+            raise ValueError(f"{part_id} : jeu de connecteurs inconnu")
+        if entry["geometry_ref"] not in shape_table:
+            raise ValueError(f"{part_id} : geometrie inconnue")
+        connectors = connector_table[entry["connectors_ref"]]
+        geometry = shape_table[entry["geometry_ref"]]
 
         from .geometry import transform_aabb
 

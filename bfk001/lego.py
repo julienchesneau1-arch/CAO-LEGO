@@ -170,6 +170,7 @@ def brick_geometry(
     studs_x: int,
     studs_y: int,
     body_height_ldu: int = BRICK_HEIGHT_LDU,
+    with_studs: bool = True,
 ) -> CollisionGeometry:
     """Geometrie de collision d'une piece rectangulaire, repere LOCAL.
 
@@ -189,7 +190,9 @@ def brick_geometry(
 
     width_x = studs_x * STUD_PITCH_LDU
     width_y = studs_y * STUD_PITCH_LDU
-    top_of_studs = body_height_ldu + STUD_HEIGHT_LDU
+    # Une tuile n'a pas de tenon : sa face superieure est lisse, et c'est tout
+    # l'interet d'une mosaique. Son exterieur s'arrete donc au corps.
+    top_of_studs = body_height_ldu + (STUD_HEIGHT_LDU if with_studs else 0)
 
     exterior = AABB(LDUVector(0, 0, 0), LDUVector(width_x, width_y, top_of_studs))
 
@@ -203,6 +206,9 @@ def brick_geometry(
             ),
         )
     ]
+
+    if not with_studs:
+        return CollisionGeometry(exterior=exterior, voids=tuple(voids))
 
     xs = _stud_grid_coords(studs_x)
     ys = _stud_grid_coords(studs_y)
@@ -228,6 +234,7 @@ def brick_connectors(
     studs_x: int,
     studs_y: int,
     body_height_ldu: int = BRICK_HEIGHT_LDU,
+    with_studs: bool = True,
 ) -> Tuple[Connector, ...]:
     """Tenons males sur la face superieure, femelles sur la face inferieure.
 
@@ -236,7 +243,7 @@ def brick_connectors(
     le point de reference femelle de la piece posee dessus.
     """
     centers = _stud_centers(studs_x, studs_y)
-    males = tuple(
+    males = () if not with_studs else tuple(
         Connector(
             CTYPE_STUD_MALE,
             LDUVector(cx, cy, body_height_ldu),
