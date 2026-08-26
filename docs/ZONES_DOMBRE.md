@@ -941,6 +941,38 @@ demandée. Sous **2 pixels par tenon** il n'y a plus de moyenne du tout — chaq
 tuile prend la couleur d'un pixel à peu près au hasard dans sa zone. Le CLI
 l'annonce désormais, avec la taille à laquelle il faudrait descendre.
 
+### 5.32 Le tramage adaptatif inventait du grain, et un plafond mesuré le borne
+
+En regardant le rendu final, un défaut restait : le coin de ciel lavande — là où
+la palette a son plus grand trou — se criblait de tuiles blanches et roses. La
+diffusion travaillait à pleine force et pulvérisait un écart énorme sur les
+voisins.
+
+Pour trancher sans juger à l'œil, il fallait une mesure de ce que le tramage
+peut **abîmer**, et non seulement de ce qu'il améliore. C'est le **grain
+inventé** : la variation d'une tuile à sa voisine que la photo ne contient pas
+au même pas.
+
+| Plafond de force | tonal moyen | tonal pire | grain inventé |
+|---:|---:|---:|---:|
+| 0,00 (pas de tramage) | 5,72 | 13,12 | +0,52 |
+| 0,25 | 5,12 | 12,79 | +2,95 |
+| 0,35 | 4,79 | 11,00 | +4,01 |
+| **0,50** | **4,25** | **8,54** | +5,52 |
+| 0,70 | 4,09 | 8,54 | +6,01 |
+| 1,00 (avant) | 4,08 | 8,54 | +6,06 |
+
+Le genou est net et il ne se discute pas : **à 0,50, le pire écart tonal a déjà
+rejoint celui du tramage plein**. Passer à 1,00 gagne 0,17 ΔE et coûte un
+demi-point de grain — du grain qui se voit. `DITHER_MAX_STRENGTH = 0.5` est
+donc le plus petit plafond qui conserve la totalité du bénéfice, pas un réglage
+au jugement.
+
+C'est aussi ce qui manquait à toutes les décisions précédentes sur le tramage :
+un critère qui mesure le **coût**. La fidélité par tuile ne le voit pas — elle
+mélange l'erreur de palette et le grain. La justesse tonale ne le voit pas non
+plus, puisque le grain s'y annule par construction.
+
 ---
 
 ## 6. Où en est-on de la demande produit

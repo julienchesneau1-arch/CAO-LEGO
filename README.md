@@ -360,6 +360,12 @@ références de plus ; Floyd complet en aurait coûté dix-sept. La diffusion se
 fait en **serpentin**, un rang sur deux à l'envers, ce qui casse les vermicules
 diagonaux de Floyd-Steinberg — trois lignes, et trois références de moins.
 
+La force de diffusion est **plafonnée à 0,5**, et ce plafond est le genou
+mesuré de la courbe : à 0,5 le pire écart tonal a déjà rejoint celui du tramage
+plein (8,54 ΔE), au-delà on n'achète plus que du **grain inventé** — la
+variation d'une tuile à sa voisine que la photo ne contient pas. C'est la mesure
+qui manquait à toutes les décisions précédentes sur le tramage : celle du coût.
+
 `--tramage aucun|adaptatif|complet` pour trancher soi-même.
 
 ---

@@ -242,6 +242,52 @@ class TestDiffusionEnSerpentin(unittest.TestCase):
             bfk.mosaic.fidelity(direct, degrade, 4)[0],
         )
 
+    def test_le_plafond_de_force_borne_le_grain_invente(self):
+        # Le grain invente : la variation d'une tuile a sa voisine QUE LA PHOTO
+        # NE CONTIENT PAS. C'est la seule chose que le tramage puisse abimer,
+        # et c'est ce que le plafond borne.
+        from bfk001.mosaic import (
+            DITHER_MAX_STRENGTH,
+            _quantization_error_strength,
+        )
+
+        self.assertLessEqual(DITHER_MAX_STRENGTH, 1.0)
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        # Une couleur tres loin de la palette : la force serait saturee a 1.
+        loin = bfk.Image(64, 64, bytes((128, 150, 120)) * (64 * 64))
+        reduite = bfk.resample_box(loin, 16, 16)
+        force = _quantization_error_strength(reduite, palette, 16, 16)
+        maxi = max(v for ligne in force for v in ligne)
+        self.assertGreater(maxi, 0.0)
+        self.assertLessEqual(maxi, DITHER_MAX_STRENGTH + 1e-9)
+
+    def test_le_grain_reste_sous_celui_du_tramage_plein(self):
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        pixels = bytearray()
+        for y in range(96):
+            for x in range(96):
+                t = (x + y) / 192
+                pixels += bytes((int(40 + 150 * t), int(90 + 110 * t), int(150 + 70 * t)))
+        degrade = bfk.Image(96, 96, bytes(pixels))
+
+        def variation(grille):
+            cote = len(grille)
+            total = compte = 0.0
+            for y in range(cote):
+                for x in range(cote):
+                    for dx, dy in ((1, 0), (0, 1)):
+                        nx, ny = x + dx, y + dy
+                        if nx < cote and ny < cote:
+                            total += delta_e2000(grille[y][x].rgb, grille[ny][nx].rgb)
+                            compte += 1
+            return total / compte
+
+        adaptatif = variation(bfk.mosaic.quantize(degrade, palette, 32, 32, "adaptive"))
+        plein = variation(bfk.mosaic.quantize(degrade, palette, 32, 32, True))
+        direct = variation(bfk.mosaic.quantize(degrade, palette, 32, 32, False))
+        self.assertLess(direct, adaptatif)
+        self.assertLess(adaptatif, plein)
+
     def test_le_defaut_est_l_adaptatif(self):
         palette = bfk.PROVISIONAL_PALETTE
         image = bfk.Image(32, 32, bytes((90, 120, 95)) * (32 * 32))

@@ -240,6 +240,25 @@ DITHER_FULL_DELTA_E = 16.0
 """Au dela, la couleur voulue est franchement absente de la palette : seule la
 diffusion d'erreur peut la simuler."""
 
+DITHER_MAX_STRENGTH = 0.5
+"""Fraction maximale de l'erreur diffusee, meme quand la palette est tres loin.
+
+Ce n'est pas un reglage au jugement : c'est le GENOU de la courbe, mesure. Au
+dela, la diffusion n'achete plus rien et ne fait qu'ajouter du grain.
+
+    plafond   tonal   pire   grain invente (delta E de plus que la photo)
+       0,00    5,72  13,12          +0,52
+       0,35    4,79  11,00          +4,01
+       0,50    4,25   8,54          +5,52
+       1,00    4,08   8,54          +6,06
+
+A 0,50 le pire ecart tonal a deja rejoint celui du tramage plein. Passer a 1,00
+gagne 0,17 delta E et coute un demi-point de grain — et ce grain se voit : le
+coin de ciel lavande d'une photo d'essai se criblait de tuiles blanches et
+roses. Le grain est mesure comme l'exces de variation d'une tuile a sa voisine
+par rapport a ce que la photo en contient au meme pas : c'est de la texture
+INVENTEE, celle qui n'est dans aucune photo."""
+
 
 def _quantization_error_strength(
     reduced: Image, palette: Palette, studs_x: int, studs_y: int
@@ -264,7 +283,7 @@ def _quantization_error_strength(
             ecart = delta_e(voulue, palette.nearest(voulue).rgb)
             ligne.append(
                 min(
-                    1.0,
+                    DITHER_MAX_STRENGTH,
                     max(
                         0.0,
                         (ecart - DITHER_NEGLIGIBLE_DELTA_E)
