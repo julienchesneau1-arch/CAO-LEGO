@@ -42,6 +42,7 @@ __all__ = [
     "PaletteCost",
     "palette_cost_curve",
     "cheapest_palette",
+    "cost_of_grid",
     "build",
     "from_image",
     "preview",
@@ -465,6 +466,25 @@ class TilePlacement:
     color: LegoColor
 
 
+def _references_par_longueur(tiles: Sequence[str]):
+    """Jeu de tuiles -> (longueur -> reference, longueurs decroissantes)."""
+    par_longueur: Dict[int, str] = {}
+    for design in tiles:
+        piece = CATALOG[design]
+        if piece.studs_x != 1 or piece.has_studs:
+            raise ValueError(
+                f"{design} n'est pas une tuile lisse 1 x N : une mosaique se "
+                "termine par une surface plate, et la fusion se fait en ligne."
+            )
+        par_longueur[piece.studs_y] = design
+    if 1 not in par_longueur:
+        raise ValueError(
+            "il faut au moins la tuile 1 x 1 : sans elle, un run de longueur "
+            "premiere ne pourrait pas etre couvert exactement."
+        )
+    return par_longueur, sorted(par_longueur, reverse=True)
+
+
 def _decoupe_optimale(longueur: int, disponibles: Sequence[int]) -> List[int]:
     """Decoupe d'un run en un MINIMUM de tuiles. Programmation dynamique.
 
@@ -788,21 +808,7 @@ def build(
     """
     if substrate not in ("crossed", "panels"):
         raise ValueError("substrate vaut 'crossed' ou 'panels'")
-    par_longueur: Dict[int, str] = {}
-    for design in tiles:
-        piece = CATALOG[design]
-        if piece.studs_x != 1 or piece.has_studs:
-            raise ValueError(
-                f"{design} n'est pas une tuile lisse 1 x N : une mosaique se "
-                "termine par une surface plate, et la fusion se fait en ligne."
-            )
-        par_longueur[piece.studs_y] = design
-    if 1 not in par_longueur:
-        raise ValueError(
-            "il faut au moins la tuile 1 x 1 : sans elle, un run de longueur "
-            "premiere ne pourrait pas etre couvert exactement."
-        )
-    longueurs = sorted(par_longueur, reverse=True)
+    par_longueur, longueurs = _references_par_longueur(tiles)
     if not grid or not grid[0]:
         raise ValueError("grille vide")
     studs_y = len(grid)
@@ -944,30 +950,74 @@ def palette_cost_curve(
     pixels = [reduite.pixel(x, y) for y in range(studs_y) for x in range(studs_x)]
     courbe = palette.subset_curve(pixels, maximum)
 
+    # Le substrat ne depend pas de la palette : on le mesure UNE fois et on
+    # l'ajoute a chaque candidate, au lieu de rebatir un modele complet a
+    # chaque fois pour en relire deux nombres.
+    substrat = _cout_du_substrat(studs_x, studs_y)
     return tuple(
         _mesurer_palette(
             image,
             Palette(couleur for couleur, _ in courbe[:rang]),
-            studs_x, studs_y, tiles, quantize_options,
+            studs_x, studs_y, tiles, quantize_options, substrat,
         )
         for rang in range(1, len(courbe) + 1)
     )
 
 
-def _mesurer_palette(image, palette, studs_x, studs_y, tiles, options) -> PaletteCost:
-    """Construit la mosaique et mesure ce qu'elle coute et ce qu'elle rend."""
+def _cout_du_substrat(studs_x: int, studs_y: int) -> Tuple[int, int]:
+    """(pieces, lots) du fond seul. Independant de la palette et de l'image."""
     from .catalog import bill_of_materials
 
+    unie = Palette([LegoColor(SUBSTRATE_COLOR, "fond", (128, 128, 128))])
+    grille = tuple(
+        tuple(unie.colors[0] for _ in range(studs_x)) for _ in range(studs_y)
+    )
+    modele = build(grille, tiles=TILE_SET_MINIMAL)
+    tuiles = set(modele.tile_ids)
+    fond = {p: i for p, i in modele.instances.items() if p not in tuiles}
+    return (
+        modele.part_count - modele.tile_count,
+        len({(i.design_id, i.color_id) for i in fond.values()}),
+    )
+
+
+def cost_of_grid(
+    grid, tiles: Sequence[str] = TILE_SET_STANDARD
+) -> Tuple[int, int]:
+    """(pieces de mosaique, lots de tuiles) SANS construire le modele.
+
+    La courbe de cout evalue une quinzaine de palettes. Construire une mosaique
+    complete pour chacune — geometries, connecteurs, substrat, verification de
+    connexite — coutait neuf secondes pour n'en lire que deux nombres. Or ces
+    deux nombres se deduisent de la grille seule : la fusion se fait ligne par
+    ligne et ne depend de rien d'autre.
+
+    Le substrat est volontairement exclu : il ne depend pas de la palette, donc
+    il ne discrimine aucune candidate. `palette_cost_curve` le rajoute une fois.
+    """
+    par_longueur, longueurs = _references_par_longueur(tiles)
+    pieces = 0
+    lots = set()
+    for colors in grid:
+        for _, longueur, color in _fusionner_ligne(colors, longueurs):
+            pieces += 1
+            lots.add((par_longueur[longueur], color.code))
+    return pieces, len(lots)
+
+
+def _mesurer_palette(image, palette, studs_x, studs_y, tiles, options,
+                     substrat=(0, 0)) -> PaletteCost:
+    """Mesure ce qu'une palette coute et ce qu'elle rend, sans bâtir le modele."""
     grille = quantize(image, palette, studs_x, studs_y, **options)
-    modele = build(grille, tiles=tiles)
     tonal_moyen, tonal_pire = fidelity(grille, image, 4)
+    pieces, lots = cost_of_grid(grille, tiles)
     return PaletteCost(
         palette,
         fidelity(grille, image, 1)[0],
         tonal_moyen,
         tonal_pire,
-        modele.tile_count,
-        len(bill_of_materials(modele.instances, modele.placed_parts)),
+        pieces,
+        lots + substrat[1],
     )
 
 
@@ -1015,7 +1065,10 @@ def cheapest_palette(
     )
     if len(palette) > len(courbe):
         courbe.append(
-            _mesurer_palette(image, palette, studs_x, studs_y, tiles, quantize_options)
+            _mesurer_palette(
+                image, palette, studs_x, studs_y, tiles, quantize_options,
+                _cout_du_substrat(studs_x, studs_y),
+            )
         )
     reference = courbe[-1]
     admissibles = [

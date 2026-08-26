@@ -1331,10 +1331,10 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse | **~94 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000, alerte sous 2 px/tenon. Manque : recadrage attentionnel. |
-| → modélisation LEGO Art | **~80 %** | Solveur + substrat validé H1–H6, palette officielle importable, sélection des N meilleures couleurs, diagnostic des manques. Manque : découpe multi-panneaux, fusion de tuiles, volume 3D. |
-| → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
-| → notice de montage | **~80 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes, codes couleur et légende sur chaque page), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
+| Photo → analyse | **~94 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon. Manque : recadrage attentionnel — sur un portrait, le centrage peut décapiter. |
+| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.5). Manque : découpe multi-panneaux pour les très grands formats. |
+| → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. Manque : **on ne peut pas commander en un clic** — export BrickLink, prix, disponibilité. |
+| → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
 **Environ 90 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
@@ -1343,6 +1343,53 @@ volume 3D — de loin le plus lourd — n'en fait pas partie.
 Ce qui reste est domine par deux choses tres differentes : du **rendu
 graphique** pour la notice, et de la **donnee reelle** (palette officielle,
 catalogue, prix). Aucune des deux n'est un probleme d'architecture.
+
+### 6.5 La fidélité est à la limite du médium, et c'est mesurable
+
+Question posée : « peut-on faire plus précis ? ». Réponse mesurée sur un
+portrait, palette officielle :
+
+| Côté | ΔE/tuile | Ton moyen | Pièces | Taille |
+|---:|---:|---:|---:|---:|
+| 32 | 8,02 | 6,45 | 441 | 25,6 cm |
+| 48 | 7,89 | 7,01 | 904 | 38,4 cm |
+| 64 | 8,57 | 4,41 | 2943 | 51,2 cm |
+| 96 | 8,60 | 4,41 | 6639 | 76,8 cm |
+
+**La résolution n'améliore pas la précision.** Et l'écart de la palette seule,
+mesuré indépendamment — moyenne des ΔE entre chaque couleur voulue et la plus
+proche couleur LEGO — vaut **7,89 ΔE en 48×48**, soit exactement l'écart
+constaté. Autrement dit : la totalité de l'erreur restante vient de ce que LEGO
+ne fabrique pas la couleur demandée. Aucun algorithme ne la réduira.
+
+Ajouter des tenons agrandit l'œuvre, ça ne l'affine pas. C'est une propriété du
+médium, pas une limite du logiciel — et ça clôt la question « hyper précise » :
+on y est.
+
+### 6.6 Profil de la chaîne complète
+
+Paysage 48×48, palette officielle, 1411 pièces :
+
+| Étape | Temps |
+|---|---:|
+| Quantification | 0,42 s |
+| Modèle + fusion | 0,33 s |
+| Assemblage | 0,12 s |
+| **Six invariants** | **2,64 s** |
+| Notice PDF | 0,27 s |
+| Export JSON | 0,08 s |
+| **Total** | **3,87 s** |
+
+Les invariants pèsent 68 % du total. C'est la preuve que le modèle tient : on
+ne l'allège pas.
+
+`--couleurs auto` ajoutait 9,0 s parce qu'il **construisait un modèle complet**
+— géométries, connecteurs, substrat, vérification de connexité — pour chacune
+des quinze palettes candidates, et n'en relisait que deux nombres. Or ces deux
+nombres se déduisent de la grille seule : la fusion se fait ligne par ligne et
+ne dépend de rien d'autre. `cost_of_grid` les calcule directement, et le
+substrat — qui ne dépend pas de la palette — n'est mesuré qu'une fois.
+**9,0 s → 5,0 s**, comptes vérifiés identiques au modèle construit.
 
 ### 6.1 Mesures de bout en bout
 

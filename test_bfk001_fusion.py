@@ -365,3 +365,52 @@ class TestCoutDeLaPalette(unittest.TestCase):
             bfk.mosaic.cheapest_palette(
                 self.image(), bfk.PROVISIONAL_PALETTE, 8, 8, tolerance=-1
             )
+
+
+class TestCoutSansConstruire(unittest.TestCase):
+    """Compter les pieces sans batir le modele — et compter juste."""
+
+    def grilles(self):
+        for cote, graine in ((16, 3), (24, 7), (31, 11)):
+            yield bfk.mosaic.quantize(
+                bfk.Image(
+                    cote, cote,
+                    bytes(random.Random(graine).randrange(256)
+                          for _ in range(cote * cote * 3)),
+                ),
+                bfk.PROVISIONAL_PALETTE.solids_only(),
+                cote, cote,
+            )
+
+    def test_identique_au_modele_reellement_construit(self):
+        # Si ces deux comptes divergeaient, la courbe de cout choisirait la
+        # palette sur des chiffres que le modele livre ne confirme pas.
+        for grille in self.grilles():
+            for jeu in (TILE_SET_MINIMAL, TILE_SET_STANDARD, TILE_SET_LARGE):
+                modele = bfk.mosaic.build(grille, tiles=jeu)
+                tuiles = set(modele.tile_ids)
+                lots = {
+                    (modele.instances[t].design_id, modele.instances[t].color_id)
+                    for t in tuiles
+                }
+                self.assertEqual(
+                    bfk.mosaic.cost_of_grid(grille, jeu),
+                    (modele.tile_count, len(lots)),
+                    (len(grille), len(jeu)),
+                )
+
+    def test_le_substrat_en_est_exclu_et_c_est_voulu(self):
+        # Il ne depend pas de la palette, donc il ne discrimine aucune
+        # candidate : le compter quinze fois serait quinze fois inutile.
+        grille = next(iter(self.grilles()))
+        pieces, _ = bfk.mosaic.cost_of_grid(grille)
+        modele = bfk.mosaic.build(grille)
+        self.assertEqual(pieces, modele.tile_count)
+        self.assertLess(pieces, modele.part_count)
+
+    def test_un_jeu_invalide_est_refuse_ici_aussi(self):
+        grille = next(iter(self.grilles()))
+        with self.assertRaises(ValueError):
+            bfk.mosaic.cost_of_grid(grille, ("3070b", "3023"))
+        with self.assertRaises(ValueError):
+            bfk.mosaic.cost_of_grid(grille, ("2431",))
