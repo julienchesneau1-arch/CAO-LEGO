@@ -165,7 +165,7 @@ def quantize(
     studs_y: int,
     dither: object = "auto",
     fit: str = "crop",
-    offset: float = 0.5,
+    offset=0.5,
 ) -> Tuple[Tuple[LegoColor, ...], ...]:
     """Image -> grille de couleurs LEGO.
 
@@ -272,7 +272,7 @@ def quantize(
     return _quantifier(reduced, palette, studs_x, studs_y, dither)
 
 
-def _cadrer(image: Image, studs_x: int, studs_y: int, fit: str, offset: float) -> Image:
+def _cadrer(image: Image, studs_x: int, studs_y: int, fit: str, offset) -> Image:
     """Cadrage prealable, isole pour n'etre fait qu'une fois en mode « auto »."""
     if fit not in ("crop", "stretch"):
         raise ValueError("fit vaut 'crop' ou 'stretch'")
@@ -899,7 +899,7 @@ def from_image(
     dither: object = "auto",
     substrate: str = "crossed",
     fit: str = "crop",
-    offset: float = 0.5,
+    offset=0.5,
     tiles: Sequence[str] = TILE_SET_STANDARD,
 ) -> Mosaic:
     """Chaine complete : photo -> modele constructible."""

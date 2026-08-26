@@ -273,7 +273,7 @@ def crop(image: Image, x: int, y: int, width: int, height: int) -> Image:
     return Image(width, height, bytes(sortie))
 
 
-def crop_to_ratio(image: Image, ratio: float, offset: float = 0.5) -> Image:
+def crop_to_ratio(image: Image, ratio: float, offset=0.5) -> Image:
     """Decoupe centree ramenant l'image au rapport largeur/hauteur voulu.
 
     C'est la seule facon honnete de mettre une photo 4:3 dans une mosaique
@@ -281,11 +281,16 @@ def crop_to_ratio(image: Image, ratio: float, offset: float = 0.5) -> Image:
     rapport de 0,750 et un visage avec lui. Le remplissage par des bandes
     gaspillerait des tuiles sur du vide.
 
-    `offset` place la fenetre le long de l'axe rogne, de 0 a 1. Le sujet n'est
-    pas toujours au centre, et rien ici ne sait ou il est.
+    `offset` place la fenetre le long de l'axe rogne, de 0 a 1, ou vaut
+    « auto » : la fenetre retenant le plus de detail (`attentional_offset`).
+    Le sujet n'est pas toujours au centre, et 0,5 le suppose.
     """
     if ratio <= 0:
         raise ValueError("rapport invalide")
+    if offset == "auto":
+        offset = attentional_offset(image, ratio)
+    if not isinstance(offset, (int, float)) or isinstance(offset, bool):
+        raise ValueError("le decalage de cadrage est un nombre ou « auto »")
     if not 0.0 <= offset <= 1.0:
         raise ValueError("le decalage de cadrage va de 0 a 1")
 
@@ -296,6 +301,98 @@ def crop_to_ratio(image: Image, ratio: float, offset: float = 0.5) -> Image:
     hauteur = max(1, min(image.height, round(image.width / ratio)))
     y = round((image.height - hauteur) * offset)
     return crop(image, 0, y, image.width, hauteur)
+
+
+def detail_profile(image: Image, axis: str, samples: int = 96) -> Tuple[float, ...]:
+    """Profil de DETAIL le long d'un axe : energie de gradient par bande.
+
+    L'energie de gradient — la somme des ecarts entre pixels voisins — est
+    faible sur un ciel uni et forte sur un visage, un feuillage, un texte. Ce
+    n'est pas de la detection de sujet : c'est de la detection de DETAIL, et
+    les deux coincident assez souvent pour etre utiles, jamais toujours.
+    """
+    if axis not in ("x", "y"):
+        raise ValueError("axe vaut 'x' ou 'y'")
+    longueur = image.width if axis == "x" else image.height
+    samples = max(1, min(samples, longueur))
+    profil = [0.0] * samples
+    data = image.data
+    pas = max(1, image.height // 128) if axis == "x" else max(1, image.width // 128)
+
+    if axis == "x":
+        for y in range(0, image.height, pas):
+            debut = y * image.width * 3
+            ligne = data[debut : debut + image.width * 3]
+            for x in range(image.width - 1):
+                i = x * 3
+                ecart = (
+                    abs(ligne[i] - ligne[i + 3])
+                    + abs(ligne[i + 1] - ligne[i + 4])
+                    + abs(ligne[i + 2] - ligne[i + 5])
+                )
+                profil[x * samples // longueur] += ecart
+    else:
+        for y in range(0, image.height - 1, pas):
+            a_ = y * image.width * 3
+            b_ = (y + 1) * image.width * 3
+            haut = data[a_ : a_ + image.width * 3]
+            bas = data[b_ : b_ + image.width * 3]
+            total = 0
+            for i in range(0, len(haut), 3 * pas):
+                total += (
+                    abs(haut[i] - bas[i])
+                    + abs(haut[i + 1] - bas[i + 1])
+                    + abs(haut[i + 2] - bas[i + 2])
+                )
+            profil[y * samples // longueur] += total
+    return tuple(profil)
+
+
+def attentional_offset(image: Image, ratio: float) -> float:
+    """Decalage de cadrage retenant le PLUS DE DETAIL, entre 0 et 1.
+
+    Le centrage aveugle decapite : sur un portrait ou le sujet est haut dans le
+    cadre, la fenetre centree lui coupe le crane. Faute de savoir ou est le
+    sujet — ce qui demanderait un modele appris —, on retient la fenetre qui
+    conserve le plus d'energie de gradient.
+
+    Ce que ce critere ne fait PAS, et qu'il ne faut pas lui prêter : il ne
+    reconnait rien. Un fond de feuillage tres detaille derriere un visage lisse
+    l'attirera vers le feuillage. Il vaut mieux qu'un centrage aveugle, il ne
+    vaut pas un regard — d'ou `--cadrage` qui reste reglable a la main.
+    """
+    if ratio <= 0:
+        raise ValueError("rapport invalide")
+    if image.width / image.height > ratio:
+        axe, longueur, garde = "x", image.width, round(image.height * ratio)
+    else:
+        axe, longueur, garde = "y", image.height, round(image.width / ratio)
+    garde = max(1, min(longueur, garde))
+    if garde >= longueur:
+        return 0.5
+
+    profil = detail_profile(image, axe)
+    bandes = len(profil)
+    fenetre = max(1, round(bandes * garde / longueur))
+    if fenetre >= bandes:
+        return 0.5
+
+    cumul = [0.0]
+    for valeur in profil:
+        cumul.append(cumul[-1] + valeur)
+    meilleur, energie = 0, -1.0
+    for depart in range(bandes - fenetre + 1):
+        somme = cumul[depart + fenetre] - cumul[depart]
+        # A energie egale, on prefere le cadrage le plus central : c'est le
+        # comportement precedent, et il n'y a aucune raison de s'en ecarter
+        # quand la mesure ne dit rien.
+        if somme > energie or (
+            somme == energie
+            and abs(depart - (bandes - fenetre) / 2)
+            < abs(meilleur - (bandes - fenetre) / 2)
+        ):
+            meilleur, energie = depart, somme
+    return meilleur / (bandes - fenetre)
 
 
 def _table_lumiere() -> Tuple[bytes, bytes, bytes]:

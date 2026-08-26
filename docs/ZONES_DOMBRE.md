@@ -1374,6 +1374,37 @@ la commande serait fausse.
 Reste ouvert, et c'est une donnée et non du code : **la table elle-même**. Le
 dépôt n'en fournit aucune, parce qu'aucune n'a pu être vérifiée ici.
 
+### 5.41 Le centrage aveugle décapitait
+
+Dernière zone déclarée du côté perception : *« Manque : recadrage attentionnel —
+sur un portrait, le centrage peut décapiter. »* Elle était exacte. Mesure sur
+une photo 300×500 dont le sujet est haut dans le cadre, ramenée au carré :
+
+| Cadrage | Fenêtre retenue | Tête (y 20…160) |
+|---|---|---|
+| Centré, 0,50 | y 100…400 | **coupée** |
+| Automatique, 0,08 | y 16…316 | entière |
+
+Le critère est l'**énergie de gradient** : la somme des écarts entre pixels
+voisins, faible sur un ciel uni, forte sur un visage, un feuillage, un texte. On
+retient la fenêtre qui en conserve le plus.
+
+**Ce que ce critère ne fait pas**, et qu'il ne faut pas lui prêter : il ne
+reconnaît rien. Un fond de feuillage très texturé derrière un visage lisse
+l'attire vers le feuillage. Un test le démontre au lieu de le taire — un critère
+qu'on ne sait pas mettre en défaut est un critère qu'on n'a pas compris. D'où
+`--cadrage`, qui reste réglable à la main.
+
+**Un détail de conception que le test a validé par accident.** La première
+version cherchait le *pic* du profil de détail. Sur cette image, le pic tombe sur
+l'arête sol/ciel : un seul rang, gradient énorme. Une ligne d'horizon n'est pas
+un sujet. La fenêtre **intégrée**, elle, suit la zone texturée — un damier
+contribue sur des dizaines de rangs là où une arête ne contribue que sur un.
+C'est pour cela que la fonction somme au lieu de chercher un maximum, et un test
+fixe désormais cette distinction.
+
+Le défaut de la commande passe donc à `--cadrage auto`.
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :
@@ -1406,9 +1437,9 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse | **~94 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon. Manque : recadrage attentionnel — sur un portrait, le centrage peut décapiter. |
+| Photo → analyse | **~98 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon. recadrage attentionnel par énergie de gradient. Manque : rien d'identifié. |
 | → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.5). Manque : découpe multi-panneaux pour les très grands formats. |
-| → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. Manque : **on ne peut pas commander en un clic** — export BrickLink, prix, disponibilité. |
+| → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
 | → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
 **Environ 90 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un

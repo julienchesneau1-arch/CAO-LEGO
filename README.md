@@ -414,6 +414,19 @@ au lieu de 80 coûtent 0,09 ΔE de justesse tonale — imperceptible — et
 
 ---
 
+## Recadrage
+
+Une photo 4:3 dans une mosaïque carrée doit être rognée. `--cadrage auto`
+(défaut) place la fenêtre là où l'**énergie de gradient** est la plus forte —
+un centrage aveugle coupe la tête d'un sujet haut dans le cadre : mesuré, y
+100…400 au lieu de y 16…316 sur un portrait 300×500.
+
+Le critère ne reconnaît rien : il mesure du détail. Un fond de feuillage
+derrière un visage lisse l'attire vers le feuillage — un test le démontre.
+`--cadrage 0.3` reprend la main.
+
+---
+
 ## Commander la liste
 
 ```bash

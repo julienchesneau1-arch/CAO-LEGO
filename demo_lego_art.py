@@ -80,8 +80,11 @@ def main() -> int:
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
     analyseur.add_argument("--par-etape", type=int, default=24)
-    analyseur.add_argument("--cadrage", type=float, default=0.5,
-                           help="position de la fenetre de recadrage, de 0 a 1")
+    analyseur.add_argument("--cadrage", default="auto",
+                           help="position de la fenetre de recadrage : un nombre "
+                                "de 0 a 1, ou « auto » — la fenetre retenant le "
+                                "plus de detail. « auto » vaut mieux qu'un "
+                                "centrage aveugle, il ne vaut pas un regard.")
     analyseur.add_argument("--tramage",
                            choices=("auto", "adaptatif", "aucun", "complet"),
                            default="auto",
@@ -129,7 +132,17 @@ def main() -> int:
                 f"proportions de la photo conservees "
                 f"(--hauteur {options.studs} pour un carre, la photo sera rognee)"
             )
-    image = bfk.crop_to_ratio(image, options.studs / hauteur, options.cadrage)
+    cadrage = options.cadrage
+    if cadrage != "auto":
+        try:
+            cadrage = float(cadrage)
+        except ValueError:
+            print("--cadrage attend un nombre de 0 a 1 ou « auto »", file=sys.stderr)
+            return 2
+    if cadrage == "auto" and image.width / image.height != options.studs / hauteur:
+        cadrage = bfk.imaging.attentional_offset(image, options.studs / hauteur)
+        print(f"  cadrage : fenetre placee a {cadrage:.2f} (detail maximal)")
+    image = bfk.crop_to_ratio(image, options.studs / hauteur, cadrage)
 
     # En dessous de deux pixels par tenon, il n'y a plus de moyenne : chaque
     # tuile prend la couleur d'un pixel a peu pres au hasard dans sa zone. Le
