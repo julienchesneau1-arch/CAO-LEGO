@@ -49,6 +49,31 @@ Sur une photo 256×256 en 48×48 tenons : 2917 pièces, 4608 liaisons, 0 violati
 Aucune dépendance : PNG, palette, quantification et rendu sont en bibliothèque
 standard.
 
+## L'atelier, dans le navigateur
+
+```bash
+python3 app_lego_art.py
+```
+
+Puis <http://127.0.0.1:8000> : déposez une photo, réglez la taille et le relief,
+récupérez le dossier complet en ZIP. Aucune dépendance — `http.server` et
+`zipfile` sont dans la bibliothèque standard, et la page est un seul fichier
+sans une seule ressource externe.
+
+Il n'y a **pas deux chaînes**. L'interface appelle `bfk001/pipeline.py`,
+exactement comme `demo_lego_art.py` : deux façades, un seul calcul, aucune
+divergence possible. C'est le refactor qui a révélé que la chaîne n'était pas
+déterministe (§ 5.49) — comparer deux implémentations est un détecteur que la
+relecture ne remplace pas.
+
+Le serveur écoute sur la boucle locale, et ce n'est pas un réglage timide :
+rien n'authentifie qui que ce soit et chaque requête coûte plusieurs secondes de
+calcul. Rien n'est servi depuis le disque — tout ce qui sort a été fabriqué en
+mémoire pendant la requête, ce qui retire d'un coup toute la famille des
+traversées de chemin.
+
+---
+
 ## Exécution
 
 ```bash
@@ -62,9 +87,15 @@ pytest test_bfk001_pipeline.py          # photo → modèle → liste de course 
 pytest test_bfk001_booklet.py           # structure du PDF, rendu des pages, ordre vérifié
 pytest test_bfk001_substrat.py          # emprise exacte du fond et connexité, 1521 formats
 pytest test_bfk001_couleur.py           # lumière linéaire, CIEDE2000, palette officielle
+pytest test_bfk001_atelier.py           # la chaîne partagée, et un vrai aller-retour HTTP
+pytest test_bfk001_page.py              # la page dans un vrai navigateur (se saute sans Playwright)
 ```
 
-Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
+Aucune dépendance hors `pytest` (bibliothèque standard uniquement). Un seul
+fichier de tests en demande une de plus, `playwright`, et il se saute
+proprement sans elle : c'est le seul moyen d'exécuter le JavaScript de la
+page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
+(§ 5.50). Rien de ce qui est **livré** n'en a besoin.
 
 ---
 
@@ -98,6 +129,8 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/ldraw.py` | — | Export `.ldr` : conventions d'axes et d'origine lues dans une pièce officielle (**hors contrat**) |
 | `bfk001/bricklink.py` | — | Liste de souhaits BrickLink ; refuse de deviner une couleur absente de la table (**hors contrat**) |
 | `bfk001/depth.py` | — | Profondeur **mesurée** : cartes externes, et extraction de la carte embarquée par les appareils en mode portrait (**hors contrat**) |
+| `bfk001/pipeline.py` | — | **La chaîne** : photo → fichiers livrables, en mémoire. Une seule, appelée à l'identique par la commande et par l'interface (**hors contrat**) |
+| `bfk001/webapp.py` | — | L'atelier dans le navigateur : serveur local et page autonome, sans aucune ressource externe (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.

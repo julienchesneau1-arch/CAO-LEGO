@@ -1647,6 +1647,49 @@ implémentations est un détecteur que la relecture ne remplace pas.
 
 ---
 
+### 5.50 L'app : une chaîne unique, et deux défauts que les tests ne pouvaient pas voir
+
+Le dernier point de la demande d'origine — « mettre une photo dans l'app » —
+n'avait pas d'app : il avait une commande. `app_lego_art.py` en fait une, sans
+ajouter la moindre dépendance.
+
+**Le refactor d'abord.** Toute l'orchestration vivait dans le `main()` de la
+commande, mêlée à l'analyse des arguments et aux impressions. Deux façades sur
+ce code auraient signifié soit deux chaînes qui divergent, soit un
+sous-processus qu'on ne peut pas tester. `bfk001/pipeline.py` porte désormais la
+chaîne entière — photo en octets, fichiers en octets, aucun disque, aucune
+impression — et les deux façades l'appellent à l'identique.
+
+Vérification du refactor : sortie **octet pour octet identique** sur les huit
+fichiers livrés. C'est aussi ce refactor qui a révélé le § 5.49.
+
+**Puis deux défauts, trouvés en regardant la page dans un navigateur.**
+
+Le premier : `PAGE` était une chaîne Python **non brute**. Le `\n` du script y
+devenait un saut de ligne réel, ce qui coupait un littéral JavaScript en deux et
+empêchait la page entière de se parser. Le serveur la servait parfaitement ;
+elle ne faisait rien.
+
+Le second : ma propre politique de sécurité. `default-src 'none'` est le bon
+réflexe pour une page qui n'a aucune ressource externe — mais `connect-src`
+retombe sur `default-src`, et la page ne pouvait donc pas appeler **son propre
+serveur**. Le bouton restait muet.
+
+Les deux sont des défauts de trajet, comme ceux du § 5.48. Et surtout : **vingt
+tests passaient**, dont un aller-retour HTTP complet. Aucun n'exécutait le
+JavaScript.
+
+`test_bfk001_page.py` le fait maintenant, dans un vrai Chromium. Playwright
+n'est pas une dépendance du projet — rien de ce qui est livré n'en a besoin — et
+le fichier se saute proprement sans lui, en le disant, pour qu'un saut ne passe
+pas pour un succès.
+
+Un dernier détail qui dit quelque chose : le test d'erreur employait d'abord
+`wait_for_function`, que la politique de sécurité refuse parce qu'elle évalue
+une chaîne. J'ai changé le test, pas la politique.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -1655,7 +1698,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 
 | Étape | État | Ce qui manque |
 |---|---:|---|
-| Photo → analyse | **~98 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon. recadrage attentionnel par énergie de gradient. Manque : rien d'identifié. |
+| Photo → analyse | **~99 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon, recadrage attentionnel par énergie de gradient. **Interface web** : glisser-déposer, réglages, aperçus, ZIP (§ 5.50). Manque : rien d'identifié. |
 | → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Relief en plateaux, aux seuils d'Otsu, et profondeur **mesurée** quand la photo en porte une (§ 6.10). Manque : découpe multi-panneaux pour les très grands formats. |
 | → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
 | → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
@@ -1829,6 +1872,10 @@ Toutes mesurées, aucune supposée.
 Les trois premiers points de cette liste, dans ses versions précédentes, sont
 faits : palette officielle importable, tramage décidé par image, export
 BrickLink. Ce qui reste se range en trois catégories très différentes.
+
+**Fait depuis.** L'interface : « mettre une photo dans l'app » était le dernier
+point de la demande d'origine qui restait littéralement ouvert. Il ne l'est plus
+(§ 5.50).
 
 **Des données, pas du code.** La table de correspondance des couleurs BrickLink
 et le fichier `LDConfig.ldr`. Le code qui s'en sert existe et est testé ; ni

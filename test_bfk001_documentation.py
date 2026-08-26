@@ -15,6 +15,7 @@ RACINE = pathlib.Path(__file__).parent
 REGISTRE = RACINE / "docs" / "ZONES_DOMBRE.md"
 LISEZMOI = RACINE / "README.md"
 DEMO = RACINE / "demo_lego_art.py"
+CHAINE = RACINE / "bfk001" / "pipeline.py"
 
 
 class TestRegistre(unittest.TestCase):
@@ -57,6 +58,10 @@ class TestRegistre(unittest.TestCase):
 class TestPromessesDeLaCommande(unittest.TestCase):
     def setUp(self):
         self.demo = DEMO.read_text(encoding="utf-8")
+        # Les noms de fichiers ont quitte la facade pour la chaine
+        # partagee ; le controle doit suivre, sinon il ne verifie
+        # plus rien tout en restant vert.
+        self.chaine = CHAINE.read_text(encoding="utf-8")
         self.lisezmoi = LISEZMOI.read_text(encoding="utf-8")
 
     def test_les_fichiers_annonces_sont_produits(self):
@@ -64,7 +69,7 @@ class TestPromessesDeLaCommande(unittest.TestCase):
         annonces = set(re.findall(r"`([a-z_]+\.(?:png|csv|txt|pdf|json|ldr|xml))`",
                                   self.lisezmoi))
         produits = set(re.findall(r'"([a-z_]+\.(?:png|csv|txt|pdf|json|ldr|xml))"',
-                                  self.demo))
+                                  self.demo + self.chaine))
         self.assertTrue(produits, "la commande ne produit rien ?")
         jamais = sorted(annonces - produits - {"photo.jpg", "couleurs.csv"})
         self.assertEqual(jamais, [], f"annonces mais jamais produits : {jamais}")

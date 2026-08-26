@@ -347,17 +347,17 @@ class TestCablageDeLaCommande(unittest.TestCase):
     def test_la_commande_accepte_une_carte_sur_une_photo_43(self):
         import pathlib as _p
         import tempfile
-        import demo_lego_art
+        from bfk001 import pipeline
 
         photo, prof = TestLaCarteSubitLeMemeCadrageQueLaPhoto().scene(320, 240)
         with tempfile.TemporaryDirectory() as dossier:
             chemin = _p.Path(dossier) / "prof.png"
             chemin.write_bytes(bfk.write_png(prof))
-            options = self.Options()
-            options.carte_profondeur = str(chemin)
+            reglages = pipeline.Reglages(studs=24, hauteur=24, relief=2)
             rognee = bfk.crop_to_ratio(photo, 1.0, 0.5)
-            hauteurs, provenance = demo_lego_art.carte_de_relief(
-                rognee, photo, 0.5, b"", options, 24
+            hauteurs, provenance = pipeline.carte_de_relief(
+                rognee, photo, 0.5, b"", reglages, 24,
+                carte_fournie=chemin.read_bytes(),
             )
         self.assertIn("MESUREE", provenance)
         self.assertEqual((len(hauteurs), len(hauteurs[0])), (24, 24))
