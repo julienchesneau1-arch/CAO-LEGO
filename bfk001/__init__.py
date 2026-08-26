@@ -34,7 +34,8 @@ elle reexporte l'integralite de cette API publique.
 
 from __future__ import annotations
 
-from . import booklet, bricklink, imaging, instructions, jpeg, ldraw, mosaic, palette
+from . import (booklet, bricklink, depth, imaging, instructions, jpeg, ldraw,
+               mosaic, palette)
 from .catalog import (
     CATALOG,
     LDRAW_COLORS,
@@ -73,11 +74,14 @@ from .geometry import (
     transform_world_to_local,
 )
 from .graph import ConstructionGraph, InstructionGraph
-from .imaging import crop, crop_to_ratio, Image, read_png, read_ppm, resample_box, write_png
+from .imaging import (crop, crop_to_ratio, Image, read_png, read_ppm,
+                      resample_box, resample_median, write_png)
 from .jpeg import apply_orientation, exif_orientation, read_jpeg_eighth
 from .instructions import BuildStep, plan_build, render_text
 from .ldraw import dumps_ldr
 from .bricklink import UnmappedColors, dumps_wanted_list, load_color_map
+from .depth import (DepthMismatch, NoEmbeddedDepth, embedded_depth,
+                    heights_from_depth, read_depth_map)
 from .booklet import build_booklet, render_progress, render_layer, row_runs, write_pdf
 from .lego import (
     BRICK_HEIGHT_LDU,
@@ -263,6 +267,12 @@ __all__ = [
     "booklet",
     "bricklink",
     "ldraw",
+    "depth",
+    "read_depth_map",
+    "heights_from_depth",
+    "embedded_depth",
+    "DepthMismatch",
+    "NoEmbeddedDepth",
     "instructions",
     "Image",
     "read_png",
@@ -272,6 +282,7 @@ __all__ = [
     "apply_orientation",
     "write_png",
     "resample_box",
+    "resample_median",
     "crop",
     "crop_to_ratio",
     "LegoColor",

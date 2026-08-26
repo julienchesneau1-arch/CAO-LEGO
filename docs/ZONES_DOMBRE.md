@@ -1500,6 +1500,65 @@ gratuit. « Zéro ΔE » répondait à une question que personne n'avait posée.
 
 ---
 
+### 5.47 Les marches du relief tombaient au hasard — et ma première mesure récompensait le fait d'en faire moins
+
+Un relief ne se voit que par ses **marches**. Une marche porte une ombre, le
+reste est plat. La question n'est donc pas « quelle hauteur » mais « où tombent
+les frontières ». Au milieu d'un dégradé, on obtient une carte d'état-major :
+des courbes de niveau qui ne désignent rien. Sur les contours du sujet, on
+obtient une sculpture.
+
+Le découpage était **uniforme** : la plage de clarté tranchée en parts égales.
+Rien ne garantit qu'une part corresponde à quoi que ce soit dans la photo.
+
+**La mesure, d'abord — et je l'ai ratée.** Première version : contraste de la
+photo sous les marches ÷ contraste moyen. Elle donnait 103 sur un portrait,
+6,2 sur les Tournesols, et elle était **fausse**. Un relief à une seule marche,
+posée sur le contour le plus fort, obtenait le meilleur score possible ; tout
+étage supplémentaire le dégradait mécaniquement. Elle récompensait le fait d'en
+faire moins.
+
+Version corrigée, `relief_edge_alignment`, normalisée par le NOMBRE de marches :
+contraste sous les K marches posées ÷ contraste des K frontières les plus
+contrastées qu'offre la photo. **1,0 = on ne pouvait pas mieux placer K
+marches.** La mesure ne récompense plus l'abstention.
+
+**Ce qu'elle a révélé.** Le découpage uniforme, à trois étages sur un portrait,
+n'emploie que les hauteurs **0 et 3** : trois couches de relief pour la
+silhouette qu'une seule donnait, 144 pièces pour rien. La commande le signale
+désormais.
+
+**Le remède : les seuils d'Otsu**, calculés par programmation dynamique — les
+seuils tombent dans les creux de l'histogramme, là où l'image se sépare en
+régions.
+
+Et une deuxième correction que j'ai failli publier surévaluée. J'ai d'abord
+écrit qu'Otsu valait 0,85 contre 0,70. C'était vrai — mais pas dans le chemin
+que j'avais câblé. Mesure complète, Tournesols 48×48, deux étages :
+
+| Source des seuils | Rendement | Plateaux | Isolées | Pièces |
+|---|---:|---:|---:|---:|
+| grille quantifiée + uniforme | 0,76 | 8 | 0 | 1128 |
+| grille quantifiée + Otsu | 0,76 | 8 | 0 | 1108 |
+| clarté continue + uniforme | 0,70 | 30 | 17 | 1145 |
+| clarté continue + Otsu | **0,85** | **9** | **0** | 1114 |
+
+Sur une grille **déjà quantifiée**, Otsu ne change presque rien : la
+quantification a déjà séparé l'image en régions, elle faisait une part de son
+travail. Lire la clarté continue **sans** Otsu est le pire des quatre. Les deux
+corrections sont complémentaires et aucune ne suffit seule.
+
+`relief_from_image` lit donc directement la clarté de la photo — **plus aucune
+quantification, ni palette, ni tramage** — et découpe aux seuils d'Otsu. La
+passe de quantification supplémentaire du § 5.46 disparaît : le vrai remède au
+tramage n'était pas de quantifier sans tramer, c'était de ne pas quantifier.
+
+Conséquence d'API : `palette` n'est plus un paramètre. Le relief décrit la
+**structure** de la photo, pas les briques disponibles ; deux palettes donnent
+le même relief.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -1509,7 +1568,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | Étape | État | Ce qui manque |
 |---|---:|---|
 | Photo → analyse | **~98 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon. recadrage attentionnel par énergie de gradient. Manque : rien d'identifié. |
-| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Manque : découpe multi-panneaux pour les très grands formats. |
+| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Relief en plateaux, aux seuils d'Otsu, et profondeur **mesurée** quand la photo en porte une (§ 6.10). Manque : découpe multi-panneaux pour les très grands formats. |
 | → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
 | → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
@@ -1773,6 +1832,96 @@ cœurs (8 plateaux), les deux autres se contentent de détacher le sujet du fond
 (3 plateaux). La clarté est donc retenue par défaut, comme la plus riche et
 comme la convention du camée — l'œil lit spontanément le clair comme proche.
 `build(heights=…)` accepte n'importe quelle autre carte.
+
+---
+
+### 6.10 La profondeur mesurée : ce qui existe, ce que j'ai retenu, ce que j'ai réfuté
+
+Jusqu'ici tout le relief de ce dépôt était une **convention**. « Une photo ne
+contient aucune information de profondeur » — je l'ai écrit plusieurs fois, et
+c'est **faux au moins une fois sur deux**.
+
+#### Ce qui existe
+
+| Technique | Fiabilité | Verdict ici |
+|---|---|---|
+| Réseau monoculaire (MiDaS, Depth Anything, Marigold) | excellente | **importée** — absurde à embarquer, parfaite à lire |
+| Carte embarquée par l'appareil (Dynamic Depth, GDepth) | **mesurée** | **lue** — c'est de la mesure, pas une convention |
+| Profondeur par le flou (depth from defocus) | physique mais confondante | **réfutée**, mesures ci-dessous |
+| Perspective aérienne / dark channel prior | scènes brumeuses seulement | non retenue, domaine trop étroit |
+| Shape from shading | mal posée sans direction de lumière | non retenue |
+| Stéréo, photométrique, multi-flash | fiables | hors sujet : demandent plusieurs prises |
+
+#### Ce que j'ai retenu
+
+`depth.py` ouvre deux portes, et une seule ligne les sépare de la convention :
+la **provenance**, que la commande affiche toujours.
+
+`--carte-profondeur` accepte une carte PNG, PPM ou JPEG. C'est le pont vers
+l'état de l'art : on lance Depth Anything ailleurs, on donne le résultat ici.
+
+`embedded_depth` extrait la carte que le téléphone a **déjà écrite** dans le
+JPEG. Un mode portrait mesure la profondeur — deux objectifs, un capteur de
+temps de vol — et la dépose dans le fichier. Les deux formats de Google se
+lisent : GDepth (base64 dans le XMP, réassemblé quand il déborde en segments
+étendus) et Dynamic Depth (le XMP est un annuaire, les images sont concaténées
+à la suite du fichier).
+
+**Le contrôle qui compte** : la carte doit avoir les proportions de la photo, à
+2 % près. Une carte issue d'un autre recadrage produirait un relief
+**parfaitement propre et parfaitement faux** — le pire des résultats, parce que
+rien ne le signale à l'œil. `DepthMismatch` refuse.
+
+**Et un défaut trouvé en branchant tout ça** : je réduisais la carte de
+profondeur à la moyenne, comme une photo. Moyenner deux distances de part et
+d'autre d'un bord invente une distance qui n'existe nulle part — le sujet à 1 m,
+le mur à 4 m, et un fantôme à 2,5 m sur tout le contour. Sur une carte à **deux**
+profondeurs, réduite en 48×48 :
+
+| Réduction | Valeurs distinctes | Plateaux | Cases isolées |
+|---|---:|---:|---:|
+| moyenne | 21 | 36 | 28 |
+| médiane | **2** | **2** | **0** |
+
+C'est la même erreur que moyenner des octets sRGB (§ 5.24) : la bonne moyenne
+dépend de la grandeur. `resample_median` réduit ce qu'on n'a pas le droit de
+moyenner ; sur un champ lisse les deux coïncident, donc rien n'est perdu.
+
+Le cas qui justifie tout le module, vérifié par test : un sujet **sombre** sur
+fond **clair**. La convention l'enfonce en creux — elle a raison d'après ce
+qu'elle sait. La carte le remet devant.
+
+#### Ce que j'ai réfuté
+
+**La profondeur par le flou.** L'idée est juste : la profondeur de champ est un
+fait optique, présent dans le fichier. Deux mesures la disqualifient.
+
+Elle survit mal à notre décodage. Le décodage JPEG au huitième rend la moyenne
+de chaque bloc 8×8 — mesurer une haute fréquence après l'avoir supprimée :
+
+| Rayon du flou | Rapport net/flou en pleine résolution | Au huitième |
+|---:|---:|---:|
+| 2 px | 118 | 1,9 |
+| 6 px | 269 | 8,4 |
+| 12 px | 1004 | 19,2 |
+
+Ce n'est pas rédhibitoire au-delà de 6 px. Ce qui l'est, c'est le second point :
+**la netteté confond « loin » et « sans texture »**. Trois régions à la **même**
+distance, toutes parfaitement nettes :
+
+| Région | Netteté mesurée |
+|---|---:|
+| texture fine | 16,63 |
+| dégradé doux | 1,54 |
+| aplat | 1,50 |
+
+Un aplat net mesure exactement comme un fond flou. Un ciel uni partirait au fond,
+un mur texturé juste derrière le sujet resterait devant. Le résultat serait un
+relief **confiant et faux** — précisément ce que `DepthMismatch` existe pour
+empêcher ailleurs. Combler les zones sans texture demande une segmentation,
+c'est-à-dire le réseau de neurones qu'on importe déjà.
+
+Retenu comme mesuré et écarté, pour ne pas y revenir.
 
 ---
 

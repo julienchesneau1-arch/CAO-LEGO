@@ -89,7 +89,7 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/fast_search.py` | H.4 | `LatticeSearchApproximation` : recherche O(n) avec preuve de complétude (**hors contrat**) |
 | `bfk001/catalog.py` | — | Références LEGO, couleurs, nomenclature (**hors contrat**) |
 | `bfk001/serialization.py` | — | Persistance JSON sans aucune liaison (**hors contrat**) |
-| `bfk001/imaging.py` | — | Lecture PNG/PPM, rééchantillonnage par moyenne de bloc (**hors contrat**) |
+| `bfk001/imaging.py` | — | Lecture PNG/PPM, rééchantillonnage par moyenne de bloc en lumière linéaire, et par **médiane** pour ce qu'on n'a pas le droit de moyenner (**hors contrat**) |
 | `bfk001/jpeg.py` | — | Décodeur JPEG baseline **au huitième** (DC seul), orientation EXIF (**hors contrat**) |
 | `bfk001/palette.py` | — | Palette LEGO, import LDConfig, quantification CIE L\*a\*b\* (**hors contrat**) |
 | `bfk001/mosaic.py` | — | Solveur LEGO Art : image → modèle avec substrat (**hors contrat**) |
@@ -97,6 +97,7 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/booklet.py` | — | Notice imprimable : PDF écrit à la main, mosaïque bande par bande (**hors contrat**) |
 | `bfk001/ldraw.py` | — | Export `.ldr` : conventions d'axes et d'origine lues dans une pièce officielle (**hors contrat**) |
 | `bfk001/bricklink.py` | — | Liste de souhaits BrickLink ; refuse de deviner une couleur absente de la table (**hors contrat**) |
+| `bfk001/depth.py` | — | Profondeur **mesurée** : cartes externes, et extraction de la carte embarquée par les appareils en mode portrait (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.
@@ -556,6 +557,78 @@ l'endroit. Au-delà de deux étages les bandes de niveau deviennent plus fines
 qu'un tenon et se fragmentent — la richesse du relief s'achète en **résolution**,
 pas en étages : à 96×96, quatre étages donnent 112 plateaux pour 0,7 % de cases
 isolées, contre 53 plateaux pour 1,6 % à 48×48.
+
+---
+
+## La profondeur : mesurée plutôt que conventionnelle
+
+Le relief tiré de la clarté est une **convention** — celle du camée. Elle se
+trompe exactement là où la photo la contredit : un sujet sombre sur fond clair
+sort en creux. Deux chemins donnent une profondeur **mesurée**, et la commande
+affiche toujours lequel a servi :
+
+```
+  relief  : 2 etage(s), 6.4 mm d'epaisseur
+            source : carte de profondeur fournie (240x240) — profondeur MESUREE
+```
+
+**`--carte-profondeur fichier.png`** accepte une carte PNG, PPM ou JPEG. C'est
+le pont vers l'état de l'art : un estimateur monoculaire (MiDaS, Depth Anything,
+Marigold) en produit d'excellentes, hors de ce dépôt, avec un réseau de neurones
+qu'il serait absurde d'embarquer ici. Ajoutez `--profondeur-inversee` si la carte
+encode une distance (proche = sombre) plutôt qu'une disparité.
+
+**La carte embarquée dans le JPEG** est lue automatiquement, sans rien demander.
+Un téléphone en mode portrait *mesure* la profondeur et beaucoup d'appareils
+l'écrivent dans le fichier à côté de l'image. Les deux formats de Google se
+lisent : GDepth (base64 dans le XMP, réassemblé quand il déborde en segments
+étendus) et Dynamic Depth (le XMP est un annuaire, les images sont concaténées à
+la suite du fichier). Réserve honnête : les conteneurs de test sont fabriqués à
+la norme, ils vérifient l'analyseur contre le **format**, pas contre les
+particularités d'un appareil réel.
+
+**Le contrôle qui compte.** La carte doit avoir les proportions de la photo à
+2 % près, sinon `DepthMismatch` refuse. Une carte issue d'un autre recadrage
+produirait un relief parfaitement propre et parfaitement faux — le pire des
+résultats, parce que rien ne le signale à l'œil.
+
+**Une carte de profondeur se réduit à la médiane, jamais à la moyenne.**
+Moyenner deux distances de part et d'autre d'un bord invente une distance qui
+n'existe nulle part : le sujet à 1 m, le mur à 4 m, un fantôme à 2,5 m sur tout
+le contour. Sur une carte à deux profondeurs réduite en 48×48, la moyenne en
+fabrique 21 et mouchette le contour (36 plateaux, 28 cases isolées) ; la médiane
+en garde 2 (2 plateaux, aucune case isolée). Sur un champ lisse les deux
+coïncident, donc rien n'est perdu.
+
+**Ce qui a été mesuré et écarté : la profondeur par le flou.** L'idée est juste
+— la profondeur de champ est un fait optique présent dans le fichier — mais la
+netteté confond « loin » et « sans texture ». Trois régions à la même distance,
+toutes parfaitement nettes, mesurent 16,63 (texture fine), 1,54 (dégradé) et
+1,50 (aplat) : un aplat net mesure exactement comme un fond flou. Le détail et
+les chiffres sont en § 6.10 du registre.
+
+---
+
+## Où tombent les marches du relief
+
+Un relief ne se voit que par ses marches : une marche porte une ombre, le reste
+est plat. `relief_edge_alignment` mesure ce qui compte — la part du contraste de
+la photo que les marches exploitent, entre 0 et 1, **normalisée par leur
+nombre** :
+
+```
+            rendement des marches 0.85 sur 1
+```
+
+Le découpage par défaut est celui d'**Otsu** (`--seuils otsu`), qui pose les
+seuils dans les creux de l'histogramme, là où l'image se sépare en régions.
+`--seuils uniform` tranche la plage de clarté en parts égales : les marches
+tombent au milieu des dégradés, et un étage peut ne rien relever du tout tout en
+coûtant ses plates. La commande le signale :
+
+```
+            ATTENTION : 3 etages demandes mais seules les hauteurs [0, 3] servent.
+```
 
 ---
 

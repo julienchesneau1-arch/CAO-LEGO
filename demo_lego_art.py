@@ -23,17 +23,70 @@ import time
 import bfk001_kernel as bfk
 
 
-def charger_image(chemin: pathlib.Path) -> bfk.Image:
+def charger_image(chemin: pathlib.Path):
+    """Rend l'image ET les octets d'origine.
+
+    Les octets servent apres coup : un JPEG de mode portrait porte souvent la
+    carte de profondeur mesuree par l'appareil, et elle n'est pas dans les
+    pixels — elle est dans les entetes que le decodage jette.
+    """
     donnees = chemin.read_bytes()
     if donnees[:8] == b"\x89PNG\r\n\x1a\n":
-        return bfk.read_png(donnees)
+        return bfk.read_png(donnees), donnees
     if donnees[:2] == b"\xff\xd8":
         # Decodage au huitieme : pour une mosaique de 48 tenons, reconstruire
         # les douze millions de pixels d'origine serait du travail jete.
-        return bfk.read_jpeg_eighth(donnees)
+        return bfk.read_jpeg_eighth(donnees), donnees
     if donnees[:2] == b"P6":
-        return bfk.read_ppm(donnees)
+        return bfk.read_ppm(donnees), donnees
     raise SystemExit(f"format non reconnu : {chemin.name} (JPEG, PNG ou PPM)")
+
+
+def carte_de_relief(image, brut, options, hauteur):
+    """Les elevations, par la source la plus fiable disponible.
+
+    Trois sources, dans cet ordre, et l'ordre n'est pas arbitraire : il va de
+    la profondeur MESUREE a la convention.
+
+    1. `--carte-profondeur` : une carte fournie. Un estimateur monoculaire
+       (MiDaS, Depth Anything, Marigold) en produit d'excellentes, hors de ce
+       depot, avec un reseau qu'il serait absurde d'embarquer ici.
+    2. La carte EMBARQUEE dans le JPEG, si le telephone en a ecrit une. Le mode
+       portrait mesure la profondeur et beaucoup d'appareils la deposent dans
+       le fichier. C'est de la mesure, pas une convention.
+    3. La clarte de la photo. La convention du camee, celle du bas-relief.
+
+    On dit toujours laquelle a servi : un relief juste et un relief plausible
+    se ressemblent, et seule la provenance les distingue.
+    """
+    if options.carte_profondeur:
+        carte = bfk.read_depth_map(
+            pathlib.Path(options.carte_profondeur).read_bytes())
+        return bfk.heights_from_depth(
+            carte, image, options.studs, hauteur, options.relief,
+            near_is_bright=not options.profondeur_inversee, fit="stretch"
+        ), (f"carte de profondeur fournie ({carte.width}x{carte.height}) — "
+            "profondeur MESUREE")
+
+    if brut[:2] == b"\xff\xd8":
+        try:
+            carte = bfk.embedded_depth(brut)
+        except bfk.NoEmbeddedDepth:
+            pass
+        else:
+            return bfk.heights_from_depth(
+                carte, image, options.studs, hauteur, options.relief,
+                near_is_bright=not options.profondeur_inversee, fit="stretch"
+            ), (f"carte EMBARQUEE dans le JPEG ({carte.width}x{carte.height}) "
+                "— profondeur MESUREE par l'appareil")
+
+    # Le relief se lit sur la PHOTO, jamais sur la grille : ni palette, ni
+    # tramage. Le tramage est un bruit que l'oeil fond dans les couleurs et
+    # qu'il ne fond jamais dans les hauteurs (voir `relief_from_image`).
+    return bfk.mosaic.relief_from_image(
+        image, options.studs, hauteur, options.relief,
+        thresholds=options.seuils, fit="stretch"
+    ), "CONVENTION du bas-relief, clair = haut — aucune profondeur mesuree"
 
 
 def charger_palette(chemin: pathlib.Path | None) -> bfk.Palette:
@@ -102,6 +155,22 @@ def main() -> int:
              "est un lit de clous. Au-dela de deux etages, augmentez --studs "
              "plutot que les etages.")
     analyseur.add_argument(
+        "--carte-profondeur", default=None,
+        help="carte de profondeur (PNG, PPM ou JPEG) a la place de la "
+             "convention clair = haut. C'est la seule facon d'avoir un relief "
+             "MESURE : une photo en couleurs ne contient aucune profondeur.")
+    analyseur.add_argument(
+        "--profondeur-inversee", action="store_true",
+        help="la carte encode une DISTANCE (proche = sombre) et non une "
+             "disparite. MiDaS et Depth Anything sortent une disparite : "
+             "n'employez ce drapeau que si le relief sort en creux.")
+    analyseur.add_argument(
+        "--seuils", choices=("otsu", "uniform"), default="otsu",
+        help="ou tombent les marches du relief : otsu = dans les creux de "
+             "l'histogramme, la ou l'image se separe en regions ; uniform = "
+             "en parts egales de clarte, ce qui pose les marches au milieu "
+             "des degrades et peut payer des etages pour rien.")
+    analyseur.add_argument(
         "--references", choices=("minimal", "standard", "large", "art"),
         default="standard",
         help="jeu de tuiles : minimal = 1x1 seule ; standard = 1x1, 1x2, 1x4 ; "
@@ -126,7 +195,7 @@ def main() -> int:
                            help="limiter la mosaique aux N meilleures couleurs")
     options = analyseur.parse_args()
 
-    image = charger_image(options.image)
+    image, brut = charger_image(options.image)
     print(f"image   : {image.width} x {image.height} pixels")
     palette = charger_palette(options.ldconfig)
 
@@ -232,14 +301,12 @@ def main() -> int:
     grille = bfk.mosaic.quantize(
         image, palette, options.studs, hauteur, tramage, "stretch"
     )
-    # Le relief se lit sur une grille NON tramee, jamais sur `grille` : le
-    # tramage est un bruit que l'oeil fond dans les couleurs et qu'il ne fond
-    # jamais dans les hauteurs (voir `relief_from_image`).
-    elevations = (
-        bfk.mosaic.relief_from_image(
-            image, palette, options.studs, hauteur, options.relief, fit="stretch"
-        )
-        if options.relief else None
+    # Le relief se lit sur la PHOTO, jamais sur `grille` : ni palette, ni
+    # tramage. Le tramage est un bruit que l'oeil fond dans les couleurs et
+    # qu'il ne fond jamais dans les hauteurs (voir `relief_from_image`).
+    elevations, provenance = (
+        carte_de_relief(image, brut, options, hauteur)
+        if options.relief else (None, "")
     )
     mosaique = bfk.mosaic.build(
         grille, tiles=jeux[options.references], heights=elevations
@@ -247,11 +314,14 @@ def main() -> int:
     if options.relief:
         plateaux = bfk.mosaic.relief_plateaus(elevations)
         clous = bfk.mosaic.relief_speckle(elevations)
+        rendement = bfk.mosaic.relief_edge_alignment(
+            elevations, image, fit="stretch")
+        hauteurs = sorted({v for ligne in elevations for v in ligne})
         print(
             f"  relief  : {options.relief} etage(s), "
-            f"{bfk.ldu_to_mm(options.relief * 8):.1f} mm d'epaisseur — "
-            "convention du bas-relief, clair = haut"
+            f"{bfk.ldu_to_mm(options.relief * 8):.1f} mm d'epaisseur"
         )
+        print(f"            source : {provenance}")
         # Le seuil est un repere de lecture, pas une constante mesuree : au-dela
         # de 1 % de tours isolees, les bandes de niveau sont devenues plus fines
         # qu'un tenon et le relief se lit comme du grain. Il se compte en PART
@@ -264,6 +334,16 @@ def main() -> int:
             + (f" — {100 * taux:.1f} % de tours isolees : le relief se fragmente,"
                " moins d'etages ou plus de tenons" if taux > 0.01 else "")
         )
+        print(
+            f"            rendement des marches {rendement:.2f} sur 1 — part du "
+            "contraste de la photo que les marches exploitent"
+        )
+        if len(hauteurs) < options.relief + 1:
+            print(
+                f"            ATTENTION : {options.relief} etages demandes mais "
+                f"seules les hauteurs {hauteurs} servent. Les etages inutilises "
+                "coutent leurs plates sans rien relever."
+            )
     sans_fusion = mosaique.stud_count
     economie = 100 * (1 - mosaique.tile_count / sans_fusion)
     print(

@@ -585,8 +585,7 @@ class TestReliefEnPlateaux(unittest.TestCase):
         tramee = bfk.mosaic.quantize(image, palette, self.COTE, self.COTE,
                                      dither=True)
         herite = bfk.mosaic.relief_from_luminance(tramee, 2)
-        propre = bfk.mosaic.relief_from_image(image, palette,
-                                              self.COTE, self.COTE, 2)
+        propre = bfk.mosaic.relief_from_image(image, self.COTE, self.COTE, 2)
         # Le relief herite du tramage compte des dizaines de tours isolees.
         self.assertGreater(bfk.mosaic.relief_speckle(herite), 20)
         # Celui lu sur la grille nette n'en compte aucune.
@@ -602,8 +601,7 @@ class TestReliefEnPlateaux(unittest.TestCase):
         tramee = bfk.mosaic.quantize(image, palette, self.COTE, self.COTE,
                                      dither=True)
         herite = bfk.mosaic.relief_from_luminance(tramee, 2)
-        propre = bfk.mosaic.relief_from_image(image, palette,
-                                              self.COTE, self.COTE, 2)
+        propre = bfk.mosaic.relief_from_image(image, self.COTE, self.COTE, 2)
         avant = bfk.mosaic.build(tramee, heights=herite)
         apres = bfk.mosaic.build(tramee, heights=propre)
         self.assertLess(apres.part_count, avant.part_count)
@@ -616,7 +614,7 @@ class TestReliefEnPlateaux(unittest.TestCase):
         palette = bfk.PROVISIONAL_PALETTE.solids_only()
         for tramage in (True, False, "auto"):
             with self.assertRaises(TypeError):
-                bfk.mosaic.relief_from_image(image, palette, self.COTE,
+                bfk.mosaic.relief_from_image(image, self.COTE,
                                              self.COTE, 2, dither=tramage)
 
     def test_la_mediane_n_invente_aucune_hauteur(self):
@@ -661,7 +659,7 @@ class TestReliefEnPlateaux(unittest.TestCase):
         palette = bfk.PROVISIONAL_PALETTE.solids_only()
         grille = bfk.mosaic.quantize(image, palette, self.COTE, self.COTE,
                                      dither=True)
-        carte = bfk.mosaic.relief_from_image(image, palette, self.COTE,
+        carte = bfk.mosaic.relief_from_image(image, self.COTE,
                                              self.COTE, 3)
         mosaique = bfk.mosaic.build(grille, heights=carte)
         etat = bfk.assemble(mosaique.placed_parts, bfk.LEGO_TOLERANCE,

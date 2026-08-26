@@ -21,6 +21,8 @@ __all__ = [
     "read_ppm",
     "write_png",
     "resample_box",
+    "resample_median",
+    "DEPTH_SAMPLE_BUDGET",
     "crop",
     "crop_to_ratio",
 ]
@@ -483,3 +485,67 @@ def resample_box(image: Image, width: int, height: int) -> Image:
                 output[cursor + canal] = _REENCODAGE[totaux[canal] // count]
             cursor += 3
     return Image(width, height, bytes(output))
+
+
+DEPTH_SAMPLE_BUDGET = 16
+"""Cote maximal de l'echantillonnage d'une cellule pour `resample_median`.
+
+Une carte de profondeur pleine resolution donne des milliers de pixels par
+tenon ; les trier tous couterait des dizaines de secondes en Python pour un
+resultat que 256 echantillons donnent deja. La mediane d'un echantillon
+regulier d'un champ lisse par morceaux EST la mediane du champ, sauf a
+tomber exactement sur une frontiere — ou les deux valeurs sont de toute
+facon aussi justes l'une que l'autre.
+"""
+
+
+def resample_median(image: "Image", width: int, height: int) -> List[List[float]]:
+    """Reduction par MEDIANE, pour les grandeurs qu'on n'a pas le droit de
+    moyenner. Rend un champ de valeurs, pas une image.
+
+    `resample_box` moyenne, et c'est juste pour une couleur : ce que l'oeil
+    percoit d'un bloc trop petit pour etre resolu est la moyenne des radiances.
+    Une PROFONDEUR ne se comporte pas ainsi. Moyenner deux distances de part et
+    d'autre d'un bord invente une distance qui n'existe nulle part dans la
+    scene — le sujet est a 1 m, le mur a 4 m, et la moyenne place un fantome a
+    2,5 m sur tout le contour.
+
+    Mesure sur une carte a DEUX profondeurs seulement (sujet proche, fond
+    loin), reduite a 48x48 :
+
+        reduction   valeurs distinctes   plateaux   cases isolees
+        moyenne                     21         36              28
+        mediane                      2          2               0
+
+    La moyenne a fabrique dix-neuf profondeurs qui n'existaient pas, et le
+    relief qui en sort a un liseré mouchete tout autour du sujet. La mediane
+    rend la scene telle qu'elle est.
+
+    La valeur rendue est le gris `(r + g + b) / 3` : une carte de profondeur est
+    un scalaire encode en gris, et lui appliquer une colorimetrie serait poser
+    une physique la ou il n'y en a pas.
+    """
+    if width <= 0 or height <= 0:
+        raise ValueError("dimensions de sortie invalides")
+    source = image.data
+    largeur_source = image.width
+    sortie = []
+    for out_y in range(height):
+        y0 = out_y * image.height // height
+        y1 = max(y0 + 1, (out_y + 1) * image.height // height)
+        pas_y = max(1, (y1 - y0 + DEPTH_SAMPLE_BUDGET - 1) // DEPTH_SAMPLE_BUDGET)
+        rang = []
+        for out_x in range(width):
+            x0 = out_x * largeur_source // width
+            x1 = max(x0 + 1, (out_x + 1) * largeur_source // width)
+            pas_x = max(1, (x1 - x0 + DEPTH_SAMPLE_BUDGET - 1) // DEPTH_SAMPLE_BUDGET)
+            echantillons = []
+            for y in range(y0, y1, pas_y):
+                base = y * largeur_source
+                for x in range(x0, x1, pas_x):
+                    i = (base + x) * 3
+                    echantillons.append(source[i] + source[i + 1] + source[i + 2])
+            echantillons.sort()
+            rang.append(echantillons[len(echantillons) // 2] / 3.0)
+        sortie.append(rang)
+    return sortie

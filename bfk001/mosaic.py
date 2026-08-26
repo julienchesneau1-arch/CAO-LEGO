@@ -49,6 +49,8 @@ __all__ = [
     "preview",
     "relief_from_luminance",
     "relief_from_image",
+    "relief_edge_alignment",
+    "etage_field",
     "smooth_relief",
     "relief_speckle",
     "relief_plateaus",
@@ -1194,7 +1196,7 @@ def cheapest_palette(
 
 
 def relief_from_luminance(
-    grid, levels: int = 2, invert: bool = False
+    grid, levels: int = 2, invert: bool = False, thresholds: str = "otsu"
 ) -> List[List[int]]:
     """Carte d'elevations tiree de la CLARTE des tuiles : clair = haut.
 
@@ -1213,24 +1215,159 @@ def relief_from_luminance(
     est tramee, le relief herite du tramage et devient un lit de clous — un
     tiers des cases en tours isolees sur un portrait mesure. Passez par
     `relief_from_image`, qui lit une grille non tramee et regularise.
+
+    `thresholds` decide OU tombent les marches, et c'est la question qui fait
+    la difference entre une sculpture et une carte d'etat-major.
+
+    "uniform" tranche la plage de clarte en parts egales. C'est ce que faisait
+    cette fonction, et c'est un mauvais decoupage : les marches tombent au
+    milieu des degrades, et quand la photo n'a pas de clarte a cet endroit,
+    l'etage ne sert a rien tout en coutant ses plates. Mesure sur un portrait
+    a trois etages : le decoupage uniforme n'emploie que les hauteurs 0 et 3 —
+    trois couches de relief pour la silhouette qu'une seule donnait, 144
+    pieces pour rien.
+
+    "otsu" (defaut) place les seuils dans les creux de l'histogramme, la ou
+    l'image se separe en regions.
+
+    Nuance mesuree, et je l'avais d'abord surevaluee : sur une grille DEJA
+    quantifiee, l'ecart entre les deux decoupages est faible, parce que la
+    quantification a deja separe l'image en regions — elle a fait une part du
+    travail d'Otsu. Le gros du gain apparait quand les seuils se posent sur la
+    clarte continue, ce que fait `relief_from_image` : 0,85 de rendement
+    contre 0,70, 9 plateaux contre 30, aucune case isolee contre 17.
     """
     if levels < 1:
         raise ValueError("un relief compte au moins un niveau")
+    if thresholds not in ("otsu", "uniform"):
+        raise ValueError("thresholds vaut 'otsu' ou 'uniform'")
     clartes = [[srgb_to_lab(c.rgb)[0] for c in ligne] for ligne in grid]
     plancher = min(v for ligne in clartes for v in ligne)
     plafond = max(v for ligne in clartes for v in ligne)
     if plafond - plancher < 1e-9:
         return [[0] * len(grid[0]) for _ in grid]
-    sortie = []
-    for ligne in clartes:
-        rang = []
-        for valeur in ligne:
-            part = (valeur - plancher) / (plafond - plancher)
-            if invert:
-                part = 1.0 - part
-            rang.append(min(levels, int(part * (levels + 1))))
-        sortie.append(rang)
-    return sortie
+    if thresholds == "uniform":
+        seuils = [plancher + (plafond - plancher) * (k + 1) / (levels + 1)
+                  for k in range(levels)]
+    else:
+        seuils = _seuils_otsu(clartes, levels)
+    return [
+        [
+            (levels - sum(1 for s in seuils if valeur >= s)) if invert
+            else sum(1 for s in seuils if valeur >= s)
+            for valeur in ligne
+        ]
+        for ligne in clartes
+    ]
+
+
+def _seuils_otsu(valeurs, nombre: int, bins: int = 128) -> List[float]:
+    """Seuils d'Otsu multi-niveaux, par programmation dynamique.
+
+    Otsu maximise la variance INTER-classes. Concretement : les seuils tombent
+    dans les CREUX de l'histogramme, la ou l'image se separe vraiment en
+    regions, au lieu de couper au milieu d'un degrade.
+
+    L'exhaustif serait en bins^nombre — 128^4, quatre milliards. La
+    programmation dynamique le ramene a bins^2 x nombre : `H(a, b)` ne depend
+    que de l'intervalle, donc le meilleur decoupage en k classes de 0..b se
+    deduit du meilleur decoupage en k-1 classes de 0..a-1.
+    """
+    plancher = min(v for ligne in valeurs for v in ligne)
+    plafond = max(v for ligne in valeurs for v in ligne)
+    if plafond - plancher < 1e-9:
+        return [plancher] * nombre
+    histogramme = [0] * bins
+    for ligne in valeurs:
+        for v in ligne:
+            case = int((v - plancher) / (plafond - plancher) * bins)
+            histogramme[min(bins - 1, case)] += 1
+    poids = [0.0] * (bins + 1)
+    moments = [0.0] * (bins + 1)
+    for i in range(bins):
+        poids[i + 1] = poids[i] + histogramme[i]
+        moments[i + 1] = moments[i] + histogramme[i] * i
+
+    def inertie(a: int, b: int) -> float:
+        """Contribution de la classe a..b a la variance inter-classes."""
+        masse = poids[b + 1] - poids[a]
+        return 0.0 if masse == 0 else (moments[b + 1] - moments[a]) ** 2 / masse
+
+    meilleur = [[0.0] * bins for _ in range(nombre + 2)]
+    coupe = [[0] * bins for _ in range(nombre + 2)]
+    for b in range(bins):
+        meilleur[1][b] = inertie(0, b)
+    for k in range(2, nombre + 2):
+        for b in range(bins):
+            score, arg = -1.0, 0
+            for a in range(1, b + 1):
+                valeur = meilleur[k - 1][a - 1] + inertie(a, b)
+                if valeur > score:
+                    score, arg = valeur, a
+            meilleur[k][b] = score
+            coupe[k][b] = arg
+    bornes = []
+    b = bins - 1
+    for k in range(nombre + 1, 1, -1):
+        a = coupe[k][b]
+        bornes.append(a)
+        b = a - 1
+    bornes.reverse()
+    return [plancher + (plafond - plancher) * a / bins for a in bornes]
+
+
+def relief_edge_alignment(
+    heights, image: Image, fit: str = "crop", offset=0.5
+) -> float:
+    """Rendement des marches du relief, entre 0 et 1. Se lit sur la PHOTO.
+
+    Un relief ne se voit que par ses marches : une marche porte une ombre, le
+    reste est plat. La question n'est donc pas « quelle hauteur » mais « ou
+    tombent les frontieres ». Au milieu d'un degrade, on obtient une carte
+    d'etat-major — des courbes de niveau qui ne designent rien. Sur les
+    contours du sujet, on obtient une sculpture.
+
+    On compare donc le contraste de la PHOTO le long des K marches reellement
+    posees au contraste des K frontieres les plus contrastees qu'offre cette
+    photo. 1,0 : on ne pouvait pas mieux placer K marches. 0,5 : la moitie du
+    contraste disponible est gaspillee.
+
+    La normalisation par K n'est pas un detail. La premiere version de cette
+    mesure divisait par le contraste MOYEN, et elle etait fausse : un relief a
+    une seule marche, posee sur le contour le plus fort, obtenait le meilleur
+    score possible, et tout etage supplementaire le degradait mecaniquement.
+    Elle recompensait le fait d'en faire moins.
+
+    La reference est la photo et non la grille quantifiee : c'est la photo qui
+    dit ou sont les contours, la grille n'en est qu'une approximation.
+    """
+    if not heights or not heights[0]:
+        raise ValueError("carte d'elevations vide")
+    studs_y, studs_x = len(heights), len(heights[0])
+    reduite = resample_box(
+        _cadrer(image, studs_x, studs_y, fit, offset), studs_x, studs_y
+    )
+    clartes = [[srgb_to_lab(reduite.pixel(x, y))[0] for x in range(studs_x)]
+               for y in range(studs_y)]
+    sous_marche, toutes = [], []
+    for y in range(studs_y):
+        for x in range(studs_x):
+            for dy, dx in ((0, 1), (1, 0)):
+                yy, xx = y + dy, x + dx
+                if yy >= studs_y or xx >= studs_x:
+                    continue
+                ecart = abs(clartes[y][x] - clartes[yy][xx])
+                toutes.append(ecart)
+                if heights[y][x] != heights[yy][xx]:
+                    sous_marche.append(ecart)
+    if not sous_marche:
+        return 0.0
+    toutes.sort(reverse=True)
+    plafond = toutes[:len(sous_marche)]
+    moyenne_plafond = sum(plafond) / len(plafond)
+    if moyenne_plafond < 1e-9:
+        return 0.0
+    return (sum(sous_marche) / len(sous_marche)) / moyenne_plafond
 
 
 def smooth_relief(heights, passes: int = 1) -> List[List[int]]:
@@ -1345,52 +1482,120 @@ def relief_plateaus(heights) -> Tuple[int, ...]:
 
 def relief_from_image(
     image: Image,
-    palette: Palette,
     studs_x: int,
     studs_y: int,
     levels: int = 2,
     invert: bool = False,
     passes: int = 1,
-    **quantize_options,
+    thresholds: str = "otsu",
+    fit: str = "crop",
+    offset=0.5,
+    **refuses,
 ) -> List[List[int]]:
-    """Carte d'elevations calculee COMME IL FAUT, depuis l'image.
+    """Carte d'elevations lue sur la PHOTO. C'est le chemin a prendre.
 
-    C'est le chemin a prendre. `relief_from_luminance` lit la grille qu'on
-    lui donne, et si cette grille est TRAMEE, le relief herite du tramage —
-    ce qui est un defaut grave, mesure ici.
+    Le relief ne passe par aucune quantification : ni palette, ni tramage. Il
+    lit la clarte de l'image reduite a la resolution de l'oeuvre, et decoupe
+    cette clarte en etages aux seuils d'Otsu.
 
-    Le tramage est un marche : il echange de la justesse tonale contre du
-    bruit spatial, et il est gagnant parce que l'oeil fond ce bruit. Une
-    elevation ne se fond pas. Une marche de 3,2 mm est un fait physique que
-    l'oeil ne moyenne jamais : elle porte une ombre, elle accroche la
-    lumiere rasante, elle se voit de cote. Trame le relief, et le damier que
-    l'oeil devait ignorer dans les couleurs devient un lit de clous.
+    Deux defauts sont evites, et ce sont deux defauts distincts.
 
-    Portrait 48x80, deux etages, palette officielle, image tramee :
+    LE TRAMAGE. `relief_from_luminance` lit la grille qu'on lui donne, et la
+    chaine lui donnait la grille tramee. Le tramage echange de la justesse
+    tonale contre du bruit spatial, marche gagnant parce que l'oeil fond ce
+    bruit dans les couleurs. Une elevation ne se fond jamais : une marche de
+    3,2 mm porte une ombre, accroche la lumiere rasante, se voit de cote. Le
+    damier que l'oeil devait ignorer devenait un lit de clous — 1473 des 3840
+    cases d'un portrait en tours isolees, 1136 pieces, 22 % du modele.
 
-        source des elevations        cases isolees   plateaux   pieces
-        grille tramee (l'ancien)              1256       1535     4180
-        grille non tramee                        0          3     3212
-        grille non tramee + mediane              0          3     3211
+    LE DECOUPAGE. Trancher la plage de clarte en parts egales pose les
+    marches au milieu des degrades. Otsu les pose dans les creux de
+    l'histogramme, la ou l'image se separe en regions.
 
-    Un tiers des 3840 cases etaient des tours isolees, et elles coutaient
-    969 pieces — 23 % du modele — pour fabriquer du grain. Les couleurs, elles,
-    ne changent pas d'un iota : la grille tramee reste celle qu'on POSE, seule
-    la carte des hauteurs est lue sur la grille nette.
+    Les deux corrections sont complementaires, et aucune ne suffit seule.
+    Tournesols 48x48, deux etages, `relief_edge_alignment` en reference :
 
-    On quantifie donc une seconde fois sans tramage, uniquement pour lire les
-    hauteurs. `dither` est refuse : ce serait redemander le defaut.
+        source des seuils      rendement  plateaux  isolees  pieces
+        grille + uniforme           0,76         8        0    1128
+        grille + otsu               0,76         8        0    1108
+        clarte + uniforme           0,70        30       17    1145
+        clarte + otsu               0,85         9        0    1114
+
+    Lire la clarte SANS Otsu est le pire des quatre : la quantification, en
+    aplatissant l'image en regions de couleur, faisait deja une part du
+    travail d'Otsu, et s'en passer sans le remplacer perd au change. C'est
+    Otsu qui rend la lecture directe payante, et la lecture directe qui rend
+    Otsu payant.
+
+    La palette n'entre pas dans le calcul, et ce n'est pas un oubli : le
+    relief decrit la STRUCTURE de la photo, pas les briques disponibles. Deux
+    palettes differentes donnent le meme relief.
     """
-    if "dither" in quantize_options:
+    if "dither" in refuses:
         raise TypeError(
-            "relief_from_image quantifie SANS tramage, par construction : "
-            "un relief trame est un lit de clous (voir la docstring)"
+            "le relief ne quantifie plus du tout : il lit la clarte de la "
+            "photo. Un relief trame est un lit de clous (voir la docstring)"
         )
-    nette = quantize(image, palette, studs_x, studs_y, dither=False,
-                     **quantize_options)
-    return smooth_relief(
-        relief_from_luminance(nette, levels=levels, invert=invert), passes
+    if "palette" in refuses:
+        raise TypeError(
+            "le relief ne depend pas de la palette : il decrit la structure "
+            "de la photo, pas les briques disponibles"
+        )
+    if refuses:
+        raise TypeError(f"parametres inconnus : {sorted(refuses)}")
+    if not isinstance(studs_x, int) or not isinstance(studs_y, int):
+        # Le parametre `palette`, en deuxieme position, a disparu : le relief
+        # n'en depend pas. Le dire ici evite une erreur incomprehensible dix
+        # lignes plus bas.
+        raise TypeError(
+            "relief_from_image(image, studs_x, studs_y, ...) : la palette n'est "
+            "plus un parametre, le relief ne depend pas des briques disponibles"
+        )
+    if levels < 1:
+        raise ValueError("un relief compte au moins un niveau")
+    if thresholds not in ("otsu", "uniform"):
+        raise ValueError("thresholds vaut 'otsu' ou 'uniform'")
+    reduite = resample_box(
+        _cadrer(image, studs_x, studs_y, fit, offset), studs_x, studs_y
     )
+    clartes = [[srgb_to_lab(reduite.pixel(x, y))[0] for x in range(studs_x)]
+               for y in range(studs_y)]
+    return etage_field(clartes, levels, invert, thresholds, passes)
+
+
+def etage_field(values, levels: int = 2, invert: bool = False,
+                thresholds: str = "otsu", passes: int = 1) -> List[List[int]]:
+    """Une carte de valeurs quelconque -> des etages de plates.
+
+    Sert deux fois : la clarte de la photo (le bas-relief par convention) et
+    une carte de profondeur (la profondeur mesuree). Les deux ne different que
+    par la grandeur qu'on etage — la mecanique du decoupage est la meme, et il
+    n'y a aucune raison qu'elle existe en deux exemplaires.
+    """
+    if levels < 1:
+        raise ValueError("un relief compte au moins un niveau")
+    if thresholds not in ("otsu", "uniform"):
+        raise ValueError("thresholds vaut 'otsu' ou 'uniform'")
+    if not values or not values[0]:
+        raise ValueError("carte de valeurs vide")
+    plancher = min(v for ligne in values for v in ligne)
+    plafond = max(v for ligne in values for v in ligne)
+    if plafond - plancher < 1e-9:
+        return [[0] * len(values[0]) for _ in values]
+    if thresholds == "uniform":
+        seuils = [plancher + (plafond - plancher) * (k + 1) / (levels + 1)
+                  for k in range(levels)]
+    else:
+        seuils = _seuils_otsu(values, levels)
+    brute = [
+        [
+            (levels - sum(1 for s in seuils if v >= s)) if invert
+            else sum(1 for s in seuils if v >= s)
+            for v in ligne
+        ]
+        for ligne in values
+    ]
+    return smooth_relief(brute, passes)
 
 
 def preview(
