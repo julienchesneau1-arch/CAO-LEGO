@@ -557,3 +557,122 @@ class TestRelief(unittest.TestCase):
         bom = bfk.bill_of_materials(mosaique.instances, mosaique.placed_parts)
         self.assertGreater(len(bfk.build_booklet(mosaique, plan, bom)), 1000)
         self.assertGreater(len(bfk.dumps_ldr(mosaique.placed_parts, mosaique.instances)), 500)
+
+
+class TestReliefEnPlateaux(unittest.TestCase):
+    """Un relief doit etre une SCULPTURE, pas du grain releve.
+
+    Le defaut que ce fichier fixe : `relief_from_luminance` lit la grille
+    qu'on lui donne, et la chaine lui donnait la grille TRAMEE. Le tramage
+    echange de la justesse tonale contre du bruit spatial, marche gagnant
+    parce que l'oeil fond ce bruit dans les couleurs. Il ne le fond jamais
+    dans les hauteurs : une marche de 3,2 mm porte une ombre.
+    """
+
+    COTE = 24
+
+    def degrade(self):
+        """Degrade noir-blanc : toute petite palette y trame, sans hasard."""
+        return bfk.Image(
+            self.COTE, self.COTE,
+            bytes(v for _ in range(self.COTE) for x in range(self.COTE)
+                  for v in (x * 255 // (self.COTE - 1),) * 3),
+        )
+
+    def test_le_tramage_ne_monte_plus_dans_le_relief(self):
+        image = self.degrade()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        tramee = bfk.mosaic.quantize(image, palette, self.COTE, self.COTE,
+                                     dither=True)
+        herite = bfk.mosaic.relief_from_luminance(tramee, 2)
+        propre = bfk.mosaic.relief_from_image(image, palette,
+                                              self.COTE, self.COTE, 2)
+        # Le relief herite du tramage compte des dizaines de tours isolees.
+        self.assertGreater(bfk.mosaic.relief_speckle(herite), 20)
+        # Celui lu sur la grille nette n'en compte aucune.
+        self.assertEqual(bfk.mosaic.relief_speckle(propre), 0)
+        self.assertLess(len(bfk.mosaic.relief_plateaus(propre)),
+                        len(bfk.mosaic.relief_plateaus(herite)) // 10)
+
+    def test_et_le_bruit_se_payait_en_pieces(self):
+        # Chaque case isolee est une tour de plates a elle seule : le grain
+        # n'etait pas seulement laid, il etait cher.
+        image = self.degrade()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        tramee = bfk.mosaic.quantize(image, palette, self.COTE, self.COTE,
+                                     dither=True)
+        herite = bfk.mosaic.relief_from_luminance(tramee, 2)
+        propre = bfk.mosaic.relief_from_image(image, palette,
+                                              self.COTE, self.COTE, 2)
+        avant = bfk.mosaic.build(tramee, heights=herite)
+        apres = bfk.mosaic.build(tramee, heights=propre)
+        self.assertLess(apres.part_count, avant.part_count)
+        # Et les COULEURS ne bougent pas : c'est la meme grille qu'on pose,
+        # seule la carte des hauteurs est lue ailleurs.
+        self.assertEqual(avant.grid, apres.grid)
+
+    def test_relief_from_image_refuse_qu_on_lui_redemande_le_defaut(self):
+        image = self.degrade()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        for tramage in (True, False, "auto"):
+            with self.assertRaises(TypeError):
+                bfk.mosaic.relief_from_image(image, palette, self.COTE,
+                                             self.COTE, 2, dither=tramage)
+
+    def test_la_mediane_n_invente_aucune_hauteur(self):
+        # La moyenne creerait des demi-marches, qui n'existent pas en plates.
+        random.seed(11)
+        carte = [[random.randrange(4) for _ in range(12)] for _ in range(12)]
+        lisse = bfk.mosaic.smooth_relief(carte, 2)
+        self.assertTrue({v for l in lisse for v in l}
+                        <= {v for l in carte for v in l})
+
+    def test_un_clou_disparait_un_plateau_reste(self):
+        carte = [[0] * 9 for _ in range(9)]
+        for y in range(1, 4):          # plateau 3x3 en haut a gauche
+            for x in range(1, 4):
+                carte[y][x] = 1
+        carte[6][6] = 1                # clou isole en bas a droite
+        self.assertEqual(bfk.mosaic.relief_speckle(carte), 1)
+        lisse = bfk.mosaic.smooth_relief(carte)
+        self.assertEqual(lisse[6][6], 0, "le clou aurait du disparaitre")
+        self.assertEqual([lisse[y][2] for y in range(1, 4)], [1, 1, 1],
+                         "le coeur du plateau aurait du rester")
+
+    def test_les_deux_mesures_disent_la_meme_chose(self):
+        plat = [[0] * 8 for _ in range(8)]
+        self.assertEqual(bfk.mosaic.relief_speckle(plat), 0)
+        self.assertEqual(bfk.mosaic.relief_plateaus(plat), (64,))
+        damier = [[(x + y) % 2 for x in range(8)] for y in range(8)]
+        self.assertEqual(bfk.mosaic.relief_speckle(damier), 64)
+        self.assertEqual(bfk.mosaic.relief_plateaus(damier), (1,) * 64)
+
+    def test_zero_passe_ne_touche_a_rien_et_les_passes_negatives_sont_refusees(self):
+        carte = [[0, 1], [1, 0]]
+        self.assertEqual(bfk.mosaic.smooth_relief(carte, 0), carte)
+        self.assertIsNot(bfk.mosaic.smooth_relief(carte, 0), carte)
+        with self.assertRaises(ValueError):
+            bfk.mosaic.smooth_relief(carte, -1)
+
+    def test_le_relief_propre_reste_constructible(self):
+        # Le lissage produit des formes quelconques : le noyau doit toujours
+        # les accepter, sinon le remede serait pire que le mal.
+        image = self.degrade()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        grille = bfk.mosaic.quantize(image, palette, self.COTE, self.COTE,
+                                     dither=True)
+        carte = bfk.mosaic.relief_from_image(image, palette, self.COTE,
+                                             self.COTE, 3)
+        mosaique = bfk.mosaic.build(grille, heights=carte)
+        etat = bfk.assemble(mosaique.placed_parts, bfk.LEGO_TOLERANCE,
+                            search=bfk.LatticeSearchApproximation())
+        violations = (
+            bfk.check_h2_collision(mosaique.placed_parts, mosaique.geometries)
+            + bfk.check_h3_authority_integrity(etat.graph)
+            + bfk.check_h4_floating(
+                etat.graph,
+                bfk.founded_part_ids(mosaique.placed_parts, mosaique.geometries))
+            + bfk.check_h5_disconnected(etat.graph)
+            + bfk.check_h6_foundation(mosaique.placed_parts, mosaique.geometries)
+        )
+        self.assertEqual([(v.invariant, v.detail) for v in violations], [])

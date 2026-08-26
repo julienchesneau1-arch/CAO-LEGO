@@ -513,6 +513,52 @@ est en § 5.22 du registre.
 
 ---
 
+## Le relief
+
+`--relief N` donne du volume à l'œuvre : chaque tuile est surélevée de 0 à N
+plates (3,2 mm chacune), sur des couches de plates fusionnées posées sous la
+mosaïque. Le noyau valide ce volume sans rien changer — il est 3D depuis le
+premier jour.
+
+**Le relief ne coûte aucune précision.** L'écart par tuile est identique à zéro,
+un, deux ou six étages : la couleur se décide dans le plan, la hauteur en z. Il
+coûte des pièces, et seulement des pièces : +10 % pour un étage, +17 % pour
+deux, +33 % pour quatre.
+
+**Le relief se lit sur une grille non tramée, jamais sur celle qu'on pose.** Le
+tramage échange de la justesse tonale contre du bruit spatial, et il est gagnant
+parce que l'œil fond ce bruit dans les couleurs. Il ne le fond jamais dans les
+hauteurs : une marche de 3,2 mm porte une ombre. Un relief tramé est un lit de
+clous — 1473 tours isolées sur 3840 tenons, 22 % du modèle dépensés en grain.
+`relief_from_image` quantifie donc une seconde fois **sans tramage**, uniquement
+pour lire les hauteurs, puis régularise en plateaux par une médiane 3×3. Les
+couleurs posées ne changent pas d'un ΔE.
+
+La commande affiche les deux mesures qui disent si le relief est une sculpture
+ou du grain relevé — nombre de plateaux et nombre de cases isolées — et prévient
+quand il mouchette :
+
+```
+  relief  : 2 etage(s), 6.4 mm d'epaisseur — convention du bas-relief, clair = haut
+            3 plateaux (le plus grand : 2503 tenons), 0 case(s) isolee(s)
+```
+
+**Ce qu'il faut savoir avant d'en attendre un set officiel.** Une photo ne
+contient aucune profondeur : rien dans le fichier ne dit qu'un visage est devant
+un mur. Élever selon la clarté est une **convention** — celle du camée — et elle
+se trompe exactement là où la photo la contredit : un sujet sombre sur fond clair
+sortira en creux. `--relief` accepte `invert` par l'API, et `build(heights=…)`
+accepte n'importe quelle autre carte.
+
+Le relief obtenu est **topographique** : des terrasses de niveau. Celui d'un set
+LEGO Art est dessiné à la main et change aussi de *type* de pièce selon
+l'endroit. Au-delà de deux étages les bandes de niveau deviennent plus fines
+qu'un tenon et se fragmentent — la richesse du relief s'achète en **résolution**,
+pas en étages : à 96×96, quatre étages donnent 112 plateaux pour 0,7 % de cases
+isolées, contre 53 plateaux pour 1,6 % à 48×48.
+
+---
+
 ## La notice PDF
 
 `booklet.py` écrit le PDF à la main — objets numérotés, table de renvois,

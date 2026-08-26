@@ -1429,6 +1429,77 @@ de petites pièces, muet dès qu'on y a ajouté des plates 8×8.
 
 ---
 
+### 5.46 Le relief héritait du tramage : un tiers de l'œuvre en clous
+
+Le relief venait d'être branché (§ 6.9) et je l'avais mesuré sur la fidélité :
+zéro coût, les couleurs ne bougent pas d'un iota. C'était vrai, et c'était la
+mauvaise question. La bonne : **est-ce que ça ressemble à une sculpture ?**
+
+`relief_from_luminance` lit la grille qu'on lui donne. La chaîne lui donnait la
+grille **tramée**. Or le tramage est un marché : il échange de la justesse
+tonale contre du bruit spatial, et il est gagnant parce que l'œil fond ce bruit
+dans les couleurs. Une élévation ne se fond jamais. Une marche de 3,2 mm porte
+une ombre, accroche la lumière rasante, se voit de côté. Tramer le relief, c'est
+transformer le damier que l'œil devait ignorer en un lit de clous.
+
+Deux mesures nommées pour le voir sans regarder l'image — `relief_speckle`
+(cases dont aucun voisin ne partage la hauteur) et `relief_plateaus` (tailles
+des régions connexes de même hauteur) :
+
+Portrait 48×80, deux étages, palette officielle, image tramée :
+
+| Source des élévations | Cases isolées | Plateaux | Pièces |
+|---|---:|---:|---:|
+| grille tramée (l'ancien) | 1473 | 1748 | 5138 |
+| grille non tramée | 0 | 3 | 4003 |
+| grille non tramée + médiane | 0 | 3 | 4002 |
+
+**1473 des 3840 cases** — 38 % de l'œuvre — étaient des tours isolées d'une
+plate. Elles coûtaient **1136 pièces, 22 % du modèle**, pour fabriquer du grain.
+
+Le remède est structurel et non cosmétique : `relief_from_image` quantifie une
+**seconde fois sans tramage**, uniquement pour lire les hauteurs. La grille
+qu'on pose reste la grille tramée — les couleurs sont identiques au ΔE près
+(10,60 avant, 10,60 après) — seule la carte des élévations change de source.
+La fonction **refuse** un argument `dither` : ce serait redemander le défaut.
+
+Une passe de médiane 3×3 (`smooth_relief`) suit, pour les cas où la grille nette
+mouchette quand même. La médiane et non la moyenne : elle n'invente aucune
+hauteur intermédiaire — sa sortie est toujours une hauteur déjà présente dans la
+fenêtre, ce qui compte quand la seule marche disponible est une plate entière —
+et elle préserve les marches franches au lieu de les biseauter.
+
+Son effet est réel mais second, et je le note tel quel plutôt que de le
+survendre. Sur les Tournesols (image non tramée, donc déjà propre) : 16 → 8
+plateaux, 5 → 0 cases isolées, 1123 → 1113 pièces. Sur cette même image à trois
+étages, une passe **dégrade** légèrement le compte (18 → 21 isolées) : déplacer
+une frontière peut orpheliner une case. C'est un lissage, pas une garantie.
+
+Ce que la mesure dit aussi, et qui n'était pas prévu : **le relief se fragmente
+au-delà de deux étages**, parce que les bandes de niveau deviennent plus fines
+qu'un tenon.
+
+Tournesols 48×48, chemin corrigé :
+
+| Étages | Plateaux | Isolées | Pièces | Épaisseur |
+|---:|---:|---:|---:|---:|
+| 0 | 1 | 0 | 962 | 0,0 mm |
+| 1 | 7 | 0 | 1056 | 3,2 mm |
+| 2 | 8 | 0 | 1130 | 6,4 mm |
+| 3 | 35 | 21 | 1204 | 9,6 mm |
+| 4 | 53 | 36 | 1277 | 12,8 mm |
+
+La sortie de la commande affiche désormais ces deux chiffres et prévient quand
+le relief mouchette. Et la fragmentation se corrige par la **résolution**, pas
+par des passes de filtre : à 96×96, quatre étages donnent 112 plateaux pour
+0,7 % de cases isolées, contre 53 plateaux pour 1,6 % à 48×48. Deux fois plus de
+relief pour deux fois moins de bruit.
+
+Ce que je retiens : j'avais mesuré le coût du relief sur le seul axe où il était
+gratuit. « Zéro ΔE » répondait à une question que personne n'avait posée.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -1649,6 +1720,59 @@ appartient au propriétaire du dépôt.
 
 Écart mesuré sans lui : la palette provisoire de 12 couleurs laisse **deux fois
 plus d'écart** que les 80 officielles.
+
+---
+
+### 6.9 Le volume : ce que la chaîne peut promettre, et ce qu'elle ne peut pas
+
+La demande d'origine ne portait pas sur le relief, mais la question est venue :
+un tableau LEGO Art a du volume, en a-t-on ?
+
+**Oui, et il ne coûte aucune précision.** L'écart par tuile est identique à zéro,
+un, deux, trois, quatre ou six étages — 10,60 ΔE sur le portrait de test, 6,16
+sur les Tournesols, aux réglages par défaut, sans une décimale d'écart. Les
+deux axes sont orthogonaux : la couleur se décide dans le plan, la hauteur en z.
+Le noyau n'a rien eu à apprendre pour valider du volume, il est 3D depuis le
+premier jour (H1–H6 passent sans une violation sur les élévations testées).
+
+Le prix est en pièces, et il est modeste depuis la correction du § 5.46 :
++10 % pour un étage, +17 % pour deux, +33 % pour quatre.
+
+Ce qu'il faut dire honnêtement, en revanche, sur « aussi intéressant que les
+LEGO Art officiels » :
+
+**Notre relief est topographique. Le leur est sculpté.** Une carte d'élévations
+tirée de la clarté produit des terrasses de niveau — le relief d'une carte d'état
+major. Le relief d'un set LEGO Art ou Ideas est dessiné à la main, pièce par
+pièce, et il n'emploie pas que de la hauteur : il change aussi de **type** de
+pièce selon l'endroit — tuiles rondes, tuiles-fromage, pentes. Rien dans une
+photo ne dit qu'un visage est devant un mur ; toute source de hauteur est donc
+une **convention**, pas une mesure, et l'automate ne peut pas décider ce que le
+sujet *est*.
+
+Ce que la convention donne, et c'est déjà beaucoup : sur les Tournesols, les
+fleurs se détachent du fond avec une ombre nette, les cœurs se creusent, la
+ligne de table marche. Sur un portrait, à deux étages, on obtient une silhouette
+en relief — le sujet devant, le fond derrière — et non un visage modelé.
+
+Trois conventions ont été comparées, à fidélité rigoureusement égale (les
+Tournesols, 48×48, deux étages, toutes lues sur la grille non tramée) :
+
+| Convention | Cases isolées | Plateaux | Pièces |
+|---|---:|---:|---:|
+| clarté (bas-relief) | 0 | 8 | 1126 |
+| chroma (saturés en haut) | 0 | 3 | 1080 |
+| écart à la couleur de fond | 0 | 3 | 1159 |
+
+Et une correction à ma propre mesure précédente : j'avais noté la chroma comme
+« bruitée » (47 cases isolées, 90 plateaux). C'était faux — c'était le tramage
+du § 5.46, pas la convention. Une fois le défaut corrigé, les trois sont
+également propres et coûtent à peu près la même chose. Elles ne diffèrent plus
+que par **ce qu'elles montrent** : la clarté terrasse les pétales et creuse les
+cœurs (8 plateaux), les deux autres se contentent de détacher le sujet du fond
+(3 plateaux). La clarté est donc retenue par défaut, comme la plus riche et
+comme la convention du camée — l'œil lit spontanément le clair comme proche.
+`build(heights=…)` accepte n'importe quelle autre carte.
 
 ---
 

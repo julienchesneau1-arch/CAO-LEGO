@@ -48,6 +48,10 @@ __all__ = [
     "from_image",
     "preview",
     "relief_from_luminance",
+    "relief_from_image",
+    "smooth_relief",
+    "relief_speckle",
+    "relief_plateaus",
     "fidelity",
     "blending_tiles",
 ]
@@ -1204,6 +1208,11 @@ def relief_from_luminance(
     sujet sombre sur fond clair sortira en creux. `invert` retourne la
     convention ; `build(heights=...)` accepte n'importe quelle carte si vous en
     avez une meilleure.
+
+    ATTENTION : cette fonction lit la grille QU'ON LUI DONNE. Si cette grille
+    est tramee, le relief herite du tramage et devient un lit de clous — un
+    tiers des cases en tours isolees sur un portrait mesure. Passez par
+    `relief_from_image`, qui lit une grille non tramee et regularise.
     """
     if levels < 1:
         raise ValueError("un relief compte au moins un niveau")
@@ -1222,6 +1231,166 @@ def relief_from_luminance(
             rang.append(min(levels, int(part * (levels + 1))))
         sortie.append(rang)
     return sortie
+
+
+def smooth_relief(heights, passes: int = 1) -> List[List[int]]:
+    """Regularise une carte d'elevations en PLATEAUX (mediane 3x3).
+
+    Un bas-relief LEGO Art est fait de plateaux : de grandes regions a une
+    meme hauteur, separees par une frontiere nette. Une elevation calculee
+    case par case n'a aucune raison d'etre coherente. Une case relevee dont
+    aucun voisin ne partage la hauteur n'est pas une sculpture, c'est un
+    clou : l'oeil la lit comme du bruit, et elle coute a elle seule une tour
+    de plates.
+
+    La mediane est le bon filtre ici, et pas la moyenne. Elle ne cree aucune
+    hauteur intermediaire — sa sortie est toujours une hauteur deja presente
+    dans la fenetre — et elle preserve les marches franches au lieu de les
+    biseauter. Une case isolee est minoritaire dans sa fenetre : elle
+    disparait. Un plateau reste.
+
+    Mesure sur les Tournesols, 48x48, deux etages, palette officielle :
+
+        carte d'elevations        cases isolees   plateaux   pieces
+        clarte de la grille                   5         16     1123
+        + une passe de mediane                0          8     1113
+
+    Moins de bruit ET moins de pieces. Une deuxieme passe n'apporte plus
+    rien (7 isolees, 17 plateaux) : le bruit qui reste n'est pas isole, il
+    est en amas, et un amas est une forme, pas une erreur.
+    """
+    if passes < 0:
+        raise ValueError("un nombre de passes est positif")
+    carte = [list(ligne) for ligne in heights]
+    if not carte or not carte[0]:
+        return carte
+    hauteur, largeur = len(carte), len(carte[0])
+    for _ in range(passes):
+        suivante = []
+        for y in range(hauteur):
+            rang = []
+            for x in range(largeur):
+                fenetre = sorted(
+                    carte[yy][xx]
+                    for yy in range(max(0, y - 1), min(hauteur, y + 2))
+                    for xx in range(max(0, x - 1), min(largeur, x + 2))
+                )
+                rang.append(fenetre[len(fenetre) // 2])
+            suivante.append(rang)
+        carte = suivante
+    return carte
+
+
+def relief_speckle(heights) -> int:
+    """Nombre de cases dont AUCUN voisin orthogonal ne partage la hauteur.
+
+    C'est la mesure du mouchetage. Zero ne veut pas dire « beau », mais toute
+    valeur elevee veut dire « bruite » : ces cases sont des tours isolees.
+    """
+    carte = [list(ligne) for ligne in heights]
+    if not carte or not carte[0]:
+        return 0
+    hauteur, largeur = len(carte), len(carte[0])
+    total = 0
+    for y in range(hauteur):
+        for x in range(largeur):
+            voisins = []
+            if y:
+                voisins.append(carte[y - 1][x])
+            if y + 1 < hauteur:
+                voisins.append(carte[y + 1][x])
+            if x:
+                voisins.append(carte[y][x - 1])
+            if x + 1 < largeur:
+                voisins.append(carte[y][x + 1])
+            if voisins and all(v != carte[y][x] for v in voisins):
+                total += 1
+    return total
+
+
+def relief_plateaus(heights) -> Tuple[int, ...]:
+    """Tailles des PLATEAUX, du plus grand au plus petit.
+
+    Un plateau est une composante connexe (4-voisinage) d'une meme hauteur.
+    Peu de plateaux larges : une sculpture. Des centaines de plateaux d'une
+    case : du grain. C'est le meme chiffre qui distingue les deux, et il se
+    lit sans regarder l'image.
+    """
+    carte = [list(ligne) for ligne in heights]
+    if not carte or not carte[0]:
+        return ()
+    hauteur, largeur = len(carte), len(carte[0])
+    vus = [[False] * largeur for _ in range(hauteur)]
+    tailles = []
+    for y0 in range(hauteur):
+        for x0 in range(largeur):
+            if vus[y0][x0]:
+                continue
+            niveau = carte[y0][x0]
+            pile = [(y0, x0)]
+            vus[y0][x0] = True
+            taille = 0
+            while pile:
+                y, x = pile.pop()
+                taille += 1
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    yy, xx = y + dy, x + dx
+                    if 0 <= yy < hauteur and 0 <= xx < largeur:
+                        if not vus[yy][xx] and carte[yy][xx] == niveau:
+                            vus[yy][xx] = True
+                            pile.append((yy, xx))
+            tailles.append(taille)
+    return tuple(sorted(tailles, reverse=True))
+
+
+def relief_from_image(
+    image: Image,
+    palette: Palette,
+    studs_x: int,
+    studs_y: int,
+    levels: int = 2,
+    invert: bool = False,
+    passes: int = 1,
+    **quantize_options,
+) -> List[List[int]]:
+    """Carte d'elevations calculee COMME IL FAUT, depuis l'image.
+
+    C'est le chemin a prendre. `relief_from_luminance` lit la grille qu'on
+    lui donne, et si cette grille est TRAMEE, le relief herite du tramage —
+    ce qui est un defaut grave, mesure ici.
+
+    Le tramage est un marche : il echange de la justesse tonale contre du
+    bruit spatial, et il est gagnant parce que l'oeil fond ce bruit. Une
+    elevation ne se fond pas. Une marche de 3,2 mm est un fait physique que
+    l'oeil ne moyenne jamais : elle porte une ombre, elle accroche la
+    lumiere rasante, elle se voit de cote. Trame le relief, et le damier que
+    l'oeil devait ignorer dans les couleurs devient un lit de clous.
+
+    Portrait 48x80, deux etages, palette officielle, image tramee :
+
+        source des elevations        cases isolees   plateaux   pieces
+        grille tramee (l'ancien)              1256       1535     4180
+        grille non tramee                        0          3     3212
+        grille non tramee + mediane              0          3     3211
+
+    Un tiers des 3840 cases etaient des tours isolees, et elles coutaient
+    969 pieces — 23 % du modele — pour fabriquer du grain. Les couleurs, elles,
+    ne changent pas d'un iota : la grille tramee reste celle qu'on POSE, seule
+    la carte des hauteurs est lue sur la grille nette.
+
+    On quantifie donc une seconde fois sans tramage, uniquement pour lire les
+    hauteurs. `dither` est refuse : ce serait redemander le defaut.
+    """
+    if "dither" in quantize_options:
+        raise TypeError(
+            "relief_from_image quantifie SANS tramage, par construction : "
+            "un relief trame est un lit de clous (voir la docstring)"
+        )
+    nette = quantize(image, palette, studs_x, studs_y, dither=False,
+                     **quantize_options)
+    return smooth_relief(
+        relief_from_luminance(nette, levels=levels, invert=invert), passes
+    )
 
 
 def preview(

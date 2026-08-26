@@ -97,7 +97,10 @@ def main() -> int:
         "--relief", type=int, default=0,
         help="etages de relief tires de la clarte (0 = oeuvre plate). Une "
              "CONVENTION de bas-relief : clair = haut. Une photo ne contient "
-             "aucune profondeur ; un sujet sombre sur fond clair sortira en creux.")
+             "aucune profondeur ; un sujet sombre sur fond clair sortira en creux. "
+             "Les hauteurs sont lues sur une grille NON tramee : un relief trame "
+             "est un lit de clous. Au-dela de deux etages, augmentez --studs "
+             "plutot que les etages.")
     analyseur.add_argument(
         "--references", choices=("minimal", "standard", "large", "art"),
         default="standard",
@@ -229,18 +232,37 @@ def main() -> int:
     grille = bfk.mosaic.quantize(
         image, palette, options.studs, hauteur, tramage, "stretch"
     )
+    # Le relief se lit sur une grille NON tramee, jamais sur `grille` : le
+    # tramage est un bruit que l'oeil fond dans les couleurs et qu'il ne fond
+    # jamais dans les hauteurs (voir `relief_from_image`).
     elevations = (
-        bfk.mosaic.relief_from_luminance(grille, options.relief)
+        bfk.mosaic.relief_from_image(
+            image, palette, options.studs, hauteur, options.relief, fit="stretch"
+        )
         if options.relief else None
     )
     mosaique = bfk.mosaic.build(
         grille, tiles=jeux[options.references], heights=elevations
     )
     if options.relief:
+        plateaux = bfk.mosaic.relief_plateaus(elevations)
+        clous = bfk.mosaic.relief_speckle(elevations)
         print(
             f"  relief  : {options.relief} etage(s), "
             f"{bfk.ldu_to_mm(options.relief * 8):.1f} mm d'epaisseur — "
             "convention du bas-relief, clair = haut"
+        )
+        # Le seuil est un repere de lecture, pas une constante mesuree : au-dela
+        # de 1 % de tours isolees, les bandes de niveau sont devenues plus fines
+        # qu'un tenon et le relief se lit comme du grain. Il se compte en PART
+        # des tenons et non des plateaux : a resolution double, quatre etages
+        # donnent deux fois plus de plateaux pour moitie moins de bruit.
+        taux = clous / (options.studs * hauteur)
+        print(
+            f"            {len(plateaux)} plateaux (le plus grand : "
+            f"{plateaux[0]} tenons), {clous} case(s) isolee(s)"
+            + (f" — {100 * taux:.1f} % de tours isolees : le relief se fragmente,"
+               " moins d'etages ou plus de tenons" if taux > 0.01 else "")
         )
     sans_fusion = mosaique.stud_count
     economie = 100 * (1 - mosaique.tile_count / sans_fusion)
