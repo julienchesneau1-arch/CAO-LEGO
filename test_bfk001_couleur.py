@@ -137,6 +137,54 @@ class TestMetriquePerceptive(unittest.TestCase):
         self.assertIs(bfk.delta_e, delta_e2000)
 
 
+class TestDiffusionEnSerpentin(unittest.TestCase):
+    def test_le_serpentin_alterne_bien_le_sens(self):
+        # Floyd-Steinberg toujours parcouru dans le meme sens produit des
+        # vermicules diagonaux, visibles a l'echelle de la tuile. On verifie
+        # que l'erreur part bien a GAUCHE sur les rangs impairs.
+        palette = bfk.Palette((
+            bfk.LegoColor(15, "White", (255, 255, 255)),
+            bfk.LegoColor(0, "Black", (0, 0, 0)),
+        ))
+        # Un gris moyen : chaque tuile pousse la moitie de son erreur au voisin.
+        gris = bfk.Image(32, 32, bytes((110, 110, 110)) * (32 * 32))
+        grille = bfk.mosaic.quantize(gris, palette, 8, 8, dither=True)
+        codes = [[c.code for c in ligne] for ligne in grille]
+        # Le motif ne doit pas etre identique d'un rang a l'autre : c'est la
+        # signature du serpentin, et l'inverse est celle des vermicules.
+        self.assertNotEqual(codes[1], codes[2])
+        # Et il reste equilibre : la moitie environ de chaque teinte.
+        blancs = sum(c == 15 for ligne in codes for c in ligne)
+        self.assertGreater(blancs, 8)
+        self.assertLess(blancs, 56)
+
+    def test_le_tramage_preserve_la_lumiere_moyenne(self):
+        # C'est la raison d'etre de la diffusion d'erreur, et c'est ce que
+        # mesure le critere tonal : ce que le direct ne sait pas faire.
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        rnd = random.Random(3)
+        pixels = bytearray()
+        for y in range(96):
+            for x in range(96):
+                t = (x + y) / 192
+                pixels += bytes((int(40 + 150 * t), int(80 + 120 * t), int(160 + 60 * t)))
+        degrade = bfk.Image(96, 96, bytes(pixels))
+        direct = bfk.mosaic.quantize(degrade, palette, 32, 32, dither=False)
+        trame = bfk.mosaic.quantize(degrade, palette, 32, 32, dither="adaptive")
+        self.assertLess(
+            bfk.mosaic.fidelity(trame, degrade, 4)[0],
+            bfk.mosaic.fidelity(direct, degrade, 4)[0],
+        )
+
+    def test_le_defaut_est_l_adaptatif(self):
+        palette = bfk.PROVISIONAL_PALETTE
+        image = bfk.Image(32, 32, bytes((90, 120, 95)) * (32 * 32))
+        self.assertEqual(
+            bfk.mosaic.quantize(image, palette, 8, 8),
+            bfk.mosaic.quantize(image, palette, 8, 8, dither="adaptive"),
+        )
+
+
 class TestPaletteOfficielle(unittest.TestCase):
     def test_recherche_ne_rend_que_des_fichiers_lisibles(self):
         self.assertIsNone(bfk.find_ldconfig(["/n/existe/pas/LDConfig.ldr"]))

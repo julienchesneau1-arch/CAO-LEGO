@@ -329,6 +329,23 @@ LeoCAD et BrickLink Studio le déposent — aucun drapeau à fournir si l'un d'e
 est installé. Il n'est pas embarqué dans ce dépôt : voir § 5.27 du registre.
 Sur la même photo, 14,2 → **7,7 ΔE** par tuile.
 
+### Le tramage, rejeté puis adopté
+
+Le tramage avait été rejeté sur un argument de physique : un tenon fait 8 mm,
+deux tuiles ne fusionnent qu'à 55 m, donc l'œil voit le damier. L'argument est
+juste — **Floyd-Steinberg complet transforme un ciel en neige**, l'essai visuel
+est sans appel — mais il comparait au mauvais témoin. L'alternative n'est pas
+« rien », c'est une **bande à bord franc**, et l'œil est plus sensible à un bord
+qu'à du grain.
+
+Le défaut est donc `"adaptive"` : on ne trame que là où la palette ne sait pas
+produire la couleur voulue. Erreur tonale au pire **12,4 → 7,8 ΔE** pour deux
+références de plus ; Floyd complet en aurait coûté dix-sept. La diffusion se
+fait en **serpentin**, un rang sur deux à l'envers, ce qui casse les vermicules
+diagonaux de Floyd-Steinberg — trois lignes, et trois références de moins.
+
+`--tramage aucun|adaptatif|complet` pour trancher soi-même.
+
 ---
 
 ## Le fond de la mosaïque

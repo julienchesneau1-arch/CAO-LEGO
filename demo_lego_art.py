@@ -80,6 +80,9 @@ def main() -> int:
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
     analyseur.add_argument("--par-etape", type=int, default=24)
+    analyseur.add_argument("--tramage", choices=("adaptatif", "aucun", "complet"),
+                           default="adaptatif",
+                           help="melange de tuiles voisines la ou la palette manque")
     analyseur.add_argument("--lignes-par-page", type=int, default=4,
                            help="lignes de mosaique par page de la notice PDF")
     analyseur.add_argument("--hauteur", type=int, default=None,
@@ -115,7 +118,10 @@ def main() -> int:
         print(f"  palette reduite aux {len(palette)} meilleures couleurs pour cette image")
 
     depart = time.perf_counter()
-    mosaique = bfk.mosaic.from_image(image, palette, options.studs, hauteur)
+    tramage = {"adaptatif": "adaptive", "aucun": False, "complet": True}[options.tramage]
+    mosaique = bfk.mosaic.from_image(
+        image, palette, options.studs, hauteur, dither=tramage
+    )
     print(
         f"modele  : {mosaique.part_count} pieces "
         f"({mosaique.tile_count} tuiles + substrat) en {time.perf_counter() - depart:.2f}s"

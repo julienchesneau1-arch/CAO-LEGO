@@ -795,6 +795,55 @@ aucun signal exploitable : les 80 portent toutes un `LEGOID` — vérifié, il n
 manque aucune. La disponibilité par référence est une donnée commerciale que ce
 dépôt n'a pas, et elle n'est pas devinée.
 
+### 5.28 Le tramage : une décision renversée, puis re-renversée
+
+Le registre notait le tramage comme **rejeté**, sur un argument de physique :
+un tenon fait 8 mm, deux tuiles ne fusionnent qu'à 55 m, donc à toute distance
+réelle l'œil voit le damier et le rendu se dégrade.
+
+Ayant établi en § 5.24 que **la justesse tonale prime sur l'écart par tuile**,
+la cohérence obligeait à rouvrir la question avec le bon critère.
+
+| image | variante | par tuile | tonal | tonal pire | couleurs |
+|---|---|---:|---:|---:|---:|
+| ciel | aucun | 6,17 | 5,64 | 7,29 | 6 |
+| ciel | adaptatif | 6,40 | **4,71** | **6,69** | 7 |
+| ciel | Floyd-S complet | 9,15 | **1,99** | 5,49 | 19 |
+| paysage | aucun | 7,68 | 5,55 | 12,42 | 13 |
+| paysage | adaptatif | 8,32 | **3,76** | **7,77** | 15 |
+| paysage | Floyd-S complet | 11,29 | **2,76** | 10,11 | 28 |
+
+**Floyd-Steinberg complet donne le meilleur chiffre tonal de la table et perd à
+l'œil, sans appel** : il transforme un ciel en neige, avec des tuiles roses,
+beiges et grises éparpillées dans du bleu, et il criblait le cercle rouge du
+paysage de points roses. C'est le rappel qu'aucune de ces mesures ne remplace le
+fait de regarder. Rejeté.
+
+**L'argument de physique était juste, mais il comparait au mauvais témoin.** Il
+opposait le tramage à « rien ». L'alternative réelle n'est pas « rien », c'est
+une **bande à bord franc** — et l'œil est plus sensible à un bord qu'à du grain,
+la détection de contours étant son opération de base. Le tramage adaptatif
+n'échange donc pas « propre » contre « bruité » : il échange un bord saillant
+contre une transition diffuse, et seulement là où la palette ne sait vraiment
+pas produire la couleur.
+
+Défaut changé en `"adaptive"`. Bout en bout, palette officielle, même photo :
+erreur tonale au pire **12,4 → 7,8**, pour **+2 références** à acheter. Floyd
+complet, lui, en aurait coûté **+17**.
+
+**Serpentin.** La diffusion parcourt désormais un rang sur deux à l'envers.
+Floyd-Steinberg toujours parcouru dans le même sens produit des vermicules
+diagonaux, visibles à l'échelle de la tuile. Trois lignes de code : transitions
+resserrées, et le nombre de références tombe de 18 à 15 sur le paysage. Jamais
+pire, mesuré sur les trois images.
+
+**Piste réfutée.** Pondérer aussi par la **douceur locale**, pour ne tramer que
+les dégradés et laisser tranquilles les zones déjà texturées. L'idée paraissait
+juste — c'est exactement le critère du tout premier essai, avec le signe
+inversé, ce qui expliquait pourquoi il avait échoué. Mesure : **0,1 ΔE d'écart,
+dans le bruit**, sur les trois images. Seul effet réel, une liste de course un
+peu plus courte (21 → 18 références). Pas assez pour justifier le code.
+
 ---
 
 ## 6. Où en est-on de la demande produit
@@ -810,7 +859,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | → liste de course | **~75 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV. Manque : export BrickLink, prix, disponibilité. |
 | → notice de montage | **~80 %** | Plan acyclique, PDF autonome (couverture, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes, codes couleur et légende sur chaque page), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
-**Environ 85 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
+**Environ 87 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
 volume 3D — de loin le plus lourd — n'en fait pas partie.
 

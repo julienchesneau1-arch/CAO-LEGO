@@ -19,7 +19,7 @@ running bond, la plus ancienne technique de macon.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 from .catalog import PartInstance, place
 from .collision import CollisionGeometry
@@ -105,7 +105,7 @@ def quantize(
     palette: Palette,
     studs_x: int,
     studs_y: int,
-    dither: object = False,
+    dither: object = "adaptive",
 ) -> Tuple[Tuple[LegoColor, ...], ...]:
     """Image -> grille de couleurs LEGO.
 
@@ -125,22 +125,53 @@ def quantize(
       "adaptive" diffusion PONDEREE par l'ecart a la palette : pleine la ou la
                  couleur voulue n'existe pas, nulle la ou elle existe deja.
 
-    Le defaut est False, et cette valeur est le resultat d'une mesure suivie
-    d'une correction.
+    Le defaut est "adaptive", et cette valeur a ete etablie, puis renversee,
+    puis retablie. L'histoire vaut d'etre lue avant de la changer.
 
-    Mesure : a trois tuiles de distance de regard, le tramage adaptatif ecrase
-    la quantification directe — 5,9 contre 12,3 delta E sur une image mixte.
-    Tout indiquait qu'il fallait l'activer par defaut.
+    1. Mesure : a trois tuiles de distance de regard, le tramage adaptatif
+       ecrasait la quantification directe. Tout indiquait de l'activer.
+    2. Correction : cette distance de regard n'existe pas. Un tenon fait 8 mm ;
+       deux tuiles ne se confondent qu'a 55 m (voir `blending_tiles`). A toute
+       distance reelle l'oeil voit chaque tuile — donc il voit le damier. Le
+       defaut est repasse a False.
+    3. Renversement : l'argument du point 2 est juste pour Floyd-Steinberg
+       COMPLET — l'essai visuel le confirme sans appel, il transforme un ciel
+       en neige, avec des tuiles roses et beiges dans du bleu. Mais il compare
+       le tramage a « rien », alors que l'alternative reelle est une BANDE A
+       BORD FRANC. Et l'oeil est plus sensible a un bord qu'a du grain : la
+       detection de contours est son operation de base. Le tramage adaptatif
+       n'echange donc pas « propre » contre « bruite », il echange un bord
+       saillant contre une transition diffuse — et seulement la ou la palette
+       ne sait vraiment pas produire la couleur.
 
-    Correction : cette distance de regard n'existe pas. Un tenon fait 8 mm ;
-    deux tuiles voisines ne se confondent qu'a 55 m (voir `blending_tiles`).
-    A toute distance reelle, l'oeil voit chaque tuile separement — donc il voit
-    le damier que produit le tramage, et le rendu se degrade au lieu de
-    s'ameliorer. La mesure decrivait une situation impossible.
+    Mesure du renversement, palette officielle, trois images, en CIEDE2000 :
 
-    Le tramage reste disponible : il redevient le bon choix des que le motif
-    est plus fin que le pouvoir separateur de l'oeil — une impression de
-    l'apercu, un ecran, ou un futur medium a maille serree.
+        image     variante      par tuile   tonal   pire   couleurs
+        ciel      aucun              6,17    5,64   7,29          6
+        ciel      adaptatif          6,40    4,71   6,69          7
+        ciel      Floyd-S complet    9,15    1,99   5,49         19
+        paysage   aucun              7,68    5,55  12,42         13
+        paysage   adaptatif          8,32    3,76   7,77         15
+        paysage   Floyd-S complet   11,29    2,76  10,11         28
+
+    Floyd-Steinberg complet gagne sur le papier — c'est le meilleur chiffre
+    tonal de la table — et perd a l'oeil. C'est le rappel qu'aucune de ces
+    mesures ne remplace le fait de regarder.
+
+    Le prix de l'adaptatif est une liste de course plus longue : +2 references
+    sur ces essais, +8 sur une image tres texturee. `--couleurs N` la borne.
+
+    La diffusion se fait en SERPENTIN — un rang sur deux parcouru a l'envers.
+    Floyd-Steinberg parcouru toujours dans le meme sens produit des vermicules
+    diagonaux, visibles a l'echelle de la tuile ; le serpentin les casse pour
+    trois lignes de code, resserre les transitions et fait tomber le nombre de
+    references de 18 a 15 sur le paysage. Jamais pire, mesure sur les trois.
+
+    Piste essayee et REFUTEE : ponderer aussi par la DOUCEUR locale, pour ne
+    tramer que les degrades et laisser les zones deja texturees tranquilles.
+    L'idee semblait juste — c'est le critere du premier essai, avec le signe
+    inverse. Mesure : 0,1 delta E d'ecart, dans le bruit. Un reglage qui ne
+    gagne nulle part ne merite pas d'exister.
     """
     if studs_x <= 0 or studs_y <= 0:
         raise ValueError("dimensions de mosaique invalides")
@@ -166,11 +197,13 @@ def quantize(
     ]
     grid: List[List[LegoColor]] = []
     for y in range(studs_y):
-        row: List[LegoColor] = []
-        for x in range(studs_x):
+        # Serpentin : un rang sur deux a l'envers, diffusion miroir avec lui.
+        sens = -1 if y % 2 else 1
+        row: List[Optional[LegoColor]] = [None] * studs_x
+        for x in range(studs_x - 1, -1, -1) if sens < 0 else range(studs_x):
             wanted = tuple(min(255, max(0, round(v))) for v in buffer[y][x])
             chosen = palette.nearest(wanted)
-            row.append(chosen)
+            row[x] = chosen
             facteur = strength[y][x]
             if facteur <= 0:
                 continue
@@ -178,7 +211,7 @@ def quantize(
                 (buffer[y][x][i] - chosen.rgb[i]) * facteur for i in range(3)
             ]
             for dx, dy, weight in ((1, 0, 7), (-1, 1, 3), (0, 1, 5), (1, 1, 1)):
-                nx, ny = x + dx, y + dy
+                nx, ny = x + dx * sens, y + dy
                 if 0 <= nx < studs_x and 0 <= ny < studs_y:
                     for i in range(3):
                         buffer[ny][nx][i] += error[i] * weight / 16
@@ -480,7 +513,7 @@ def from_image(
     studs_x: int,
     studs_y: int,
     substrate_color: int = SUBSTRATE_COLOR,
-    dither: object = False,
+    dither: object = "adaptive",
     substrate: str = "crossed",
 ) -> Mosaic:
     """Chaine complete : photo -> modele constructible."""

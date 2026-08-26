@@ -258,7 +258,7 @@ def test_viewing_distance_settles_the_dithering_question():
 
 
 def test_dithering_is_a_measured_trade_off_not_an_improvement():
-    """Le tramage gagne a distance et perd de pres. Les deux sont verifies."""
+    """Le tramage : ce qu'il coute, ce qu'il rapporte, et ce qui est par defaut."""
     palette = bfk.PROVISIONAL_PALETTE
     plat = image_test()          # deux aplats francs
     module = image_modulee()     # teintes absentes de la palette
@@ -285,10 +285,33 @@ def test_dithering_is_a_measured_trade_off_not_an_improvement():
         sans_module, module, 4
     )[0]
 
-    # Le defaut de la chaine est donc la quantification directe.
+    # Le defaut de la chaine est l'ADAPTATIF. Floyd-Steinberg complet gagne
+    # sur le critere tonal et perd a l'oeil — il transforme un ciel en neige ;
+    # ne rien tramer laisse des bandes a bord franc, et l'oeil est plus
+    # sensible a un bord qu'a du grain. L'adaptatif ne trame que la ou la
+    # palette ne sait pas produire la couleur.
     assert bfk.mosaic.quantize(plat, palette, 16, 16) == bfk.mosaic.quantize(
-        plat, palette, 16, 16, dither=False
+        plat, palette, 16, 16, dither="adaptive"
     )
+    # Ce qui le rend sur comme defaut : sur une couleur QUE LA PALETTE SAIT
+    # rendre, il ne trame rien du tout. Le critere n'est pas « l'image est
+    # plate », c'est « la couleur voulue existe deja » — un aplat gris-vert que
+    # la palette rate gagne au tramage, un aplat rouge vif ne peut qu'y perdre.
+    exacte = palette.by_code(4).rgb          # Red, presente telle quelle
+    aplat_exact = bfk.Image(64, 64, bytes(exacte) * (64 * 64))
+    direct = bfk.mosaic.quantize(aplat_exact, palette, 16, 16, dither=False)
+    adaptatif = bfk.mosaic.quantize(aplat_exact, palette, 16, 16, dither="adaptive")
+    assert adaptatif == direct
+    assert {c.code for ligne in adaptatif for c in ligne} == {4}
+    # Alors que Floyd-Steinberg complet salirait meme celui-la.
+    complet = bfk.mosaic.quantize(aplat_exact, palette, 16, 16, dither=True)
+    assert complet == direct  # ici l'erreur diffusee est nulle : rien a salir
+
+    # Et sur une couleur ABSENTE de la palette, l'adaptatif melange bien deux
+    # teintes voisines — c'est tout son interet.
+    absente = bfk.Image(64, 64, bytes((120, 140, 110)) * (64 * 64))
+    melange = bfk.mosaic.quantize(absente, palette, 16, 16, dither="adaptive")
+    assert len({c.code for ligne in melange for c in ligne}) > 1
 
     with pytest.raises(ValueError):
         bfk.mosaic.quantize(plat, palette, 16, 16, dither="peut-etre")
