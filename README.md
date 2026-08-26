@@ -393,6 +393,12 @@ plusieurs lots de plus à trouver, et les tuiles longues sont rares dans beaucou
 de couleurs. Le découpage d'une ligne est **optimal** (programmation dynamique,
 pas glouton : avec des tuiles de 1, 3 et 4, un run de 6 fait 3+3 et non 4+1+1).
 
+**Le programme ne connaît ni les prix ni les stocks.** Il minimise le nombre de
+pièces et de lots, pas des euros — aucune donnée de prix n'est inventée. Si vous
+savez ce que votre fournisseur a réellement en tuile, `--codes-couleur
+0,1,4,14,15,71,72` impose la contrainte et toute l'optimisation se fait à
+l'intérieur.
+
 `--couleurs auto` cherche la plus petite palette qui reste dans la tolérance sur
 **deux** critères — écart par tuile *et* justesse tonale. Le second est
 indispensable : l'écart par tuile plafonne à huit couleurs alors que la justesse

@@ -94,6 +94,12 @@ def main() -> int:
         help="jeu de tuiles : minimal = 1x1 seule ; standard = 1x1, 1x2, 1x4 ; "
              "large = jusqu'a 1x8. Fusionner ne change rien au rendu et divise "
              "le nombre de pieces, mais multiplie les lots a commander.")
+    analyseur.add_argument(
+        "--codes-couleur", default=None,
+        help="restreindre a ces codes LDraw, separes par des virgules. Le "
+             "programme ne connait ni les prix ni les stocks : si vous savez "
+             "ce que votre fournisseur a en tuile, dites-le ici et toute "
+             "l'optimisation se fera a l'interieur de cette contrainte.")
     analyseur.add_argument("--tolerance", type=float, default=0.5,
                            help="avec --couleurs auto : ecart en delta E qu'on "
                                 "accepte de perdre pour economiser un sachet")
@@ -153,6 +159,13 @@ def main() -> int:
             print("      La palette officielle corrige la plus grande part de l'ecart.")
 
     palette_complete = palette
+    if options.codes_couleur:
+        voulus = [int(c) for c in options.codes_couleur.replace(" ", "").split(",") if c]
+        palette = palette.restricted_to(voulus)
+        absents = set(voulus) - {c.code for c in palette}
+        print(f"  palette restreinte a {len(palette)} couleurs imposees"
+              + (f" ({len(absents)} codes inconnus ignores)" if absents else ""))
+
     if options.couleurs == "auto":
         complete = palette
         palette, retenu, meilleur = bfk.mosaic.cheapest_palette(
