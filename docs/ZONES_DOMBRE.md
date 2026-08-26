@@ -1497,7 +1497,13 @@ portrait, palette officielle :
 | 64 | 8,57 | 4,41 | 2943 | 51,2 cm |
 | 96 | 8,60 | 4,41 | 6639 | 76,8 cm |
 
-**La résolution n'améliore pas la précision.** Et l'écart de la palette seule,
+**La résolution n'améliore pas la précision de COULEUR.** Elle achète en
+revanche du **détail**, et c'est une distinction que la formulation précédente
+de ce paragraphe écrasait. Sur une nature morte de fleurs : 6,16 ΔE en 48×48
+contre 6,03 en 96×96 — l'écart de couleur ne bouge pas — mais à 48×48 les
+fleurs sont des taches, et à 96×96 ce sont des fleurs. Deux questions
+distinctes, deux réponses distinctes : *la couleur est-elle juste ?* (palette)
+et *la forme est-elle lisible ?* (résolution). Et l'écart de la palette seule,
 mesuré indépendamment — moyenne des ΔE entre chaque couleur voulue et la plus
 proche couleur LEGO — vaut **7,89 ΔE en 48×48**, soit exactement l'écart
 constaté. Autrement dit : la totalité de l'erreur restante vient de ce que LEGO
@@ -1507,7 +1513,47 @@ Ajouter des tenons agrandit l'œuvre, ça ne l'affine pas. C'est une propriété
 médium, pas une limite du logiciel — et ça clôt la question « hyper précise » :
 on y est.
 
-### 6.4 Profil de la chaîne complète
+### 6.4 Une peinture se quantifie mieux qu'une photo
+
+Question posée : une photo rendra-t-elle comme une œuvre peinte en LEGO Art ?
+Mesure sur trois sources, même palette officielle, même 48×48 :
+
+| Source | ΔE/tuile | Ton moyen | Couleurs employées |
+|---|---:|---:|---:|
+| Nature morte peinte | **6,16** | 5,40 | **9** |
+| Photo — portrait | 7,89 | 7,01 | 16 |
+| Photo — paysage | 8,27 | 3,73 | 15 |
+
+Une peinture arrive **déjà simplifiée** : aplats saturés, contours francs,
+palette restreinte par le geste du peintre. C'est exactement ce qu'une mosaïque
+sait rendre. Une photo arrive avec des dégradés continus et des zones peu
+saturées — le cas difficile.
+
+Le jaune y aide : **22 des 80 couleurs solides** LEGO sont dans la plage
+jaune/ocre, et des jaunes de nature morte y tombent à 3–8 ΔE, bien au-dessous
+de la moyenne.
+
+**Une idée testée puis rejetée.** Traiter la photo pour lui donner ce caractère
+— postériser, saturer — avant de quantifier. Mesuré contre la photo d'origine,
+donc sans circularité :
+
+| Traitement | ΔE/tuile | Couleurs | Pièces |
+|---|---:|---:|---:|
+| Aucun | **7,89** | 16 | **776** |
+| Postérisé 6 paliers | 14,79 | 29 | 2006 |
+| Postérisé 4 paliers | 17,25 | 29 | 1043 |
+| Postérisé 3 paliers | 21,37 | 29 | 775 |
+
+Pire sur les trois axes à la fois : fidélité, nombre de couleurs, nombre de
+pièces. Le rendu le confirme sans appel — visage rose et gris, sol violet.
+Postériser fabrique des couleurs que LEGO ne produit pas, et la quantification
+doit ensuite approcher une couleur **doublement** fausse. Non implémenté.
+
+Ce qui rapproche vraiment du rendu d'une œuvre peinte ne coûte rien : **choisir
+une photo aux bonnes propriétés** — sujet graphique, couleurs franches,
+silhouette nette, peu de dégradés subtils.
+
+### 6.5 Profil de la chaîne complète
 
 
 Paysage 48×48, palette officielle, 1411 pièces :
@@ -1533,7 +1579,7 @@ ne dépend de rien d'autre. `cost_of_grid` les calcule directement, et le
 substrat — qui ne dépend pas de la palette — n'est mesuré qu'une fois.
 **9,0 s → 5,0 s**, comptes vérifiés identiques au modèle construit.
 
-### 6.5 Les limites honnêtes de ce qui est livré
+### 6.6 Les limites honnêtes de ce qui est livré
 
 
 Toutes mesurées, aucune supposée.
@@ -1545,7 +1591,7 @@ Toutes mesurées, aucune supposée.
 - **Palette provisoire de 12 couleurs par défaut.** `load_ldconfig()` importe les
   162 officielles et cherche le fichier dans les emplacements d'installation
   usuels ; sans lui, l'écart double. Le fichier n'est pas livré ici : sa licence
-  n'a pas pu être confirmée (§ 6.7).
+  n'a pas pu être confirmée (§ 6.8).
 - **La fusion des tuiles change la surface**, pas les couleurs : appareil à
   joints décalés au lieu de la grille uniforme des sets officiels (§ 5.36).
   `apercu_joints.png` le montre, `--references minimal` rend la grille.
@@ -1559,7 +1605,7 @@ Toutes mesurées, aucune supposée.
 - **Une mosaïque d'un tenon de large ne tient pas** au-delà de quelques tenons.
   `build` le constate et refuse plutôt que de livrer (§ 5.35).
 
-### 6.6 Ce qui reste, et pourquoi
+### 6.7 Ce qui reste, et pourquoi
 
 
 Les trois premiers points de cette liste, dans ses versions précédentes, sont
@@ -1581,7 +1627,7 @@ géométrie non-AABB, stabilité mécanique : tout cela est listé en § 3 avec 
 décision que chacun réclame, et cible BFK-002. Ce n'est pas du reste, c'est une
 suite.
 
-### 6.7 La seule question qui n'est pas technique
+### 6.8 La seule question qui n'est pas technique
 
 `LDConfig.ldr` — les 162 couleurs officielles — n'est pas livré dans ce dépôt,
 et c'est la seule zone que je n'ai pas fermée par décision délibérée.
