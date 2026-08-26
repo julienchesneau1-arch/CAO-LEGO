@@ -1082,6 +1082,48 @@ fusion ne crée jamais de joint nouveau, donc elle ne peut rien réaligner.
 Vérifié sur tous les formats de 2×2 à 48×48 plus 56 et 64 : emprise exacte,
 fond d'un seul tenant, zéro violation sur les six invariants.
 
+### 5.33 Le tramage n'a pas de bon réglage universel — il en faut un par image
+
+Le § 5.32 avait calé `DITHER_MAX_STRENGTH = 0.5` sur un genou mesuré. Le genou
+était réel — **sur une image**. Testé sur une seconde, il se retourne :
+
+| Scène | Sans : tonal / pire | Adaptatif : tonal / pire | Grain inventé |
+|---|---|---|---:|
+| Paysage | 5,55 / 12,42 | 3,73 / **7,48** | +6,67 |
+| Portrait | 7,01 / **10,17** | 4,49 / **11,52** | +8,09 |
+
+Sur le paysage le tramage améliore le pire écart tonal ; sur le portrait il
+l'**aggrave**, tout en ajoutant huit points de grain. Un défaut fixe se trompe
+forcément sur l'une des deux, et le rendu du portrait le montrait sans
+ambiguïté : un visage criblé de damier.
+
+Deux hypothèses essayées puis **réfutées par la mesure**, notées ici pour
+qu'elles ne soient pas retentées :
+
+1. *Ne tramer qu'aux gradients* (moduler par le contraste local). Argument : à
+   distance humaine les tuiles ne fusionnent pas, donc mélanger deux tuiles
+   dans un aplat ne rend pas la couleur voulue, il montre un damier. Mesure :
+   le critère combiné abandonne presque tout le gain du paysage (5,30 contre
+   3,73) pour ne récupérer que du grain. Réfuté.
+2. *Ne jamais tramer*. Le rendu du ciel dégradé tranche : sans tramage, deux
+   faux contours horizontaux traversent le ciel ; avec, la progression est
+   continue. Le tramage a raison là.
+
+Ce qui marche est une décision **par image**, sur le PIRE écart tonal :
+
+> Tramer si et seulement si le tramage améliore le pire écart tonal d'au moins
+> 1 ΔE — le seuil de perception.
+
+Le pire et non le moyen : le travail du tramage est de supprimer les échecs
+francs — bandes, faux contours —, pas de grappiller une moyenne. S'il n'y
+arrive pas, il n'ajoute que du grain. Vérifié sur six scènes : aplats sur
+palette → non ; portrait → non ; texture fine (gain 0,28) → non ; paysage, ciel
+dégradé, dégradé diagonal → oui.
+
+**Effet secondaire mesuré et non anticipé** : ne pas tramer allonge les suites
+de même couleur, donc la fusion des tuiles rend davantage. Le portrait passe de
+1567 à **776 tuiles** — le bon réglage de tramage divise aussi le coût par deux.
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :

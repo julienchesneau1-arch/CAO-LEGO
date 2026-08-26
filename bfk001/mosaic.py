@@ -38,6 +38,7 @@ __all__ = [
     "TILE_SET_STANDARD",
     "TILE_SET_LARGE",
     "quantize",
+    "DITHER_AUTO_MIN_GAIN",
     "PaletteCost",
     "palette_cost_curve",
     "cheapest_palette",
@@ -148,7 +149,7 @@ def quantize(
     palette: Palette,
     studs_x: int,
     studs_y: int,
-    dither: object = "adaptive",
+    dither: object = "auto",
     fit: str = "crop",
     offset: float = 0.5,
 ) -> Tuple[Tuple[LegoColor, ...], ...]:
@@ -227,8 +228,25 @@ def quantize(
     """
     if studs_x <= 0 or studs_y <= 0:
         raise ValueError("dimensions de mosaique invalides")
+    if dither == "auto":
+        # Le tramage n'a pas de bon reglage universel : il en faut un PAR IMAGE.
+        # Mesure sur six scenes — un ciel degrade gagne 1,7 delta E sur son pire
+        # ecart tonal et vaut le grain ; un portrait aux grands aplats de peau
+        # le PERD (10,17 -> 11,52) tout en gagnant huit points de grain. Un
+        # defaut fixe se trompe forcement sur l'une des deux.
+        #
+        # Le critere est le PIRE ecart tonal, pas le moyen : le travail du
+        # tramage est de supprimer les echecs francs — bandes, faux contours —,
+        # pas de grappiller une moyenne. S'il n'y arrive pas, il n'ajoute que
+        # du grain. La marge de 1 delta E est le seuil de perception : en deca,
+        # on ne troque pas du grain visible contre un gain invisible.
+        sans = quantize(image, palette, studs_x, studs_y, False, fit, offset)
+        avec = quantize(image, palette, studs_x, studs_y, "adaptive", fit, offset)
+        gain = fidelity(sans, image, 4)[1] - fidelity(avec, image, 4)[1]
+        return avec if gain >= DITHER_AUTO_MIN_GAIN else sans
+
     if dither not in (True, False, "adaptive"):
-        raise ValueError("dither vaut True, False ou 'adaptive'")
+        raise ValueError("dither vaut True, False, 'adaptive' ou 'auto'")
     if fit not in ("crop", "stretch"):
         raise ValueError("fit vaut 'crop' ou 'stretch'")
     if fit == "crop":
@@ -282,6 +300,12 @@ ferait que salir une tuile deja juste."""
 DITHER_FULL_DELTA_E = 16.0
 """Au dela, la couleur voulue est franchement absente de la palette : seule la
 diffusion d'erreur peut la simuler."""
+
+DITHER_AUTO_MIN_GAIN = 1.0
+"""Gain minimal, sur le PIRE ecart tonal, pour que « auto » decide de tramer.
+
+Un delta E : le seuil sous lequel l'oeil exerce ne distingue plus deux couleurs
+cote a cote. En deca, on troquerait du grain visible contre un gain invisible."""
 
 DITHER_MAX_STRENGTH = 0.5
 """Fraction maximale de l'erreur diffusee, meme quand la palette est tres loin.
@@ -778,7 +802,7 @@ def from_image(
     studs_x: int,
     studs_y: int,
     substrate_color: int = SUBSTRATE_COLOR,
-    dither: object = "adaptive",
+    dither: object = "auto",
     substrate: str = "crossed",
     fit: str = "crop",
     offset: float = 0.5,

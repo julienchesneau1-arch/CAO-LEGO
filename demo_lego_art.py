@@ -82,8 +82,9 @@ def main() -> int:
     analyseur.add_argument("--par-etape", type=int, default=24)
     analyseur.add_argument("--cadrage", type=float, default=0.5,
                            help="position de la fenetre de recadrage, de 0 a 1")
-    analyseur.add_argument("--tramage", choices=("adaptatif", "aucun", "complet"),
-                           default="adaptatif",
+    analyseur.add_argument("--tramage",
+                           choices=("auto", "adaptatif", "aucun", "complet"),
+                           default="auto",
                            help="melange de tuiles voisines la ou la palette manque")
     analyseur.add_argument("--lignes-par-page", type=int, default=4,
                            help="lignes de mosaique par page de la notice PDF")
@@ -183,7 +184,8 @@ def main() -> int:
         print(f"  palette reduite aux {len(palette)} meilleures couleurs pour cette image")
 
     depart = time.perf_counter()
-    tramage = {"adaptatif": "adaptive", "aucun": False, "complet": True}[options.tramage]
+    tramage = {"auto": "auto", "adaptatif": "adaptive",
+               "aucun": False, "complet": True}[options.tramage]
     # L'image est deja au bon rapport : plus rien a rogner ici.
     jeux = {
         "minimal": bfk.mosaic.TILE_SET_MINIMAL,

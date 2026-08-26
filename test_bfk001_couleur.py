@@ -6,6 +6,7 @@ voyait dans un test de structure. Les tests ci-dessous les verrouillent.
 
 import math
 import random
+import inspect
 import unittest
 
 import bfk001 as bfk
@@ -394,3 +395,96 @@ class TestPaletteOfficielle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def codes(grille):
+    """Grille -> codes couleur. Comparer des LegoColor rend un echec illisible."""
+    return tuple(tuple(c.code for c in ligne) for ligne in grille)
+
+
+class TestTramageAutomatique(unittest.TestCase):
+    """Le tramage n'a pas de bon reglage universel : il en faut un par image."""
+
+    def scene(self, f, cote=192):
+        return bfk.Image(
+            cote, cote,
+            bytes(
+                max(0, min(255, c))
+                for y in range(cote)
+                for x in range(cote)
+                for c in f(x / cote, y / cote)
+            ),
+        )
+
+    def palette(self):
+        return bfk.PROVISIONAL_PALETTE.solids_only()
+
+    def test_un_aplat_sur_la_palette_n_est_jamais_trame(self):
+        # Rien a gagner : la couleur voulue existe deja. Tramer ne ferait
+        # qu'ajouter du grain sur une zone deja juste.
+        rouge = self.palette().nearest((200, 30, 25)).rgb
+        photo = self.scene(lambda u, v: rouge)
+        self.assertEqual(
+            codes(bfk.mosaic.quantize(photo, self.palette(), 16, 16, "auto")),
+            codes(bfk.mosaic.quantize(photo, self.palette(), 16, 16, False)),
+        )
+
+    def test_le_tramage_se_declenche_bien_quelque_part(self):
+        # Sans ce test, une regle trop severe rendrait le tramage inerte sans
+        # que rien ne le signale. Sur un jeu de scenes variees, au moins une
+        # doit le declencher — et quand il se declenche, le pire ecart tonal
+        # doit s'ameliorer, sinon la regle ne fait pas ce qu'elle annonce.
+        scenes = [
+            lambda u, v: (int(120 + 60 * v), int(150 + 55 * v), 228),
+            lambda u, v: (int(30 + 200 * u), int(40 + 120 * v), int(200 - 90 * u)),
+            lambda u, v: (int(230 - 90 * v), int(120 + 90 * u), 60),
+        ]
+        declenches = 0
+        for f in scenes:
+            photo = self.scene(f)
+            auto = codes(bfk.mosaic.quantize(photo, self.palette(), 32, 32, "auto"))
+            sans = codes(bfk.mosaic.quantize(photo, self.palette(), 32, 32, False))
+            if auto != sans:
+                declenches += 1
+                self.assertLess(
+                    bfk.mosaic.fidelity(
+                        bfk.mosaic.quantize(photo, self.palette(), 32, 32, "auto"),
+                        photo, 4)[1],
+                    bfk.mosaic.fidelity(
+                        bfk.mosaic.quantize(photo, self.palette(), 32, 32, False),
+                        photo, 4)[1],
+                )
+        self.assertGreater(declenches, 0, "le tramage automatique ne se declenche jamais")
+
+    def test_le_choix_suit_exactement_le_critere_annonce(self):
+        # Le critere est le PIRE ecart tonal, avec une marge d'un delta E.
+        for f in (
+            lambda u, v: (int(120 + 60 * v), int(150 + 55 * v), 228),
+            lambda u, v: (200, 30, 25) if u < 0.5 else (25, 120, 60),
+            lambda u, v: (int(230 - 60 * v), int(190 - 50 * v), int(160 - 40 * v)),
+        ):
+            photo = self.scene(f)
+            sans = bfk.mosaic.quantize(photo, self.palette(), 32, 32, False)
+            avec = bfk.mosaic.quantize(photo, self.palette(), 32, 32, "adaptive")
+            auto = bfk.mosaic.quantize(photo, self.palette(), 32, 32, "auto")
+            gain = (bfk.mosaic.fidelity(sans, photo, 4)[1]
+                    - bfk.mosaic.fidelity(avec, photo, 4)[1])
+            attendu = avec if gain >= bfk.mosaic.DITHER_AUTO_MIN_GAIN else sans
+            self.assertEqual(codes(auto), codes(attendu), f"gain {gain:.2f}")
+
+    def test_auto_est_le_defaut(self):
+        self.assertEqual(
+            inspect.signature(bfk.mosaic.quantize).parameters["dither"].default,
+            "auto",
+        )
+        self.assertEqual(
+            inspect.signature(bfk.mosaic.build).parameters["dither"].default
+            if "dither" in inspect.signature(bfk.mosaic.build).parameters
+            else "auto",
+            "auto",
+        )
+
+    def test_valeur_inconnue_refusee(self):
+        photo = self.scene(lambda u, v: (10, 20, 30))
+        with self.assertRaises(ValueError):
+            bfk.mosaic.quantize(photo, self.palette(), 8, 8, "flou")

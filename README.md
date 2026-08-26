@@ -408,6 +408,23 @@ au lieu de 80 coûtent 0,09 ΔE de justesse tonale — imperceptible — et
 
 ---
 
+## Le tramage se décide par image
+
+Il n'a pas de bon réglage universel. Sur un paysage, le tramage adaptatif
+améliore le pire écart tonal (12,4 → 7,5) ; sur un portrait aux grands aplats
+de peau, il l'**aggrave** (10,2 → 11,5) et crible le visage de damier. Un défaut
+fixe se trompe forcément sur l'une des deux.
+
+`--tramage auto` (défaut) mesure les deux et tranche : **tramer si et seulement
+si le pire écart tonal s'améliore d'au moins 1 ΔE**, le seuil de perception. Le
+pire et non le moyen — le travail du tramage est de supprimer les faux contours,
+pas de grappiller une moyenne.
+
+Effet secondaire : ne pas tramer allonge les suites de même couleur, donc la
+fusion des tuiles rend davantage. Sur le portrait, 776 tuiles au lieu de 1567.
+
+---
+
 ## Le fond de la mosaïque
 
 Deux couches de plates croisées, **rognées à l'emprise exacte de l'œuvre**, puis
