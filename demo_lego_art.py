@@ -96,6 +96,11 @@ def main() -> int:
              "large = jusqu'a 1x8. Fusionner ne change rien au rendu et divise "
              "le nombre de pieces, mais multiplie les lots a commander.")
     analyseur.add_argument(
+        "--bricklink", type=pathlib.Path, default=None,
+        help="table « code LDraw, code BrickLink » (deux colonnes). Produit "
+             "commande_bricklink.xml, uploadable tel quel. Sans elle la liste "
+             "reste en CSV : les codes couleur BrickLink ne se devinent pas.")
+    analyseur.add_argument(
         "--codes-couleur", default=None,
         help="restreindre a ces codes LDraw, separes par des virgules. Le "
              "programme ne connait ni les prix ni les stocks : si vous savez "
@@ -263,6 +268,19 @@ def main() -> int:
             f'"{nom_couleur(palette_complete, ligne.color_id)}",{ligne.quantity}'
         )
     (options.sortie / "liste_de_course.csv").write_text("\n".join(lignes) + "\n")
+
+    if options.bricklink:
+        table = bfk.load_color_map(options.bricklink.read_text())
+        try:
+            (options.sortie / "commande_bricklink.xml").write_text(
+                bfk.dumps_wanted_list(nomenclature, table, name=options.image.stem)
+            )
+            print(
+                f"  commande BrickLink : {len(nomenclature)} lots, "
+                f"{sum(l.quantity for l in nomenclature)} pieces, prete a l'envoi"
+            )
+        except bfk.UnmappedColors as manque:
+            print(f"  commande BrickLink NON produite — {manque}", file=sys.stderr)
 
     plan = bfk.plan_build(
         mosaique.placed_parts, etat.graph, mosaique.instances, options.par_etape

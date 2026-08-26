@@ -134,7 +134,8 @@ Classées par ce qu'elles bloquent réellement.
 | **Export LDraw (.ldr)** | **FERMÉE** — `bfk001/ldraw.py`. Les deux données manquantes ont été lues dans `3001.dat` officiel, pas devinées (§ 5.39). | — | Fait |
 | **Palette couleur complète** | **FERMÉE côté LDraw** — `load_ldconfig()` importe les 162 couleurs officielles, dont 80 solides commandables, avec détection de finition ; recherche automatique dans les emplacements d'installation usuels. Reste ouverte côté **BrickLink** : la correspondance des codes couleur exige une clé d'API Rebrickable, non vérifiable ici (§ 6.7). | Fournir la table de correspondance, ou une clé. | Couche 3 |
 | **Catalogue complet** | 8 références rectangulaires générées paramétriquement. | Import LDraw `.dat` → `CollisionGeometry` + connecteurs. Dépend entièrement de 3.1 (géométrie non-AABB). | BFK-002 |
-| **Prix, disponibilité, substitution** | Absents. | Hors noyau, et **doit le rester** : un noyau géométrique ne consulte pas un marchand. | Couche 3 |
+| **Prix, disponibilité, substitution** | Absents. | Hors noyau, et **doit le rester** : un noyau géométrique ne consulte pas un marchand. La contrainte d'approvisionnement, elle, est exprimable : `--codes-couleur` impose la liste réellement en stock. | Couche 3 |
+| **Commander la liste** | **FERMÉE côté code** — `bricklink.py` produit la liste de souhaits XML, et refuse plutôt que de deviner une couleur absente de la table (§ 5.40). Ouverte côté **donnée** : la table de correspondance des couleurs n'est pas fournie, aucune n'ayant pu être vérifiée ici. | Fournir la table. | Couche 3 |
 
 ### 3.4 Choisi, pas subi
 
@@ -1337,6 +1338,41 @@ références**. Ce qu'il ne prouve pas, et qui est écrit dans l'en-tête du fic
 produit : qu'une seule pièce officielle était disponible pour établir la
 convention. Elle vaut pour la famille rectangulaire — briques, plates, tuiles —
 qui est exactement ce que ce dépôt emploie.
+
+### 5.40 « On ne peut pas commander » : le blocage réduit à un téléchargement
+
+Le dernier écart entre « j'ai un modèle » et « j'ai les briques ». Il tenait à
+**une** donnée, et il fallait la nommer précisément avant de conclure quoi que
+ce soit :
+
+- Les références de **pièces** sont communes aux deux systèmes. Celles employées
+  ici — 3070b, 2431, 3020, 41539… — sont vérifiées identiques dans `parts.lst`
+  de LDraw et dans le catalogue BrickLink. Rien à traduire.
+- Les codes **couleur** sont propres à chaque système, et la correspondance
+  n'est dérivable de rien : ni la valeur RVB ni le nom ne l'établissent de façon
+  fiable. Vérifié : elle exige une clé d'API Rebrickable, que je ne peux ni
+  obtenir ni valider ici.
+
+Conclusion tentante : « bloqué ». Elle est fausse. Ce qui manquait n'était pas
+la table — c'était le **code qui s'en sert**. `bfk001/bricklink.py` écrit la
+liste de souhaits au format XML documenté ; la table vient de l'appelant, sous
+la forme la plus pauvre possible — deux colonnes, code LDraw et code BrickLink —
+pour qu'elle puisse venir de n'importe quelle source jugée fiable, y compris
+d'un tableur rempli à la main.
+
+**Ce qui n'est pas dans la table n'est pas deviné.** `dumps_wanted_list` lève
+`UnmappedColors` et ne produit rien. Une liste de course incomplète se paie en
+pièces manquantes le jour du montage ; une liste **fausse** se paie en pièces
+inutilisables, et on ne s'en aperçoit qu'à la livraison. Le refus s'est déclenché
+au premier essai réel : ma table d'exemple oubliait le code 6, la commande n'a
+pas été produite, et le message a nommé la couleur manquante.
+
+La lecture de la table refuse aussi une **contradiction** — deux codes BrickLink
+pour un même code LDraw. Silencieusement, le dernier gagnerait et une partie de
+la commande serait fausse.
+
+Reste ouvert, et c'est une donnée et non du code : **la table elle-même**. Le
+dépôt n'en fournit aucune, parce qu'aucune n'a pu être vérifiée ici.
 
 ### 5.27 Bilan de la passe d'optimisation
 

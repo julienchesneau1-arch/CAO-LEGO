@@ -39,7 +39,7 @@ mieux *cette* photo — et atteint désormais ce qui en demandait quatre-vingts
 égale. Le sélecteur était bridé par un plafond de 24 grappes dans son propre
 résumé de l'image ; voir § 5.30 du registre.
 
-Produit `apercu.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` —
+Produit `apercu.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` (plus `commande_bricklink.xml` avec `--bricklink`) —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
 qui ne tiendrait pas ensemble n'est pas livrée.
 
@@ -411,6 +411,26 @@ indispensable : l'écart par tuile plafonne à huit couleurs alors que la justes
 tonale continue de s'améliorer jusqu'à quatre-vingts. Sur un paysage, 13 couleurs
 au lieu de 80 coûtent 0,09 ΔE de justesse tonale — imperceptible — et
 économisent 111 pièces et 5 lots. La commande annonce ce qu'elle abandonne.
+
+---
+
+## Commander la liste
+
+```bash
+python3 demo_lego_art.py photo.jpg --bricklink couleurs.csv
+```
+
+Produit `commande_bricklink.xml`, uploadable tel quel comme liste de souhaits.
+
+Les références de **pièces** sont communes à LDraw et BrickLink — rien à
+traduire. Les codes **couleur**, non, et la correspondance n'est dérivable ni du
+RVB ni du nom. Le dépôt n'en fournit donc aucune : `couleurs.csv` est une table
+à deux colonnes (`code LDraw, code BrickLink`) que vous alimentez depuis la
+source de votre choix.
+
+**Ce qui n'est pas dans la table n'est pas deviné** : l'export refuse et nomme
+les couleurs manquantes. Une liste incomplète se paie en pièces manquantes le
+jour du montage ; une liste fausse se paie en pièces inutilisables.
 
 ---
 
