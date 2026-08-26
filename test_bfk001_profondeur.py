@@ -284,3 +284,81 @@ class TestOrientationDeLaCarteEmbarquee(unittest.TestCase):
         lue = bfk.embedded_depth(self.fichier(6, 40, 20))
         hauteurs = bfk.heights_from_depth(lue, photo, 12, 24, 2)
         self.assertEqual((len(hauteurs), len(hauteurs[0])), (24, 12))
+
+
+class TestLaCarteSubitLeMemeCadrageQueLaPhoto(unittest.TestCase):
+    """Le defaut le plus vicieux de cette chaine : deux traitements differents
+    appliques a deux descriptions de la MEME scene.
+
+    Une photo 4:3 dans une mosaique carree est rognee. Si la carte de
+    profondeur, elle, est etiree, elle ne decrit plus le meme cadre. Le
+    controle de proportions refusait alors toute photo qui n'etait pas deja au
+    format de l'oeuvre — c'est-a-dire presque toutes.
+    """
+
+    def scene(self, largeur, hauteur, x_relatif=0.30, rayon=0.28):
+        """Sujet PROCHE a `x_relatif` de la largeur, fond lointain."""
+        photo, prof = bytearray(), bytearray()
+        for y in range(hauteur):
+            for x in range(largeur):
+                dedans = ((x - largeur * x_relatif) ** 2
+                          + (y - hauteur * 0.5) ** 2 < (hauteur * rayon) ** 2)
+                photo += bytes((30, 25, 40) if dedans else (215, 215, 225))
+                prof += bytes((255, 255, 255) if dedans else (30, 30, 30))
+        return (bfk.Image(largeur, hauteur, bytes(photo)),
+                bfk.Image(largeur, hauteur, bytes(prof)))
+
+    def test_une_photo_43_dans_une_mosaique_carree_ne_doit_plus_etre_refusee(self):
+        photo, prof = self.scene(320, 240)
+        hauteurs = bfk.heights_from_depth(prof, photo, 24, 24, 1,
+                                          fit="crop", offset=0.5)
+        self.assertEqual((len(hauteurs), len(hauteurs[0])), (24, 24))
+
+    def test_etirer_la_carte_au_lieu_de_la_rogner_est_bien_attrape(self):
+        # Ce que faisait le cablage : comparer la photo DEJA rognee a la carte
+        # entiere. La garde doit refuser, c'est elle qui a revele le defaut.
+        photo, prof = self.scene(320, 240)
+        rognee = bfk.crop_to_ratio(photo, 1.0, 0.5)
+        with self.assertRaises(DepthMismatch):
+            bfk.heights_from_depth(prof, rognee, 24, 24, 1, fit="stretch")
+
+    def test_le_relief_suit_la_fenetre_de_cadrage(self):
+        # Petit sujet a l'extreme gauche : la fenetre de droite (x >= 80) ne
+        # le contient pas du tout, celle de gauche le contient entierement.
+        photo, prof = self.scene(320, 240, x_relatif=0.12, rayon=0.12)
+        def releves(offset):
+            h = bfk.heights_from_depth(prof, photo, 24, 24, 1,
+                                       fit="crop", offset=offset)
+            return sum(1 for ligne in h for v in ligne if v > 0)
+        self.assertGreater(releves(0.0), 15, "le sujet doit sortir a gauche")
+        self.assertEqual(releves(1.0), 0, "et disparaitre a droite")
+
+
+class TestCablageDeLaCommande(unittest.TestCase):
+    """La chaine complete, au point exact ou le defaut se trouvait."""
+
+    class Options:
+        carte_profondeur = None
+        profondeur_inversee = False
+        relief = 2
+        studs = 24
+        seuils = "otsu"
+
+    def test_la_commande_accepte_une_carte_sur_une_photo_43(self):
+        import pathlib as _p
+        import tempfile
+        import demo_lego_art
+
+        photo, prof = TestLaCarteSubitLeMemeCadrageQueLaPhoto().scene(320, 240)
+        with tempfile.TemporaryDirectory() as dossier:
+            chemin = _p.Path(dossier) / "prof.png"
+            chemin.write_bytes(bfk.write_png(prof))
+            options = self.Options()
+            options.carte_profondeur = str(chemin)
+            rognee = bfk.crop_to_ratio(photo, 1.0, 0.5)
+            hauteurs, provenance = demo_lego_art.carte_de_relief(
+                rognee, photo, 0.5, b"", options, 24
+            )
+        self.assertIn("MESUREE", provenance)
+        self.assertEqual((len(hauteurs), len(hauteurs[0])), (24, 24))
+        self.assertGreater(max(v for ligne in hauteurs for v in ligne), 0)

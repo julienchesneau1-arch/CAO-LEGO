@@ -1559,6 +1559,41 @@ le même relief.
 
 ---
 
+### 5.48 Deux défauts dans mon propre câblage de la profondeur, trouvés en relisant
+
+La lecture des cartes de profondeur (§ 6.10) était livrée, testée, poussée. En
+la relisant, deux défauts — tous deux sur le trajet entre la photo et la carte,
+aucun dans les algorithmes.
+
+**La carte embarquée restait couchée sous une photo debout.** Une photo de
+téléphone prise en portrait stocke des pixels *couchés* et note
+`Orientation = 6` ; `read_jpeg_eighth` la redresse. La carte de profondeur, elle,
+est écrite dans le repère des pixels stockés et ne porte aucun EXIF à elle —
+elle sortait couchée. Proportions 0,75 contre 1,33 : `DepthMismatch` refusait.
+La fonctionnalité n'aurait donc **jamais servi sur une photo de portrait**,
+c'est-à-dire sur presque toutes celles qui portent une carte.
+
+**La carte n'était pas rognée comme la photo.** La commande rogne la photo au
+format de l'œuvre (une 4:3 dans une mosaïque carrée perd un quart de sa
+largeur), puis passait à `heights_from_depth` la photo *déjà rognée* et la carte
+*entière*, en mode `stretch`. Deux traitements différents sur deux descriptions
+de la même scène. Là encore la garde refusait — toute photo qui n'était pas déjà
+au format de l'œuvre.
+
+Les deux fois, **la garde a fait son travail** : elle a refusé au lieu de livrer
+un relief propre et faux. C'est la bonne défaillance, et c'est elle qui a rendu
+les défauts visibles. Mais un refus systématique est un refus, et je n'avais
+essayé la chaîne que sur une photo déjà carrée, sans EXIF — le seul cas où les
+deux défauts sont invisibles.
+
+Ce que je retiens : mes tests couvraient les *composants* (conteneur XMP,
+médiane, garde de proportions) et pas le *trajet*. Les deux défauts sont dans
+les paramètres passés d'un composant correct à un autre composant correct.
+Quatre tests de câblage ont été ajoutés, dont un qui appelle la fonction de la
+commande elle-même.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

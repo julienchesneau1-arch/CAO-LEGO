@@ -42,7 +42,7 @@ def charger_image(chemin: pathlib.Path):
     raise SystemExit(f"format non reconnu : {chemin.name} (JPEG, PNG ou PPM)")
 
 
-def carte_de_relief(image, brut, options, hauteur):
+def carte_de_relief(image, origine, cadrage, brut, options, hauteur):
     """Les elevations, par la source la plus fiable disponible.
 
     Trois sources, dans cet ordre, et l'ordre n'est pas arbitraire : il va de
@@ -58,13 +58,21 @@ def carte_de_relief(image, brut, options, hauteur):
 
     On dit toujours laquelle a servi : un relief juste et un relief plausible
     se ressemblent, et seule la provenance les distingue.
+
+    `image` est la photo DEJA ROGNEE, `origine` celle d'avant le rognage, et
+    `cadrage` la position de la fenetre. Les trois sont necessaires, et l'avoir
+    oublie etait un defaut : une carte de profondeur doit subir EXACTEMENT le
+    meme rognage que la photo. Cablee sur la photo rognee et etiree, elle
+    decrivait une autre scene — le controle de proportions refusait toute photo
+    qui n'etait pas deja au format de l'oeuvre, c'est-a-dire presque toutes.
     """
     if options.carte_profondeur:
         carte = bfk.read_depth_map(
             pathlib.Path(options.carte_profondeur).read_bytes())
         return bfk.heights_from_depth(
-            carte, image, options.studs, hauteur, options.relief,
-            near_is_bright=not options.profondeur_inversee, fit="stretch"
+            carte, origine, options.studs, hauteur, options.relief,
+            near_is_bright=not options.profondeur_inversee,
+            fit="crop", offset=cadrage,
         ), (f"carte de profondeur fournie ({carte.width}x{carte.height}) — "
             "profondeur MESUREE")
 
@@ -75,8 +83,9 @@ def carte_de_relief(image, brut, options, hauteur):
             pass
         else:
             return bfk.heights_from_depth(
-                carte, image, options.studs, hauteur, options.relief,
-                near_is_bright=not options.profondeur_inversee, fit="stretch"
+                carte, origine, options.studs, hauteur, options.relief,
+                near_is_bright=not options.profondeur_inversee,
+                fit="crop", offset=cadrage,
             ), (f"carte EMBARQUEE dans le JPEG ({carte.width}x{carte.height}) "
                 "— profondeur MESUREE par l'appareil")
 
@@ -221,6 +230,15 @@ def main() -> int:
     if cadrage == "auto" and image.width / image.height != options.studs / hauteur:
         cadrage = bfk.imaging.attentional_offset(image, options.studs / hauteur)
         print(f"  cadrage : fenetre placee a {cadrage:.2f} (detail maximal)")
+    if cadrage == "auto":
+        # Les proportions coincident deja : le rognage ne fait rien et la
+        # position de la fenetre n'a aucun effet. La fixer permet de la
+        # transmettre telle quelle a la carte de profondeur.
+        cadrage = 0.5
+    # L'originale est conservee : une carte de profondeur doit subir le MEME
+    # rognage, et le refaire depuis la photo deja rognee serait le refaire deux
+    # fois.
+    origine = image
     image = bfk.crop_to_ratio(image, options.studs / hauteur, cadrage)
 
     # En dessous de deux pixels par tenon, il n'y a plus de moyenne : chaque
@@ -305,7 +323,7 @@ def main() -> int:
     # tramage. Le tramage est un bruit que l'oeil fond dans les couleurs et
     # qu'il ne fond jamais dans les hauteurs (voir `relief_from_image`).
     elevations, provenance = (
-        carte_de_relief(image, brut, options, hauteur)
+        carte_de_relief(image, origine, cadrage, brut, options, hauteur)
         if options.relief else (None, "")
     )
     mosaique = bfk.mosaic.build(
