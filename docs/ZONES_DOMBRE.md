@@ -1176,6 +1176,41 @@ L'information était disponible dans `build`, et gratuite. La livrer quand même
 et laisser le noyau la refuser trois étapes plus loin, c'était perdre le
 message utile en chemin.
 
+### 5.36 « La fusion ne coûte aucune fidélité » était faux
+
+Je l'ai écrit dans le code, dans le README, dans le registre et dans un message
+de commit. Un test le « prouvait » en comparant les aperçus octet par octet.
+
+Le test comparait des aperçus **sans joints**. Or sur du vrai LEGO les pièces
+ont des joints, et une tuile 1×4 n'a pas de joint interne là où quatre 1×1 en
+ont trois. En traçant les joints réels, la différence saute aux yeux : la
+version 1×1 donne la **grille régulière** des sets LEGO Art officiels, la
+version fusionnée donne un **appareil à joints décalés**, comme un mur de
+briques.
+
+Ce n'est pas forcément moins beau. Mais ce n'est pas identique, et le dire
+l'était encore moins.
+
+Indice que j'aurais dû relever plus tôt : **les sets LEGO Art officiels
+n'emploient que des 1×1**, malgré un coût par pièce bien supérieur. Ils
+achètent l'uniformité de la surface. Je l'avais noté dans le code — « celles
+des sets LEGO Art officiels » — sans en tirer la conséquence.
+
+Corrections :
+
+- `preview(mosaic, scale, seams=True)` trace les joints réels. Le concepteur
+  peut **voir** ce qu'il commande avant de le commander, et la commande émet
+  désormais `apercu_joints.png` en plus de `apercu.png`.
+- Le test n'affirme plus « rendu identique ». Il affirme deux choses séparées et
+  toutes deux vraies : *aucune couleur ne change*, et *la surface change*.
+- Le CLI dit la contrepartie au lieu de vanter un gain gratuit, et rappelle que
+  `--references minimal` rend la grille uniforme.
+
+La leçon porte au-delà de ce défaut : un test qui compare deux sorties d'une
+même fonction ne prouve que ce que cette fonction représente. `preview` ne
+représentait pas les joints, donc le test ne pouvait rien dire des joints — et
+il a servi quatre fois à affirmer le contraire.
+
 ### 5.27 Bilan de la passe d'optimisation
 
 Sur la même photo, en 48×48 :

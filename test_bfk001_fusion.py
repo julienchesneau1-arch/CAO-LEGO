@@ -138,17 +138,42 @@ class TestPlacementAuCoin(unittest.TestCase):
 
 
 class TestMosaiqueFusionnee(unittest.TestCase):
-    def test_le_rendu_est_identique_au_tenon_pres(self):
-        # LE point qui pourrait disqualifier la fusion. Il ne le fait pas.
+    def test_aucune_couleur_ne_change(self):
+        # Ce que la fusion ne touche pas : chaque tenon garde sa couleur.
         grille = grille_test()
         reference = bfk.mosaic.build(grille, tiles=TILE_SET_MINIMAL)
         for jeu in (TILE_SET_STANDARD, TILE_SET_LARGE):
             fusionnee = bfk.mosaic.build(grille, tiles=jeu)
             self.assertEqual(fusionnee.grid, reference.grid)
             self.assertEqual(
-                bfk.write_png(bfk.mosaic.preview(fusionnee, 4)),
-                bfk.write_png(bfk.mosaic.preview(reference, 4)),
+                bfk.mosaic.preview(fusionnee, 4).data,
+                bfk.mosaic.preview(reference, 4).data,
             )
+
+    def test_mais_la_surface_change_et_ce_test_le_dit(self):
+        # Ce que la fusion touche, et que ce depot a d'abord nie : les JOINTS.
+        # Une 1x4 n'a pas de joint interne la ou quatre 1x1 en ont trois. Le
+        # resultat n'est plus la grille reguliere des sets LEGO Art officiels,
+        # c'est un appareil a joints decales. Affirmer « rendu identique »
+        # etait faux ; l'apercu a joints le montre.
+        grille = grille_test()
+        reference = bfk.mosaic.build(grille, tiles=TILE_SET_MINIMAL)
+        fusionnee = bfk.mosaic.build(grille, tiles=TILE_SET_STANDARD)
+        self.assertNotEqual(
+            bfk.mosaic.preview(fusionnee, 8, seams=True).data,
+            bfk.mosaic.preview(reference, 8, seams=True).data,
+        )
+        # Et le jeu minimal, lui, rend bien la grille uniforme : chaque tuile
+        # y fait un tenon, donc chaque tenon porte son propre contour.
+        self.assertTrue(all(pose.length == 1 for pose in reference.tiles))
+
+    def test_les_joints_n_apparaissent_qu_a_la_demande(self):
+        grille = grille_test()
+        mosaique = bfk.mosaic.build(grille, tiles=TILE_SET_STANDARD)
+        self.assertNotEqual(
+            bfk.mosaic.preview(mosaique, 8).data,
+            bfk.mosaic.preview(mosaique, 8, seams=True).data,
+        )
 
     def test_les_tuiles_couvrent_la_grille_exactement(self):
         grille = grille_test()

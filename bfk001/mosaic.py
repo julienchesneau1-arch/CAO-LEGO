@@ -71,10 +71,18 @@ def blending_tiles(distance_m: float, stud_mm: float = 8.0) -> int:
     acuite_mm = (VISUAL_ACUITY_ARCMIN / 60) * (3.141592653589793 / 180) * distance_m * 1000
     return max(1, int(acuite_mm / stud_mm))
 
-# Jeux de tuiles. Fusionner des tuiles voisines de meme couleur ne change RIEN
-# au rendu — une 1x4 rouge montre exactement les memes quatre tenons rouges que
-# quatre 1x1 — mais divise le nombre de pieces par deux. Mesure sur un paysage
-# 48x48, palette officielle :
+# Jeux de tuiles. Fusionner des tuiles voisines de meme couleur ne change
+# aucune COULEUR — une 1x4 rouge montre exactement les memes quatre tenons
+# rouges que quatre 1x1 — et divise le nombre de pieces par deux.
+#
+# Mais elle change la SURFACE, et ce depot a d'abord affirme le contraire. Une
+# 1x4 n'a pas de joint interne la ou quatre 1x1 en ont trois : le resultat
+# n'est plus la grille reguliere des sets LEGO Art officiels, c'est un appareil
+# a joints decales, comme un mur de briques. Les sets officiels n'emploient que
+# des 1x1, et c'est sans doute pour cette raison. `preview(..., seams=True)`
+# montre la difference avant de commander.
+#
+# Mesure sur un paysage 48x48, palette officielle :
 #
 #   references employees     pieces   lots a commander
 #   1x1 seule                  2304   15
@@ -94,6 +102,11 @@ SUBSTRATE_DESIGN = "3020"   # Plate 2 x 4
 PANEL_DESIGN = "91405"      # Plate 16 x 16, celle des sets LEGO Art
 TILE_DESIGN = "3070b"       # Tile 1 x 1 with Groove
 SUBSTRATE_COLOR = 71        # Light Bluish Gray : invisible sous la mosaique
+
+SEAM_DARKENING = 0.62
+"""Assombrissement du joint entre deux pieces, pour l'apercu. Sur du vrai LEGO
+le joint est une ligne d'ombre fine ; ce n'est pas une valeur mesuree, c'est un
+reperage — il sert a VOIR le motif des joints, pas a le simuler."""
 
 
 def tile_id(row: int, column: int) -> str:
@@ -962,8 +975,22 @@ def cheapest_palette(
     return reference.palette, reference, reference  # pragma: no cover
 
 
-def preview(mosaic: Mosaic, scale: int = 8) -> Image:
-    """Apercu du rendu, un carre par tuile. Sert a juger a l'oeil."""
+def preview(mosaic: Mosaic, scale: int = 8, seams: bool = False) -> Image:
+    """Apercu du rendu, un carre par tenon. Sert a juger a l'oeil.
+
+    `seams=True` trace les JOINTS REELS entre pieces, et pas la grille des
+    tenons. La difference n'est pas cosmetique et elle contredit ce que ce
+    depot a d'abord affirme : fusionner les tuiles ne change pas les couleurs,
+    mais change la SURFACE. Une tuile 1x4 n'a pas de joint interne la ou quatre
+    1x1 en ont trois, et le resultat n'est plus la grille reguliere des sets
+    LEGO Art officiels — c'est un appareil a joints decales, comme un mur de
+    briques. Les sets officiels n'emploient que des 1x1, et c'est sans doute
+    pour cette raison.
+
+    Le choix reste au concepteur (`tiles=TILE_SET_MINIMAL` rend la grille
+    uniforme, deux fois plus chere), mais il doit pouvoir le VOIR avant de
+    commander. D'ou cette option.
+    """
     if scale <= 0:
         raise ValueError("echelle invalide")
     width = mosaic.studs_x * scale
@@ -975,4 +1002,23 @@ def preview(mosaic: Mosaic, scale: int = 8) -> Image:
         for color in row:
             ligne.extend(bytes(color.rgb) * scale)
         data.extend(ligne)
+
+    if seams and scale >= 3:
+        def assombrir(px: int, py: int) -> None:
+            index = (py * width + px) * 3
+            data[index : index + 3] = bytes(
+                round(canal * SEAM_DARKENING) for canal in data[index : index + 3]
+            )
+
+        for pose in mosaic.tiles:
+            x0, y0 = pose.column * scale, pose.row * scale
+            largeur = pose.length * scale
+            for decalage in range(scale):
+                assombrir(x0, y0 + decalage)
+                assombrir(min(width - 1, x0 + largeur - 1), y0 + decalage)
+            for decalage in range(largeur):
+                colonne = min(width - 1, x0 + decalage)
+                assombrir(colonne, y0)
+                assombrir(colonne, min(height - 1, y0 + scale - 1))
+
     return Image(width, height, bytes(data))

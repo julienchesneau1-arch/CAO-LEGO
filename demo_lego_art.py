@@ -204,8 +204,14 @@ def main() -> int:
     )
     print(
         f"  fusion  : {mosaique.tile_count} tuiles au lieu de {sans_fusion} "
-        f"({economie:.0f} % de pieces en moins), rendu identique au tenon pres"
+        f"({economie:.0f} % de pieces en moins), couleurs inchangees"
     )
+    if economie > 1:
+        print(
+            "            mais les joints changent : appareil decale au lieu de "
+            "la grille uniforme des sets LEGO Art. Voir apercu_joints.png ; "
+            "--references minimal rend la grille."
+        )
 
     tolerance = bfk.LEGO_TOLERANCE
     recherche = bfk.LatticeSearchApproximation()
@@ -234,6 +240,9 @@ def main() -> int:
         return 1
 
     options.sortie.mkdir(parents=True, exist_ok=True)
+    (options.sortie / "apercu_joints.png").write_bytes(
+        bfk.write_png(bfk.mosaic.preview(mosaique, scale=12, seams=True))
+    )
     (options.sortie / "apercu.png").write_bytes(
         bfk.write_png(bfk.mosaic.preview(mosaique, scale=8))
     )

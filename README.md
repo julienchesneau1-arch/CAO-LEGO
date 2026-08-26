@@ -372,10 +372,16 @@ qui manquait à toutes les décisions précédentes sur le tramage : celle du co
 
 ## Le coût : moitié moins de pièces, rendu identique
 
-Une tuile 1×4 rouge montre exactement les mêmes quatre tenons rouges que quatre
-tuiles 1×1. Fusionner les tuiles voisines de même couleur ne coûte donc **aucune
-fidélité** — un test compare les aperçus octet par octet — et divise le nombre de
-pièces par deux.
+Fusionner les tuiles voisines de même couleur ne change **aucune couleur** — une
+1×4 rouge montre les mêmes quatre tenons rouges que quatre 1×1 — et divise le
+nombre de pièces par deux.
+
+Elle change en revanche la **surface**, ce que ce dépôt a d'abord nié. Une 1×4
+n'a pas de joint interne là où quatre 1×1 en ont trois : le résultat n'est plus
+la grille régulière des sets LEGO Art officiels, c'est un appareil à joints
+décalés, comme un mur de briques. Les sets officiels n'emploient que des 1×1,
+malgré le coût — ils achètent l'uniformité. `apercu_joints.png` montre la
+différence avant de commander, et `--references minimal` rend la grille.
 
 ```bash
 python3 demo_lego_art.py photo.jpg --references standard --couleurs auto
