@@ -4,7 +4,7 @@ Ce document existe pour qu'il n'y ait **aucune ambiguïté résiduelle** : chaqu
 zone est soit fermée (avec la preuve), soit ouverte et nommée précisément, avec
 la décision qui manque et qui doit la prendre. Rien n'est laissé implicite.
 
-Version du noyau : **BFK-001 v3.3.2** — 79 tests verts, chaîne complète photo → notice.
+Version du noyau : **BFK-001 v3.3.2** — 86 tests verts, chaîne complète photo → notice.
 
 ---
 
@@ -362,6 +362,62 @@ Soixante-huit fois moins de pièces, et un objet en neuf morceaux. Les sets LEGO
 Art officiels tiennent par leur **cadre**, qui n'est pas une pièce structurelle
 et n'est pas modélisé. Le noyau refuse de certifier ce qu'un cadre absent est
 censé tenir — c'est exactement son rôle.
+
+### 5.14 Cinquième passe — l'épreuve d'une vraie photo
+
+Une photo réelle a fait tomber trois hypothèses d'un coup.
+
+**Le format.** Les appareils produisent du JPEG, pas du PNG. Aucune
+bibliothèque n'étant disponible, le format est décodé en Python pur — mais avec
+une idée qui change l'échelle du problème : **le premier coefficient de chaque
+bloc 8×8, le DC, est déjà la moyenne du bloc.** Une mosaïque de 48 tenons à
+partir d'une photo de 4000 pixels ne demande que des moyennes. Le décodeur ne
+reconstruit donc aucun pixel : il lit les coefficients, ne garde que le DC, et
+sort directement une image au huitième. Pas de transformée inverse, pas de
+12 millions de pixels fabriqués pour en jeter 99,99 %.
+
+**L'orientation.** La photo était en portrait, stockée couchée, redressée par
+un champ EXIF. Sans lui, la mosaïque sort à 90°. Aucun utilisateur ne pardonne
+ça, et aucun appareil n'écrit les pixels dans le bon sens.
+
+**Le test.** Le décodeur est vérifié contre un encodeur JPEG minimal écrit pour
+l'occasion, qui ne produit que des blocs unis — précisément le domaine où un
+décodeur DC doit être exact au bit près. Il l'est. La photo personnelle de
+l'utilisateur n'a pas été versée au dépôt comme fixture.
+
+### 5.15 Le diagnostic qui réordonne toute la feuille de route
+
+Sur cette photo, le rendu était méconnaissable : ciel gris, phare brun. Trois
+causes possibles se confondaient — palette, résolution, cadrage. Elles ont été
+**séparées par la mesure**, en comparant la palette LEGO disponible à la
+meilleure palette de 12 couleurs *possible* pour cette image (k-moyennes) :
+
+| Résolution | Palette LEGO (12) | Palette idéale (12) |
+|---|---:|---:|
+| 48 × 64 | 17,8 ΔE | **4,6 ΔE** |
+| 96 × 128 | 17,9 ΔE | 4,7 ΔE |
+| 144 × 192 | 18,0 ΔE | 4,9 ΔE |
+
+**Sur 17,8 d'écart, 13,2 viennent de la palette et 4,6 de la résolution.** Et
+tripler la résolution ne change rien — strictement rien. Ajouter des tuiles est
+inutile tant que les couleurs sont fausses.
+
+Ce n'était pas une intuition : c'était vérifiable, et ça réordonne la feuille de
+route. Le rendu final le montre à l'œil — mêmes 48×64 tenons, même algorithme,
+même nombre de couleurs, seul le choix des douze change.
+
+**Ce que le produit en fait.** `gap_report()` nomme désormais ce qui manque :
+« 12,3 % des tuiles veulent #A6C2E5 ; votre palette n'a que du Light Bluish Gray
+à 20 ΔE ». La CLI l'affiche **avant** de construire, et qualifie le résultat
+(« palette insuffisante »). `Palette.best_subset()` choisit, dans une palette
+riche, les N couleurs qui servent le mieux une image donnée — car une mosaïque
+ne se commande pas en soixante-dix couleurs.
+
+**Ce que je n'ai pas fait, et pourquoi.** Je n'ai pas ajouté à la main les
+couleurs manquantes. J'ai les valeurs de plusieurs d'entre elles en tête, et
+c'est exactement le geste qui avait fait étiqueter la référence 3021 « Plate
+2×4 ». `load_ldconfig()` importe la palette officielle en une ligne ; c'est la
+seule voie que je certifie.
 
 ---
 

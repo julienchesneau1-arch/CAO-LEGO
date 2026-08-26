@@ -27,9 +27,13 @@ def charger_image(chemin: pathlib.Path) -> bfk.Image:
     donnees = chemin.read_bytes()
     if donnees[:8] == b"\x89PNG\r\n\x1a\n":
         return bfk.read_png(donnees)
+    if donnees[:2] == b"\xff\xd8":
+        # Decodage au huitieme : pour une mosaique de 48 tenons, reconstruire
+        # les douze millions de pixels d'origine serait du travail jete.
+        return bfk.read_jpeg_eighth(donnees)
     if donnees[:2] == b"P6":
         return bfk.read_ppm(donnees)
-    raise SystemExit(f"format non reconnu : {chemin.name} (PNG ou PPM binaire attendus)")
+    raise SystemExit(f"format non reconnu : {chemin.name} (JPEG, PNG ou PPM)")
 
 
 def charger_palette(chemin: pathlib.Path | None) -> bfk.Palette:
@@ -52,14 +56,38 @@ def main() -> int:
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
     analyseur.add_argument("--par-etape", type=int, default=24)
+    analyseur.add_argument("--hauteur", type=int, default=None,
+                           help="hauteur en tenons (defaut : carre)")
+    analyseur.add_argument("--couleurs", type=int, default=None,
+                           help="limiter la mosaique aux N meilleures couleurs")
     options = analyseur.parse_args()
 
     image = charger_image(options.image)
     print(f"image   : {image.width} x {image.height} pixels")
     palette = charger_palette(options.ldconfig)
 
+    hauteur = options.hauteur or options.studs
+    reduite = bfk.resample_box(image, options.studs, hauteur)
+    pixels = [
+        reduite.pixel(x, y) for y in range(hauteur) for x in range(options.studs)
+    ]
+
+    manques = bfk.gap_report(pixels, palette)
+    if manques:
+        print("  ATTENTION — couleurs que cette photo reclame et que la palette n'a pas :")
+        for manque in manques[:4]:
+            print(
+                f"      {manque.hex}  {manque.share * 100:4.1f}% des tuiles  "
+                f"-> {manque.best_available.name} a {manque.error:.0f} delta E"
+            )
+        print("      Fournir --ldconfig LDConfig.ldr corrige la plus grande part de l'ecart.")
+
+    if options.couleurs:
+        palette = palette.best_subset(pixels, options.couleurs)
+        print(f"  palette reduite aux {len(palette)} meilleures couleurs pour cette image")
+
     depart = time.perf_counter()
-    mosaique = bfk.mosaic.from_image(image, palette, options.studs, options.studs)
+    mosaique = bfk.mosaic.from_image(image, palette, options.studs, hauteur)
     print(
         f"modele  : {mosaique.part_count} pieces "
         f"({mosaique.tile_count} tuiles + substrat) en {time.perf_counter() - depart:.2f}s"
@@ -120,6 +148,11 @@ def main() -> int:
         bfk.dumps_model(mosaique.placed_parts, mosaique.geometries, mosaique.instances)
     )
 
+    ecart_moyen = bfk.mosaic.fidelity(mosaique.grid, image, 1)[0]
+    print(
+        f"fidelite: {ecart_moyen:.1f} delta E moyen a distance reelle "
+        f"({'excellent' if ecart_moyen < 6 else 'correct' if ecart_moyen < 12 else 'palette insuffisante'})"
+    )
     print(f"livre   : {len(nomenclature)} references, {len(plan.steps)} etapes")
     print(f"          -> {options.sortie}/")
     return 0

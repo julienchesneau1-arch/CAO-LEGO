@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **79 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **86 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire).
 
 Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
@@ -19,8 +19,12 @@ preuve, soit nommée avec la décision qui lui manque.
 ## La chaîne complète, en une commande
 
 ```bash
-python3 demo_lego_art.py photo.png --studs 48 --sortie resultat/
+python3 demo_lego_art.py photo.jpg --studs 48 --hauteur 64 --sortie resultat/
 ```
+
+JPEG, PNG ou PPM. L'orientation EXIF est appliquée, et la palette est
+diagnostiquée **avant** de construire : si elle ne peut pas rendre la photo, la
+commande le dit et nomme les couleurs qui manquent.
 
 Produit `apercu.png`, `liste_de_course.csv`, `notice.txt` et `modele.json` —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
@@ -70,6 +74,7 @@ Aucune dépendance hors `pytest` (bibliothèque standard uniquement).
 | `bfk001/catalog.py` | — | Références LEGO, couleurs, nomenclature (**hors contrat**) |
 | `bfk001/serialization.py` | — | Persistance JSON sans aucune liaison (**hors contrat**) |
 | `bfk001/imaging.py` | — | Lecture PNG/PPM, rééchantillonnage par moyenne de bloc (**hors contrat**) |
+| `bfk001/jpeg.py` | — | Décodeur JPEG baseline **au huitième** (DC seul), orientation EXIF (**hors contrat**) |
 | `bfk001/palette.py` | — | Palette LEGO, import LDConfig, quantification CIE L\*a\*b\* (**hors contrat**) |
 | `bfk001/mosaic.py` | — | Solveur LEGO Art : image → modèle avec substrat (**hors contrat**) |
 | `bfk001/instructions.py` | — | Plan de montage acyclique, ordonné par portance (**hors contrat**) |

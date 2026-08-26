@@ -20,6 +20,7 @@ Decoupage (Section O, DAG acyclique) :
     lego          --     metrologie du systeme LEGO et pieces (hors contrat)
     catalog       --     references, couleurs, nomenclature (hors contrat)
     imaging       --     lecture et reechantillonnage d'images (hors contrat)
+    jpeg          --     decodeur JPEG baseline au huitieme (hors contrat)
     palette       --     palette LEGO et quantification perceptuelle (hors contrat)
     mosaic        --     solveur LEGO Art : image -> modele (hors contrat)
     instructions  --     plan de montage acyclique (hors contrat)
@@ -33,7 +34,7 @@ elle reexporte l'integralite de cette API publique.
 
 from __future__ import annotations
 
-from . import imaging, instructions, mosaic, palette
+from . import imaging, instructions, jpeg, mosaic, palette
 from .catalog import (
     CATALOG,
     LDRAW_COLORS,
@@ -73,6 +74,7 @@ from .geometry import (
 )
 from .graph import ConstructionGraph, InstructionGraph
 from .imaging import Image, read_png, read_ppm, resample_box, write_png
+from .jpeg import apply_orientation, exif_orientation, read_jpeg_eighth
 from .instructions import BuildStep, plan_build, render_text
 from .lego import (
     BRICK_HEIGHT_LDU,
@@ -97,6 +99,10 @@ from .palette import (
     PROVISIONAL_PALETTE,
     LegoColor,
     Palette,
+    PaletteGap,
+    delta_e,
+    dominant_colors,
+    gap_report,
     load_ldconfig,
     srgb_to_lab,
 )
@@ -244,12 +250,16 @@ __all__ = [
     "bill_of_materials",
     # Perception, solveur mosaique et notice (hors contrat)
     "imaging",
+    "jpeg",
     "palette",
     "mosaic",
     "instructions",
     "Image",
     "read_png",
     "read_ppm",
+    "read_jpeg_eighth",
+    "exif_orientation",
+    "apply_orientation",
     "write_png",
     "resample_box",
     "LegoColor",
@@ -257,6 +267,10 @@ __all__ = [
     "PROVISIONAL_PALETTE",
     "load_ldconfig",
     "srgb_to_lab",
+    "delta_e",
+    "dominant_colors",
+    "PaletteGap",
+    "gap_report",
     "Mosaic",
     "BuildStep",
     "plan_build",

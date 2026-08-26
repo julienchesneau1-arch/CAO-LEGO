@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 __all__ = [
     "LegoColor",
@@ -29,6 +29,9 @@ __all__ = [
     "load_ldconfig",
     "srgb_to_lab",
     "delta_e",
+    "dominant_colors",
+    "PaletteGap",
+    "gap_report",
 ]
 
 Rgb = Tuple[int, int, int]
@@ -136,6 +139,44 @@ class Palette:
         wanted = set(codes)
         return Palette(color for color in self._colors if color.code in wanted)
 
+    def best_subset(self, pixels: Sequence[Rgb], count: int) -> "Palette":
+        """Les `count` couleurs de CETTE palette qui rendent le mieux ces pixels.
+
+        Une mosaique ne se commande pas en soixante-dix couleurs : chaque teinte
+        supplementaire est un sachet, un cout, une reference a trouver. La
+        question n'est donc pas « toutes les couleurs » mais « lesquelles ».
+
+        Selection gloutonne sur les couleurs dominantes de l'image, ponderees
+        par leur surface : a chaque tour on ajoute la couleur qui reduit le plus
+        l'ecart total. Sur une palette de douze couleurs c'est sans effet ; sur
+        la palette officielle, c'est la difference entre un rendu juste et un
+        rendu gris.
+        """
+        if count < 1:
+            raise ValueError("une palette compte au moins une couleur")
+        if count >= len(self._colors):
+            return self
+
+        clusters = dominant_colors(pixels, min(24, max(8, count * 2)))
+        retenues: List[LegoColor] = []
+        restantes = list(self._colors)
+
+        while len(retenues) < count and restantes:
+            meilleure = None
+            meilleur_cout = None
+            for candidate in restantes:
+                essai = retenues + [candidate]
+                cout = 0.0
+                for couleur, part in clusters:
+                    cout += part * min(delta_e(couleur, c.rgb) for c in essai)
+                if meilleur_cout is None or cout < meilleur_cout:
+                    meilleur_cout = cout
+                    meilleure = candidate
+            retenues.append(meilleure)
+            restantes.remove(meilleure)
+
+        return Palette(retenues)
+
 
 PROVISIONAL_PALETTE = Palette(
     (
@@ -189,3 +230,85 @@ def load_ldconfig(text: str) -> Palette:
     if not colors:
         raise ValueError("aucune ligne !COLOUR exploitable dans ce LDConfig")
     return Palette(colors)
+
+
+# =============================================================================
+# Diagnostic : ce qui manque a une palette, pour une image donnee
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class PaletteGap:
+    """Une couleur que l'image reclame et que la palette ne sait pas rendre."""
+
+    wanted: Rgb
+    share: float          # part des tuiles concernees, de 0 a 1
+    best_available: LegoColor
+    error: float          # delta E entre la couleur voulue et la meilleure dispo
+
+    @property
+    def hex(self) -> str:
+        return "#%02X%02X%02X" % self.wanted
+
+
+def dominant_colors(pixels: Sequence[Rgb], count: int = 12, seed: int = 7):
+    """Les `count` couleurs qui resument le mieux ces pixels (k-moyennes en Lab).
+
+    Sert de BORNE SUPERIEURE : c'est le meilleur qu'une palette de cette taille
+    puisse faire sur cette image. Comparer une vraie palette a cette borne
+    separe ce qui manque de couleurs de ce qui manque de resolution.
+    """
+    import random
+
+    if not pixels:
+        raise ValueError("aucun pixel a resumer")
+    labs = [srgb_to_lab(pixel) for pixel in pixels]
+    generateur = random.Random(seed)
+    centres = [labs[generateur.randrange(len(labs))] for _ in range(count)]
+    groupes: list = [[] for _ in range(count)]
+
+    for _ in range(12):
+        groupes = [[] for _ in range(count)]
+        for index, lab in enumerate(labs):
+            plus_proche = min(
+                range(count),
+                key=lambda c: sum((lab[t] - centres[c][t]) ** 2 for t in range(3)),
+            )
+            groupes[plus_proche].append(index)
+        for c in range(count):
+            if groupes[c]:
+                centres[c] = tuple(
+                    sum(labs[i][t] for i in groupes[c]) / len(groupes[c])
+                    for t in range(3)
+                )
+
+    resultat = []
+    for c in range(count):
+        if not groupes[c]:
+            continue
+        moyenne = tuple(
+            sum(pixels[i][t] for i in groupes[c]) // len(groupes[c]) for t in range(3)
+        )
+        resultat.append((moyenne, len(groupes[c]) / len(pixels)))
+    return sorted(resultat, key=lambda entree: -entree[1])
+
+
+def gap_report(
+    pixels: Sequence[Rgb],
+    palette: "Palette",
+    count: int = 12,
+    threshold: float = 10.0,
+) -> Tuple[PaletteGap, ...]:
+    """Ce que l'image reclame et que la palette ne peut pas rendre.
+
+    Transforme « le rendu est gris » en « 1620 tuiles veulent un bleu pale
+    autour de #AEC8E8, et votre palette n'a que du Light Bluish Gray a 22 delta
+    E ». C'est la difference entre une plainte et une decision.
+    """
+    manques = []
+    for couleur, part in dominant_colors(pixels, count):
+        meilleure = palette.nearest(couleur)
+        ecart = delta_e(couleur, meilleure.rgb)
+        if ecart >= threshold:
+            manques.append(PaletteGap(couleur, part, meilleure, ecart))
+    return tuple(sorted(manques, key=lambda gap: -gap.share * gap.error))
