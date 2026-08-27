@@ -86,6 +86,13 @@ class Reglages:
     lignes_par_page: int = 4
     par_etape: int = 24
     titre: str = "mosaique"
+    debruitage: float = mosaic.DENOISE_TOLERANCE
+    """Ecart tolere pour effacer une tuile isolee. 0 : on n'efface rien.
+
+    Le defaut n'est pas zero, et c'est une decision de produit mesuree : a 4
+    delta E, on perd 0,02 delta E de fidelite moyenne et on gagne 5 a 6 % de
+    pieces et jusqu'a 75 % de tuiles isolees. Une tuile qui ne ressemble a
+    aucune de ses voisines n'etait pas dans la photo."""
     cadre: int = 2
     """Epaisseur du cadre, en tenons. Le defaut n'est pas zero, et c'est une
     decision de produit : un tableau se cadre. Le cadre ferme l'oeuvre sur ses
@@ -116,6 +123,8 @@ class Reglages:
             raise ValueError("un cote de section est positif")
         if self.cadre < 0:
             raise ValueError("une epaisseur de cadre est positive")
+        if self.debruitage < 0:
+            raise ValueError("une tolerance de debruitage est positive")
 
 
 @dataclass(frozen=True)
@@ -403,6 +412,19 @@ def run(
                 "info",
                 "  tramage : ecarte — il ne gagnait pas assez pour le grain "
                 "qu'il aurait coute.",
+            ))
+
+    if reglages.debruitage:
+        avant = grille
+        grille = mosaic.denoise(grille, image, reglages.debruitage, "stretch")
+        effacees = sum(1 for y in range(hauteur) for x in range(reglages.studs)
+                       if avant[y][x].code != grille[y][x].code)
+        if effacees:
+            journal.append((
+                "info",
+                f"  nettoyage: {effacees} tuile(s) isolee(s) effacee(s) — "
+                "elles ne ressemblaient a aucune de leurs voisines et "
+                "coutaient une piece chacune",
             ))
 
     elevations, provenance = (

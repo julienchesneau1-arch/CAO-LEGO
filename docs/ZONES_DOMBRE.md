@@ -1915,6 +1915,58 @@ de 8 mm à aucune distance, donc ce grain se verra.
 
 ---
 
+### 5.54 Ce que la photo réelle a ouvert d'autre : le trou de palette et les tuiles isolées
+
+Deux mesures faites dans la foulée du § 5.53, l'une qui ferme une question,
+l'autre qui gagne partout.
+
+#### Le trou de palette est réel, et il n'est pas de mon fait
+
+La porte du vélo tombe entre L\*=5 (Black) et L\*=46 (Dark Grey). Dans cette
+bande, **les seuls solides quasi neutres sont Black (chroma 8,5) et Dark Brown
+(22,6)** — tout le reste est saturé. Les vrais neutres qui rempliraient le trou
+existent, et mon filtre les écarte à juste titre :
+
+| couleur | L\* | chroma | finition |
+|---|---:|---:|---|
+| Rubber Black | 12,7 | **0,0** | caoutchouc |
+| Pearl Dark Grey | 37,3 | **0,7** | nacrée |
+| Metallic Black | 15,3 | 8,3 | métallisée |
+
+Mesure de ce que coûte le filtre sur cette photo :
+
+| palette | couleurs | ΔE/tuile | pire tonal |
+|---|---:|---:|---:|
+| solides seules (actuel) | 80 | 7,82 | 10,84 |
+| + nacrées | 93 | 7,39 | 10,84 |
+| tout sauf transparent | 127 | **4,25** | **5,59** |
+
+Le filtre coûte 3,6 ΔE — mais l'essentiel du gain vient de couleurs qu'on ne
+peut pas commander en tuile 1×1 (caoutchouc, chrome). **Aucune métrique ne
+comble un trou de palette**, et l'ouvrir en grand produirait une liste de course
+incommandable. Question fermée : le filtre reste, et la chaîne prévient déjà
+quand une photo tombe dans le trou.
+
+#### Les tuiles isolées : un gain qui va dans les deux sens
+
+Une tuile dont aucune des quatre voisines ne partage la couleur est presque
+toujours un artefact de quantification. Elle coûte une pièce et brise la suite
+qui la traverse. `denoise` lui donne la couleur dominante de ses voisines, sous
+deux conditions — au moins deux voisines d'accord, et pas plus de 4 ΔE de
+dégradation par rapport à la photo.
+
+| Image | Pièces | Tuiles isolées | ΔE par tuile |
+|---|---|---|---|
+| vélo | 1124 → **1069** | 142 → **91** | 7,82 → 7,84 |
+| tournesols | 1091 → **1047** | 66 → **14** | 6,16 → 6,19 |
+| portrait | 1401 → 1395 | 31 → **20** | 10,55 → 10,56 |
+
+La deuxième condition n'est pas décorative : c'est elle qui protège un œil
+sombre au milieu d'une joue — isolé, mais dont l'effacement coûterait bien plus
+que quatre ΔE. Un test l'exige.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

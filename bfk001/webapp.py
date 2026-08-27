@@ -222,6 +222,16 @@ PAGE = r"""<!doctype html>
         <span class="aide">0 a 1, ou « auto » (fenetre au detail maximal).</span>
         <input type="text" id="cadrage" value="auto">
       </label>
+      <label>Nettoyage des tuiles isolees
+        <span class="aide">Ecart tolere pour effacer une tuile qui ne
+          ressemble a aucune de ses voisines. 0 : aucune.</span>
+        <select id="debruitage">
+          <option value="4">4 delta E — defaut</option>
+          <option value="8">8 delta E — plus agressif</option>
+          <option value="2">2 delta E — prudent</option>
+          <option value="0">aucun nettoyage</option>
+        </select>
+      </label>
       <label>Seuils du relief
         <select id="seuils">
           <option value="otsu">Otsu — sur les contours</option>
@@ -349,6 +359,7 @@ PAGE = r"""<!doctype html>
           couleurs: valeur('couleurs'),
           cadrage: valeur('cadrage'),
           seuils: valeur('seuils'),
+          debruitage: valeur('debruitage'),
           sections: valeur('sections'),
           cadre: valeur('cadre').split('|')[0],
           cadre_couleur: valeur('cadre').split('|')[1] || '0',
@@ -543,6 +554,7 @@ def _reglages(brut: dict) -> Reglages:
             lignes_par_page=entier("lignes_par_page", 4),
             sections=entier("sections", 0),
             cadre=entier("cadre", 2),
+            debruitage=float(brut.get("debruitage") or 4.0),
             cadre_couleur=entier("cadre_couleur", 0),
             titre=texte("titre", "mosaique"),
         )

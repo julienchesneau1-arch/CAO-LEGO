@@ -92,6 +92,12 @@ def main() -> int:
              "ce que votre fournisseur a en tuile, dites-le ici et toute "
              "l'optimisation se fera a l'interieur de cette contrainte.")
     analyseur.add_argument(
+        "--debruitage", type=float, default=4.0,
+        help="ecart en delta E tolere pour effacer une tuile isolee (0 pour "
+             "n'en effacer aucune). Une tuile qui ne ressemble a aucune de ses "
+             "voisines vient de la quantification, pas de la photo : elle coute "
+             "une piece et brise la suite qui la traverse.")
+    analyseur.add_argument(
         "--cadre", type=int, default=2,
         help="epaisseur du cadre en tenons (0 pour aucun). Le cadre ferme "
              "l'oeuvre, la fait lire comme un tableau, ceinture les sections "
@@ -129,6 +135,7 @@ def main() -> int:
         par_etape=options.par_etape,
         titre=options.image.stem,
         sections=options.sections,
+        debruitage=options.debruitage,
         cadre=options.cadre,
         cadre_couleur=options.cadre_couleur,
     )

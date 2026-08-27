@@ -425,6 +425,34 @@ qui manquait à toutes les décisions précédentes sur le tramage : celle du co
 
 ---
 
+## Les tuiles isolées : moins de grain et moins de pièces
+
+Une tuile dont **aucune voisine ne partage la couleur** vient presque toujours
+de la quantification et non de la photo : elle est née du choix de palette. Elle
+coûte une pièce à elle seule et brise la suite qui la traverse.
+
+`--debruitage 4` (le défaut) lui donne la couleur dominante de ses voisines, à
+deux conditions :
+
+1. **au moins deux voisines** partagent cette couleur — une tuile entourée de
+   quatre teintes différentes est dans une zone de détail, pas dans un aplat ;
+2. **l'écart à la photo ne s'aggrave pas de plus de 4 ΔE** — c'est ce qui
+   protège les vrais détails isolés : un œil sombre au milieu d'une joue dépasse
+   largement quatre ΔE et reste.
+
+Palette officielle, 48 tenons, cadre compris :
+
+| Image | Pièces | Lots | Tuiles isolées | ΔE par tuile |
+|---|---|---|---|---|
+| vélo | 1124 → **1069** | 39 → 38 | 142 → **91** | 7,82 → 7,84 |
+| tournesols | 1091 → **1047** | 19 → 19 | 66 → **14** | 6,16 → 6,19 |
+| portrait | 1401 → 1395 | 13 → 13 | 31 → **20** | 10,55 → 10,56 |
+
+Le gain va **dans les deux sens** — moins de grain à l'œil, moins de pièces à
+poser — et le prix tient dans la deuxième décimale. `--debruitage 0` le désactive.
+
+---
+
 ## Le coût : moitié moins de pièces, rendu identique
 
 Fusionner les tuiles voisines de même couleur ne change **aucune couleur** — une

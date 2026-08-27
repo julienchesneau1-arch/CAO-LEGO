@@ -681,3 +681,94 @@ class TestMetriqueDeSelection(unittest.TestCase):
                     paire[1], lab, rotation=False),
             )[0]
             self.assertEqual(palette.nearest(cible).code, force.code, cible)
+
+
+class TestDebruitage(unittest.TestCase):
+    """Effacer les tuiles isolees : moins de grain ET moins de pieces.
+
+    Une tuile dont aucune voisine ne partage la couleur vient presque toujours
+    de la quantification et non de la photo. Elle coute une piece a elle seule
+    et brise la suite qui la traverse.
+    """
+
+    def image_bruitee(self, cote=24, graine=3):
+        """Un aplat avec quelques pixels isoles nettement differents."""
+        rnd = random.Random(graine)
+        pixels = bytearray()
+        for y in range(cote):
+            for x in range(cote):
+                if rnd.random() < 0.05:
+                    pixels += bytes((rnd.randrange(256), rnd.randrange(256),
+                                     rnd.randrange(256)))
+                else:
+                    pixels += bytes((120 + x // 4, 130, 140 - y // 4))
+        return bfk.Image(cote, cote, bytes(pixels))
+
+    def test_il_efface_des_tuiles_isolees(self):
+        image = self.image_bruitee()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        grille = bfk.mosaic.quantize(image, palette, 24, 24, dither=False)
+        avant = len(bfk.mosaic.isolated_tiles(grille))
+        propre = bfk.mosaic.denoise(grille, image, 8.0)
+        apres = len(bfk.mosaic.isolated_tiles(propre))
+        self.assertGreater(avant, 0, "l'image de test n'est pas bruitee")
+        self.assertLess(apres, avant)
+
+    def test_a_tolerance_nulle_il_ne_touche_a_rien(self):
+        image = self.image_bruitee()
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        grille = bfk.mosaic.quantize(image, palette, 24, 24, dither=False)
+        self.assertIs(bfk.mosaic.denoise(grille, image, 0.0), grille)
+        with self.assertRaises(ValueError):
+            bfk.mosaic.denoise(grille, image, -1.0)
+
+    def test_il_ne_touche_pas_un_detail_qui_coute_cher(self):
+        # Un oeil sombre au milieu d'une joue : entoure de quatre tuiles
+        # identiques, donc « isole », mais le remplacer coute bien plus que la
+        # tolerance. Il doit rester.
+        clair = bfk.LegoColor(1, "Clair", (230, 200, 180))
+        sombre = bfk.LegoColor(2, "Sombre", (20, 20, 25))
+        grille = tuple(
+            tuple(sombre if (x, y) == (2, 2) else clair for x in range(5))
+            for y in range(5)
+        )
+        image = bfk.Image(5, 5, bytes(
+            b for y in range(5) for x in range(5)
+            for b in ((20, 20, 25) if (x, y) == (2, 2) else (230, 200, 180))
+        ))
+        propre = bfk.mosaic.denoise(grille, image, 4.0, fit="stretch")
+        self.assertEqual(propre[2][2].code, sombre.code,
+                         "un vrai detail isole a ete efface")
+
+    def test_il_exige_deux_voisines_d_accord(self):
+        # Une tuile entouree de quatre couleurs differentes est dans une zone
+        # de detail : l'effacer inventerait une uniformite qui n'existe pas.
+        couleurs = [bfk.LegoColor(i, f"C{i}", (40 * i, 40 * i, 40 * i))
+                    for i in range(1, 6)]
+        # Les QUATRE voisines orthogonales du centre sont differentes :
+        # (0,1) (2,1) (1,0) (1,2). Aucune majorite, donc on ne touche pas.
+        grille = (
+            (couleurs[0], couleurs[0], couleurs[0]),
+            (couleurs[1], couleurs[4], couleurs[2]),
+            (couleurs[0], couleurs[3], couleurs[0]),
+        )
+        image = bfk.Image(3, 3, bytes(200 for _ in range(27)))
+        propre = bfk.mosaic.denoise(grille, image, 100.0, fit="stretch")
+        self.assertEqual(propre[1][1].code, couleurs[4].code)
+
+    def test_le_gain_va_dans_les_deux_sens(self):
+        # Moins de grain ET moins de pieces : c'est ce qui rend l'operation
+        # payante. Une seule des deux ne suffirait pas a la justifier.
+        image = self.image_bruitee(cote=32, graine=8)
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        grille = bfk.mosaic.quantize(image, palette, 32, 32, dither=False)
+        propre = bfk.mosaic.denoise(grille, image, 8.0)
+        brut = bfk.mosaic.build(grille, tiles=bfk.mosaic.TILE_SET_STANDARD)
+        net = bfk.mosaic.build(propre, tiles=bfk.mosaic.TILE_SET_STANDARD)
+        self.assertLess(net.tile_count, brut.tile_count)
+        self.assertLess(len(bfk.mosaic.isolated_tiles(propre)),
+                        len(bfk.mosaic.isolated_tiles(grille)))
+        # Et le prix reste dans la deuxieme decimale.
+        avant = bfk.mosaic.fidelity(grille, image, 1)[0]
+        apres = bfk.mosaic.fidelity(propre, image, 1)[0]
+        self.assertLess(apres - avant, 0.5)
