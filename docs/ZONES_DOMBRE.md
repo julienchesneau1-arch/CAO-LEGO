@@ -1690,6 +1690,65 @@ une chaîne. J'ai changé le test, pas la politique.
 
 ---
 
+### 5.51 La découpe multi-panneaux : deux conceptions refusées par le noyau avant la bonne
+
+Dernière limite d'ingénierie de la liste : une œuvre de 96 tenons fait 77 cm et
+ne se transporte pas. Les sets officiels sont faits de panneaux 16×16 — mais
+leurs panneaux **ne se lient pas entre eux**, c'est le cadre qui les tient, et
+le cadre n'est pas une pièce LEGO. Mesure : le substrat `panels` produit **454
+violations de H5** sur une œuvre de 32 tenons. Le noyau a raison.
+
+Et il n'a même pas d'intérêt économique. Le fond croisé, une fois fusionné, ne
+coûte presque rien :
+
+| Œuvre | Fond croisé | Panneaux 16×16 | Part du modèle |
+|---|---:|---:|---:|
+| 48×48 | 128 plates | 9 | 6 % |
+| 96×96 | 398 plates | 36 | 4 % |
+
+Économiser 362 pièces sur 8573 ne justifie pas de livrer un modèle qui tombe en
+morceaux. **Le vrai besoin n'est pas le prix, c'est l'ergonomie** : bâtir en
+plusieurs fois, transporter, ranger.
+
+**Première conception, refusée.** Sections indépendantes, surélevées d'une
+plate, reliées par des *ponts* isolés sous les seuls joints — pour économiser.
+Le noyau a répondu par 122 violations, de deux natures :
+
+- `H2_COLLISION` : deux ponts se percutent au croisement d'un joint vertical et
+  d'un joint horizontal. Je ne l'avais pas prévu.
+- `H4_FLOATING` : ailleurs qu'aux joints, les sections ne reposent sur rien.
+
+Et avant cela, une erreur plus bête que le noyau a aussi attrapée : mes ponts
+« à cheval sur un joint vertical » étaient posés **sans rotation**, alors que la
+3020 est définie 2 en x sur 4 en y. Ils tenaient entièrement dans une seule
+section — huit liaisons chacun, toutes du même côté.
+
+**Conception retenue.** Une couche de jonction **pleine**, à z = 0, pavée par
+`_paver` — le code du fond croisé, éprouvé sur 1521 formats — ancrée en (−1, −2)
+de sorte que ses plates enjambent les joints. Les deux défauts disparaissent
+d'un coup : c'est un pavage, donc sans collision, et il porte tout.
+
+Le contrôle `_verifier_jonction` vérifie que chaque joint est réellement
+enjambé, **sur les poses réelles et après fusion**, jamais sur le réseau
+théorique — le § 5.44 a montré que le réseau ment. Bien lui en a pris : un
+découpage en sections de 6 tenons tombe pile sur une frontière du réseau et
+devrait échouer, alors qu'il passe, parce que la fusion produit des plates à
+cheval que le réseau ne laissait pas prévoir.
+
+Surcoût mesuré, et il baisse quand l'œuvre grandit :
+
+| Œuvre | Sections | Entier | Découpée | Surcoût |
+|---|---|---:|---:|---:|
+| 32×32 | 2×2 de 16 | 984 | 1081 | +9,9 % |
+| 96×96 | 2×2 de 48 | 8466 | 8843 | +4,5 % |
+
+**Ce que je ne promets pas.** La rigidité. H5 dit « d'un seul tenant », pas « ne
+plie pas ». Une jonction par-dessous est une charnière. Le noyau ne modélise pas
+la raideur mécanique — c'est BFK-002 — et l'écrire noir sur blanc vaut mieux que
+de laisser croire qu'un modèle validé est un modèle solide.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -1699,7 +1758,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | Étape | État | Ce qui manque |
 |---|---:|---|
 | Photo → analyse | **~99 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon, recadrage attentionnel par énergie de gradient. **Interface web** : glisser-déposer, réglages, aperçus, ZIP (§ 5.50). Manque : rien d'identifié. |
-| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Relief en plateaux, aux seuils d'Otsu, et profondeur **mesurée** quand la photo en porte une (§ 6.10). Manque : découpe multi-panneaux pour les très grands formats. |
+| → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Relief en plateaux, aux seuils d'Otsu, et profondeur **mesurée** quand la photo en porte une (§ 6.10). Découpe en sections bâties séparément (§ 5.51). Manque : rien d'identifié en 2D. |
 | → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
 | → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
 
@@ -1887,7 +1946,7 @@ complet et vérifié — structure, marges d'impression, ordre contrôlé contre
 plan — mais il ne ressemble pas à une notice LEGO. C'est du dessin, et rien ne
 le mesure.
 
-**Un autre produit.** Découpe multi-panneaux, volume 3D, connecteurs Technic,
+**Un autre produit.** Volume 3D, connecteurs Technic,
 géométrie non-AABB, stabilité mécanique : tout cela est listé en § 3 avec la
 décision que chacun réclame, et cible BFK-002. Ce n'est pas du reste, c'est une
 suite.

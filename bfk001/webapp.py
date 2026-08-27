@@ -168,6 +168,19 @@ PAGE = r"""<!doctype html>
       </div>
     </div>
 
+    <label>Decouper en sections
+      <span class="aide">Au-dela d'une cinquantaine de tenons, une mosaique ne
+        passe plus sur une table. Chaque section est un modele complet avec sa
+        propre notice ; une couche de plates les reunit par-dessous.</span>
+      <select id="sections">
+        <option value="0">non — d'un seul tenant</option>
+        <option value="16">sections de 16 tenons (13 cm)</option>
+        <option value="24">sections de 24 tenons (19 cm)</option>
+        <option value="32">sections de 32 tenons (26 cm)</option>
+        <option value="48">sections de 48 tenons (38 cm)</option>
+      </select>
+    </label>
+
     <label>Jeu de tuiles
       <select id="references">
         <option value="standard">standard — 1x1, 1x2, 1x4</option>
@@ -290,6 +303,13 @@ PAGE = r"""<!doctype html>
     'apercu_relief.png': 'Relief eclaire'
   };
 
+  function titre(nom) {
+    if (TITRES[nom]) return TITRES[nom];
+    var section = nom.match(/^section_(\d+)_(\d+)\//);
+    if (section) return 'Section ' + section[1] + '-' + section[2];
+    return nom;
+  }
+
   document.getElementById('formulaire').addEventListener('submit', function (e) {
     e.preventDefault();
     if (!photo) return;
@@ -315,6 +335,7 @@ PAGE = r"""<!doctype html>
           couleurs: valeur('couleurs'),
           cadrage: valeur('cadrage'),
           seuils: valeur('seuils'),
+          sections: valeur('sections'),
           profondeur_inversee: document.getElementById('inversee').checked,
           titre: (champ.files[0] || {}).name || 'mosaique'
         }
@@ -331,7 +352,7 @@ PAGE = r"""<!doctype html>
       Object.keys(apercus).sort().forEach(function (nom) {
         var b = document.createElement('button');
         b.type = 'button'; b.dataset.nom = nom;
-        b.textContent = TITRES[nom] || nom;
+        b.textContent = titre(nom);
         b.addEventListener('click', function () { montrer(nom); });
         onglets.appendChild(b);
       });
@@ -504,6 +525,7 @@ def _reglages(brut: dict) -> Reglages:
             codes_couleur=texte("codes_couleur", None),
             profondeur_inversee=bool(brut.get("profondeur_inversee")),
             lignes_par_page=entier("lignes_par_page", 4),
+            sections=entier("sections", 0),
             titre=texte("titre", "mosaique"),
         )
     except (TypeError, ValueError) as raison:

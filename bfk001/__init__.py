@@ -35,7 +35,7 @@ elle reexporte l'integralite de cette API publique.
 from __future__ import annotations
 
 from . import (booklet, bricklink, depth, imaging, instructions, jpeg, ldraw,
-               mosaic, palette)
+               mosaic, palette, panels)
 from .catalog import (
     CATALOG,
     LDRAW_COLORS,
@@ -268,6 +268,7 @@ __all__ = [
     "bricklink",
     "ldraw",
     "depth",
+    "panels",
     "read_depth_map",
     "heights_from_depth",
     "embedded_depth",

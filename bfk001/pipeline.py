@@ -27,6 +27,7 @@ from . import (bricklink, imaging, instructions, jpeg, ldraw, mosaic, palette
 from .booklet import build_booklet
 from .catalog import bill_of_materials
 from .depth import NoEmbeddedDepth, embedded_depth, heights_from_depth, read_depth_map
+from .panels import build_assembly
 from .imaging import Image, crop_to_ratio, read_png, read_ppm, resample_box, write_png
 from .lego import LEGO_TOLERANCE, ldu_to_mm
 from .palette import Palette, gap_report, load_best_palette
@@ -84,6 +85,12 @@ class Reglages:
     lignes_par_page: int = 4
     par_etape: int = 24
     titre: str = "mosaique"
+    sections: int = 0
+    """Cote d'une section, en tenons. 0 : l'oeuvre est d'un seul tenant.
+
+    Au-dela d'une cinquantaine de tenons, une mosaique ne passe plus ni sur une
+    table, ni dans un carton. Decoupee, chaque section est un modele complet
+    avec sa propre notice, et une couche de plates les reunit par-dessous."""
 
     def __post_init__(self) -> None:
         if self.studs < 1:
@@ -98,6 +105,8 @@ class Reglages:
             raise ValueError(f"tramage vaut {' ou '.join(TRAMAGES)}")
         if self.seuils not in ("otsu", "uniform"):
             raise ValueError("seuils vaut 'otsu' ou 'uniform'")
+        if self.sections < 0:
+            raise ValueError("un cote de section est positif")
 
 
 @dataclass(frozen=True)
@@ -365,9 +374,28 @@ def run(
                         carte_profondeur)
         if reglages.relief else (None, "")
     )
+    assemblage = None
+    if reglages.sections:
+        assemblage = build_assembly(
+            grille, reglages.sections,
+            tiles=JEUX_DE_TUILES[reglages.references], heights=elevations,
+        )
+        # L'oeuvre entiere reste construite : c'est elle qui porte la grille,
+        # les apercus et la nomenclature globale. Les sections en sont la
+        # decoupe, pas un autre modele.
+        journal.append((
+            "info",
+            f"  sections: {assemblage.rows} x {assemblage.columns} de "
+            f"{reglages.sections} tenons, chacune un modele complet, "
+            f"{assemblage.join_count} plates de jonction par-dessous",
+        ))
     mosaique = mosaic.build(
         grille, tiles=JEUX_DE_TUILES[reglages.references], heights=elevations
     )
+    # Ce qu'on LIVRE : l'assemblage quand l'oeuvre est decoupee, l'oeuvre
+    # elle-meme sinon. Tout ce qui se compte — pieces, lots, etapes — se compte
+    # ici, et non sur `mosaique`, qui ne serait alors qu'une vue de travail.
+    a_controler = assemblage if assemblage is not None else mosaique
     if reglages.relief:
         plateaux = mosaic.relief_plateaus(elevations)
         clous = mosaic.relief_speckle(elevations)
@@ -406,8 +434,8 @@ def run(
     economie = 100 * (1 - mosaique.tile_count / sans_fusion)
     journal.append((
         "info",
-        f"modele  : {mosaique.part_count} pieces ({mosaique.tile_count} tuiles "
-        f"+ substrat) en {time.perf_counter() - depart:.2f}s",
+        f"modele  : {a_controler.part_count} pieces ({mosaique.tile_count} "
+        f"tuiles + substrat) en {time.perf_counter() - depart:.2f}s",
     ))
     journal.append((
         "info",
@@ -423,17 +451,17 @@ def run(
         ))
 
     depart = time.perf_counter()
-    etat = assemble(mosaique.placed_parts, LEGO_TOLERANCE,
+    etat = assemble(a_controler.placed_parts, LEGO_TOLERANCE,
                     search=LatticeSearchApproximation())
     liaisons = sum(len(bonds) for _, _, bonds in etat.graph.edges)
     violations = (
-        check_h2_collision(mosaique.placed_parts, mosaique.geometries)
+        check_h2_collision(a_controler.placed_parts, a_controler.geometries)
         + check_h3_authority_integrity(etat.graph)
         + check_h4_floating(
             etat.graph,
-            founded_part_ids(mosaique.placed_parts, mosaique.geometries))
+            founded_part_ids(a_controler.placed_parts, a_controler.geometries))
         + check_h5_disconnected(etat.graph)
-        + check_h6_foundation(mosaique.placed_parts, mosaique.geometries)
+        + check_h6_foundation(a_controler.placed_parts, a_controler.geometries)
     )
     journal.append((
         "info",
@@ -451,7 +479,8 @@ def run(
         mosaic.preview(mosaique, scale=12, seams=True))
     fichiers["apercu.png"] = write_png(mosaic.preview(mosaique, scale=8))
 
-    nomenclature = bill_of_materials(mosaique.instances, mosaique.placed_parts)
+    nomenclature = bill_of_materials(a_controler.instances,
+                                     a_controler.placed_parts)
     lignes = ["design_id,nom,code_couleur,couleur,quantite"]
     for ligne in sorted(nomenclature, key=lambda l: -l.quantity):
         lignes.append(
@@ -476,7 +505,8 @@ def run(
             ))
 
     plan = instructions.plan_build(
-        mosaique.placed_parts, etat.graph, mosaique.instances, reglages.par_etape
+        a_controler.placed_parts, etat.graph, a_controler.instances,
+        reglages.par_etape,
     )
     if not plan.validate_dag():  # pragma: no cover - la portance l'interdit
         raise ModeleRefuse("plan de montage cyclique : non livre")
@@ -489,10 +519,37 @@ def run(
         rows_per_page=reglages.lignes_par_page,
     )
     fichiers["notice.pdf"] = fascicule
+
+    if assemblage is not None:
+        # Une notice PAR SECTION : c'est tout l'interet de la decoupe. Chacune
+        # est batie et verifiee seule, donc chacune a son propre plan.
+        for section in assemblage.sections:
+            etat_section = assemble(
+                section.mosaic.placed_parts, LEGO_TOLERANCE,
+                search=LatticeSearchApproximation(),
+            )
+            plan_section = instructions.plan_build(
+                section.mosaic.placed_parts, etat_section.graph,
+                section.mosaic.instances, reglages.par_etape,
+            )
+            if not plan_section.validate_dag():  # pragma: no cover
+                raise ModeleRefuse(f"{section.name} : plan cyclique")
+            nomenclature_section = bill_of_materials(
+                section.mosaic.instances, section.mosaic.placed_parts)
+            fichiers[f"{section.name}/notice.pdf"] = build_booklet(
+                section.mosaic, plan_section, nomenclature_section,
+                palette=palette_complete,
+                title=f"{reglages.titre.replace('_', ' ').title()} — "
+                      f"section {section.row + 1}-{section.column + 1}",
+                rows_per_page=reglages.lignes_par_page,
+            )
+            fichiers[f"{section.name}/apercu.png"] = write_png(
+                mosaic.preview(section.mosaic, scale=8))
     fichiers["modele.ldr"] = ldraw.dumps_ldr(
-        mosaique.placed_parts, mosaique.instances, reglages.titre).encode("utf-8")
+        a_controler.placed_parts, a_controler.instances,
+        reglages.titre).encode("utf-8")
     fichiers["modele.json"] = dumps_model(
-        mosaique.placed_parts, mosaique.geometries, mosaique.instances
+        a_controler.placed_parts, a_controler.geometries, a_controler.instances
     ).encode("utf-8")
 
     par_tuile = mosaic.fidelity(mosaique.grid, image, 1)
@@ -517,7 +574,7 @@ def run(
         mesures={
             "studs_x": reglages.studs,
             "studs_y": hauteur,
-            "pieces": mosaique.part_count,
+            "pieces": a_controler.part_count,
             "tuiles": mosaique.tile_count,
             "tenons": mosaique.stud_count,
             "lots": len(nomenclature),
@@ -528,6 +585,7 @@ def run(
             "tonal_moyen": tonal[0],
             "tonal_pire": tonal[1],
             "liaisons": liaisons,
+            "sections": (len(assemblage.sections) if assemblage else 0),
             "couleurs": len(palette),
             "relief": reglages.relief,
             "provenance_relief": provenance,

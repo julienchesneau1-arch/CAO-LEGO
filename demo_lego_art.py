@@ -91,6 +91,11 @@ def main() -> int:
              "programme ne connait ni les prix ni les stocks : si vous savez "
              "ce que votre fournisseur a en tuile, dites-le ici et toute "
              "l'optimisation se fera a l'interieur de cette contrainte.")
+    analyseur.add_argument(
+        "--sections", type=int, default=0,
+        help="decouper l'oeuvre en sections de N tenons de cote. Chacune est "
+             "un modele complet avec sa propre notice, batissable seule ; une "
+             "couche de plates les reunit par-dessous. 0 : d'un seul tenant.")
     analyseur.add_argument("--tolerance", type=float, default=1.0,
                            help="avec --couleurs auto : ecart en delta E qu'on "
                                 "accepte de perdre pour economiser un sachet")
@@ -113,6 +118,7 @@ def main() -> int:
         lignes_par_page=options.lignes_par_page,
         par_etape=options.par_etape,
         titre=options.image.stem,
+        sections=options.sections,
     )
 
     complete, ligne_palette = palette_utilisable(
@@ -150,7 +156,9 @@ def main() -> int:
 
     options.sortie.mkdir(parents=True, exist_ok=True)
     for nom, contenu in resultat.fichiers.items():
-        (options.sortie / nom).write_bytes(contenu)
+        chemin = options.sortie / nom
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_bytes(contenu)
     print(f"          -> {options.sortie}/")
     return 0
 

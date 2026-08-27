@@ -131,6 +131,7 @@ page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
 | `bfk001/depth.py` | — | Profondeur **mesurée** : cartes externes, et extraction de la carte embarquée par les appareils en mode portrait (**hors contrat**) |
 | `bfk001/pipeline.py` | — | **La chaîne** : photo → fichiers livrables, en mémoire. Une seule, appelée à l'identique par la commande et par l'interface (**hors contrat**) |
 | `bfk001/webapp.py` | — | L'atelier dans le navigateur : serveur local et page autonome, sans aucune ressource externe (**hors contrat**) |
+| `bfk001/panels.py` | — | Découpe en sections bâties séparément, et la couche de plates qui les réunit (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
 spatial} → search → graph → state → validation → orchestration`. Aucun cycle.
@@ -666,6 +667,51 @@ coûtant ses plates. La commande le signale :
 ```
             ATTENTION : 3 etages demandes mais seules les hauteurs [0, 3] servent.
 ```
+
+---
+
+## Découper une grande œuvre
+
+Une mosaïque de 96 tenons fait 77 cm de côté et près de neuf mille pièces. D'un
+seul tenant, elle ne passe ni sur une table, ni dans un carton, ni entre deux
+mains.
+
+`--sections 48` (ou le menu de l'atelier) la découpe. Chaque section est un
+**modèle complet** — son propre fond croisé, ses tuiles, sa notice PDF — donc
+bâtissable et vérifiable seule ; une couche de plates posée **dessous** les
+réunit, à cheval sur les joints.
+
+```
+  sections: 2 x 2 de 48 tenons, chacune un modele complet,
+            196 plates de jonction par-dessous
+```
+
+Deux promesses, vérifiées par le noyau et par les tests :
+
+1. **chaque section passe H1–H6 toute seule** ;
+2. **l'assemblage entier, jonction comprise, passe H1–H6 aussi.**
+
+Le surcoût est de quelques pour cent, et il baisse quand l'œuvre grandit —
+c'est-à-dire précisément quand on en a besoin :
+
+| Œuvre | Sections | D'un seul tenant | Découpée | Surcoût |
+|---|---|---:|---:|---:|
+| 32×32 | 2×2 de 16 | 984 | 1081 | +9,9 % |
+| 48×48 | 2×2 de 24 | 2185 | 2341 | +7,1 % |
+| 64×64 | 2×2 de 32 | 3831 | 4050 | +5,7 % |
+| 96×96 | 2×2 de 48 | 8466 | 8843 | **+4,5 %** |
+
+**Ce qui n'est pas promis : la rigidité.** H5 dit « d'un seul tenant », pas « ne
+plie pas ». Une jonction par-dessous est une charnière : deux sections liées
+ainsi tiennent ensemble et fléchissent. Le noyau ne sait pas mesurer cela — c'est
+du ressort de BFK-002 — et je ne vais pas prétendre le contraire. Pour une œuvre
+à accrocher, un cadre reste la bonne réponse.
+
+C'est d'ailleurs la différence avec les sets LEGO Art officiels : leurs panneaux
+16×16 ne se lient **pas** entre eux, c'est le cadre qui les tient. Le substrat
+`panels` de `mosaic.build` reproduit cet arrangement, et le noyau le refuse —
+454 violations de H5 sur une œuvre de 32 tenons. Il a raison : sans le cadre,
+ça tombe en morceaux.
 
 ---
 

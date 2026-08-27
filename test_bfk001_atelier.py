@@ -267,3 +267,50 @@ class TestTrajetHttp(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestDecoupeEnSections(unittest.TestCase):
+    """La decoupe traverse-t-elle la chaine jusqu'aux fichiers livres ?"""
+
+    def test_chaque_section_a_sa_notice_et_son_apercu(self):
+        resultat = run(photo(), Reglages(studs=16, hauteur=16, sections=8))
+        sections = sorted(n for n in resultat.fichiers if "/" in n)
+        self.assertEqual(sections, [
+            f"section_{ligne}_{colonne}/{fichier}"
+            for ligne in (1, 2) for colonne in (1, 2)
+            for fichier in ("apercu.png", "notice.pdf")
+        ])
+        for nom in sections:
+            if nom.endswith(".pdf"):
+                self.assertTrue(resultat.fichiers[nom].startswith(b"%PDF-"))
+
+    def test_ce_qui_est_compte_est_ce_qui_est_livre(self):
+        # Une decoupe ajoute quatre fonds et une couche de jonction. Annoncer
+        # le compte de l'oeuvre d'un seul tenant serait annoncer autre chose
+        # que ce qu'on met dans le carton.
+        entier = run(photo(), Reglages(studs=16, hauteur=16))
+        decoupe = run(photo(), Reglages(studs=16, hauteur=16, sections=8))
+        self.assertGreater(decoupe.mesures["pieces"], entier.mesures["pieces"])
+        self.assertEqual(decoupe.mesures["sections"], 4)
+        self.assertEqual(entier.mesures["sections"], 0)
+        # Les COULEURS, elles, ne bougent pas : c'est la meme oeuvre.
+        self.assertEqual(decoupe.mesures["delta_e"], entier.mesures["delta_e"])
+        self.assertEqual(decoupe.fichiers["apercu.png"],
+                         entier.fichiers["apercu.png"])
+
+    def test_une_decoupe_impossible_est_refusee_et_expliquee(self):
+        from bfk001.pipeline import run as executer
+        with self.assertRaises(ValueError) as saisi:
+            executer(photo(), Reglages(studs=16, hauteur=16, sections=16))
+        self.assertIn("rien a decouper", str(saisi.exception))
+
+    def test_l_atelier_transmet_la_decoupe(self):
+        atelier = Atelier()
+        reponse = atelier.fabriquer({
+            "photo": base64.b64encode(photo()).decode(),
+            "reglages": {"studs": 16, "hauteur": 16, "sections": "8"},
+        })
+        self.assertEqual(reponse["mesures"]["sections"], 4)
+        self.assertIn("section_1_1/apercu.png", reponse["apercus"])
+        with zipfile.ZipFile(BytesIO(atelier.archive(reponse["jeton"]))) as zf:
+            self.assertIn("section_2_2/notice.pdf", zf.namelist())
