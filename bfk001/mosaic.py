@@ -47,6 +47,7 @@ __all__ = [
     "grille_de_mesure",
     "detail_gap",
     "DITHER_AUTO_MIN_GAIN",
+    "DITHER_GRAIN_TOLERANCE",
     "PaletteCost",
     "palette_cost_curve",
     "cheapest_palette",
@@ -341,6 +342,30 @@ def quantize(
             juge_avec = denoise(avec, cadree, denoise_tolerance, "stretch", 0.5)
         else:
             juge_sans, juge_avec = sans, avec
+
+        # Le critere reste le PIRE ecart tonal, et une limite connue de cette
+        # mesure vaut d'etre ecrite ici plutot que decouverte deux fois.
+        #
+        # Un ecart tonal se mesure sur la MOYENNE d'un bloc de 4x4 tuiles, et
+        # une moyenne ne voit pas le grain qu'elle moyenne : deux damiers de
+        # tons opposes ont la meme moyenne qu'un aplat. Sur une photo reelle le
+        # critere a donc annonce +3,64 en faveur du tramage, et l'oeuvre livree
+        # etait un semis de confettis dans le ciel — a mon oeil, moins belle que
+        # la version nette.
+        #
+        # J'ai essaye d'ajouter une condition de grain, mesuree par
+        # `detail_gap`, qui lui voit le semis. Elle corrige bien ce cas. Mais
+        # elle refuse AUSSI le degrade pur, ou le tramage ne seme pas : il pose
+        # une ceinture d'une tuile le long de chaque bord de bande, et cela
+        # adoucit vraiment la transition. La perte de detail y vaut -0,12 contre
+        # -0,13 sur la photo : la MEME grandeur pour un verdict visuel oppose.
+        # Aucun seuil ne les separe — la photo a meme le plus GROS gain tonal.
+        #
+        # Ajouter cette condition rendrait « auto » muet : il ne se declencherait
+        # plus nulle part. Imposer cela sur la foi d'un seul jugement a l'oeil
+        # serait echanger un defaut verifie contre un autre. Le critere reste
+        # donc celui-ci, et la chaine DIT desormais ce que le tramage coute en
+        # grain — a qui regarde de trancher, en un mot (`--tramage aucun`).
         gain = fidelity(juge_sans, cadree, 4)[1] - fidelity(juge_avec, cadree, 4)[1]
         return avec if gain >= DITHER_AUTO_MIN_GAIN else sans
 
@@ -350,6 +375,15 @@ def quantize(
     reduced = resample_box(image, studs_x, studs_y)
 
     return _quantifier(reduced, palette, studs_x, studs_y, dither)
+
+
+DITHER_GRAIN_TOLERANCE = 0.05
+"""Perte de detail qu'un gain tonal a le droit de coûter, en delta E.
+
+Presque zero, et c'est voulu. Le tramage doit gagner sur les grandes surfaces
+SANS rien perdre la ou l'oeil regarde vraiment — c'est-a-dire tuile par tuile.
+Une marge, plutot que zero strict, pour ne pas trancher sur du bruit de mesure.
+"""
 
 
 DENOISE_TOLERANCE = 4.0

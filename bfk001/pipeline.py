@@ -598,11 +598,34 @@ def run(
                        for vy, vx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1))
                        if 0 <= vy < hauteur and 0 <= vx < reglages.studs)
             )
+            # Le critere tranche sur la justesse tonale, qui se mesure sur la
+            # MOYENNE de blocs de 4x4 tuiles — et une moyenne ne voit pas le
+            # grain qu'elle moyenne. `detail_gap`, lui, compare aux memes points
+            # physiques sans moyenner : il le voit. Les deux se contredisent
+            # parfois, et sur une photo reelle c'est le grain qui avait raison.
+            #
+            # Aucun seuil ne separe le grain qui BRUITE (photographie) du grain
+            # qui ADOUCIT (degrade pur) : meme perte de detail, verdict visuel
+            # oppose. Plutot que de trancher a la place de qui regarde, on donne
+            # le chiffre — et le mot pour l'annuler.
+            mesure = mosaic.grille_de_mesure(reglages.studs, hauteur)
+            perdu = (mosaic.detail_gap(grille, image, reglages.studs, hauteur,
+                                       mesure)
+                     - mosaic.detail_gap(nette, image, reglages.studs, hauteur,
+                                         mesure))
             journal.append((
                 "info",
                 f"  tramage : applique — il gagne de la justesse tonale et "
-                f"laisse {isolees} tuile(s) isolees de grain. "
-                "« --tramage aucun » si le grain vous gene.",
+                f"laisse {isolees} tuile(s) isolees de grain.",
+            ))
+            journal.append((
+                "info" if perdu <= 0 else "alerte",
+                f"            ce grain coute {perdu:+.2f} delta E de finesse "
+                "locale" + (" — le gain tonal se mesure sur des moyennes qui "
+                            "ne le voient pas.\n            "
+                            "« --tramage aucun » si vous preferez la nettete."
+                            if perdu > 0 else
+                            ". Il ne coute rien ici."),
             ))
         else:
             journal.append((

@@ -2845,6 +2845,85 @@ surface livrée que rien ne gardait.
 
 ---
 
+### 5.66 Deux photos, un défaut réel, et un remède que j'ai refusé de livrer
+
+Deux photographies : deux Cavaliers sur un lit, et un lièvre de bronze dans une
+vigne. Ni l'une ni l'autre ne porte de XMP — le chemin de la carte de
+profondeur **reste non testé** contre un vrai fichier.
+
+#### Ce qu'elles ont montré
+
+Le lièvre a un **plancher de palette à 9,5 ΔE**, contre 6,7 à 6,9 pour les
+autres. Les trous sont le ciel (`#92A0CC`, `#A1AED7` — un bleu-violet pâle) et
+les verts d'herbe : **19 % des tuiles** à 10-12 ΔE de la couleur voulue. Le
+LEGO ne fabrique pas ces teintes. Ce n'est pas un défaut d'algorithme, et la
+chaîne atteint son plancher exactement.
+
+#### Le défaut, trouvé en regardant
+
+Sur la photo du vélo, le critère de tramage annonce **+3,64 ΔE** en faveur du
+tramage, et la chaîne l'applique. J'ai rendu les deux versions côte à côte :
+la version tramée est un **semis de confettis** blancs et bleus dans le ciel,
+franchement moins belle que la nette.
+
+La cause est structurelle : la justesse tonale se mesure sur la **moyenne** de
+blocs de 4×4 tuiles, et une moyenne ne voit pas le grain qu'elle moyenne. Deux
+damiers de tons opposés ont la même moyenne qu'un aplat. Le critère est
+**aveugle au grain** — et `blending_tiles`, vérifié ici, dit qu'à 1 comme à 4 m
+l'œil résout chaque tuile : le grain, lui, se voit toujours.
+
+#### Le remède que j'ai construit, puis refusé de livrer
+
+`detail_gap` (§ 5.63) compare aux mêmes points physiques sans moyenner : il
+voit le semis. Sur les quatre photos réelles il classe comme mon œil. J'ai donc
+ajouté une seconde condition : *le tramage doit gagner en tonalité sans coûter
+en grain*.
+
+Elle corrige bien le cas du vélo. **Mais elle refuse aussi le dégradé pur** —
+où le tramage ne sème pas : il pose une ceinture d'une tuile le long de chaque
+bord de bande, et cela adoucit vraiment la transition. Rendu et regardé : c'est
+mieux.
+
+| | perte de détail | verdict de l'œil |
+|---|---|---|
+| photo (vélo) | −0,13 | tramage **pire** |
+| dégradé pur | −0,12 | tramage **meilleur** |
+
+**La même grandeur, un verdict opposé.** Aucun seuil ne les sépare — la photo a
+même le plus *gros* gain tonal des deux. La fraction de surface touchée sépare
+presque (7,6 % contre 11,6-15,8 %), mais ajuster un seuil sur six points dont
+deux jugés à l'œil, c'est inventer une constante et l'habiller en principe.
+
+Un test existait précisément pour ce moment : *« le tramage automatique ne se
+déclenche jamais »*. Il est tombé, et il avait raison — ma correction rendait
+le mode `auto` muet partout.
+
+**J'ai annulé la correction.** Échanger un défaut vérifié sur une photo contre
+un autre vérifié sur un dégradé, en rendant vide un mode qui porte le nom
+« auto », sur la foi d'un seul jugement à l'œil : ce n'est pas une amélioration,
+c'est un déplacement de mon goût dans le code.
+
+#### Ce que j'ai livré à la place
+
+Le chiffre. La chaîne dit maintenant, quand elle applique le tramage, **ce
+qu'il coûte en finesse locale** :
+
+```
+  tramage : applique — il gagne de la justesse tonale et laisse 791 tuiles
+            isolees de grain.
+            ce grain coute +0.40 delta E de finesse locale — le gain tonal se
+            mesure sur des moyennes qui ne le voient pas.
+            « --tramage aucun » si vous preferez la nettete.
+```
+
+Et la contradiction entre les deux mesures est **épinglée par un test** plutôt
+qu'affirmée en prose : qui touchera au critère saura exactement ce qu'il
+échange.
+
+Mesurer et informer, plutôt que trancher en silence sur des preuves minces.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
