@@ -153,3 +153,77 @@ def test_catalog_plate_references_are_the_real_ones():
     for design_id, part in bfk.CATALOG.items():
         assert part.design_id == design_id
         assert part.body_height_ldu in (bfk.BRICK_HEIGHT_LDU, bfk.PLATE_HEIGHT_LDU)
+
+
+def test_le_tramage_auto_juge_la_grille_livree_et_non_une_grille_intermediaire():
+    """Le tramage « auto » decidait sur une grille que la chaine modifie apres.
+
+    Trouve sur une photo reelle. Le tramage y gagnait 5,20 delta E sur le pire
+    ecart tonal — largement au-dessus du seuil — et le nettoyage des tuiles
+    isolees, applique juste apres, effacait 604 des 710 tuiles tramees et
+    ramenait le gain a 0,00. On payait 227 pieces et tout le grain pour rien.
+
+    Les deux etapes ont ete ajoutees a des moments differents ; personne
+    n'avait regarde leur interaction. Ce test la regarde : sur une image ou le
+    tramage produit du grain que le nettoyage efface, la decision doit basculer
+    des qu'on lui dit avec quelle tolerance l'appelant nettoiera.
+    """
+    from bfk001.mosaic import (_cadrer, _quantifier, denoise, fidelity,
+                               isolated_tiles, quantize, DITHER_AUTO_MIN_GAIN)
+    from bfk001.imaging import resample_box
+
+    palette = bfk.PROVISIONAL_PALETTE.solids_only()
+    # Un degrade neutre dans les mi-tons, la ou la palette provisoire a son
+    # plus grand trou de clarte (L* 46 -> 67) : le tramage s'y agite le plus,
+    # et le nettoyage reprend presque tout ce qu'il a seme.
+    cote = 200
+    pixels = [(int(120 + 50 * y / cote), int(122 + 48 * y / cote),
+               int(118 + 50 * y / cote))
+              for y in range(cote) for _ in range(cote)]
+    image = bfk.Image.from_pixels(cote, cote, pixels)
+
+    sx = sy = 48
+    cadree = _cadrer(image, sx, sy, "crop", 0.5)
+    reduite = resample_box(cadree, sx, sy)
+    sans = _quantifier(reduite, palette, sx, sy, False)
+    avec = _quantifier(reduite, palette, sx, sy, "adaptive")
+
+    brut = fidelity(sans, cadree, 4)[1] - fidelity(avec, cadree, 4)[1]
+    livre = (fidelity(denoise(sans, cadree, 4.0, "stretch", 0.5), cadree, 4)[1]
+             - fidelity(denoise(avec, cadree, 4.0, "stretch", 0.5), cadree, 4)[1])
+
+    # L'image doit bien poser la question : gain franc avant nettoyage, gain
+    # efface apres. Sans cela le test ne prouverait rien.
+    assert brut >= DITHER_AUTO_MIN_GAIN, f"gain brut trop faible : {brut}"
+    assert livre < DITHER_AUTO_MIN_GAIN, f"le nettoyage ne l'efface pas : {livre}"
+
+    sans_tolerance = quantize(image, palette, sx, sy, "auto", "crop", 0.5)
+    avec_tolerance = quantize(image, palette, sx, sy, "auto", "crop", 0.5,
+                              denoise_tolerance=4.0)
+    assert sans_tolerance == avec, "sans tolerance, la decision reste l'ancienne"
+    assert avec_tolerance == sans, "avec tolerance, le tramage doit etre ecarte"
+    assert (len(isolated_tiles(avec_tolerance))
+            < len(isolated_tiles(sans_tolerance)))
+
+
+def test_le_tramage_auto_reste_choisi_la_ou_il_sert_vraiment():
+    """Le correctif ne doit pas jeter le tramage la ou il gagne pour de bon.
+
+    Un ciel degrade est le cas d'ecole : des bandes franches que le tramage
+    casse, et un gain qui SURVIT au nettoyage.
+    """
+    from bfk001.mosaic import _cadrer, _quantifier, quantize
+    from bfk001.imaging import resample_box
+
+    palette = bfk.PROVISIONAL_PALETTE.solids_only()
+    cote = 200
+    pixels = [(int(70 + 130 * y / cote), int(120 + 110 * y / cote),
+               int(210 - 30 * y / cote))
+              for y in range(cote) for _ in range(cote)]
+    ciel = bfk.Image.from_pixels(cote, cote, pixels)
+
+    sx = sy = 48
+    reduite = resample_box(_cadrer(ciel, sx, sy, "crop", 0.5), sx, sy)
+    trame = _quantifier(reduite, palette, sx, sy, "adaptive")
+    assert quantize(ciel, palette, sx, sy, "auto", "crop", 0.5,
+                    denoise_tolerance=4.0) == trame

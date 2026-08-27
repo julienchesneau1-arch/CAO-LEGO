@@ -2498,6 +2498,88 @@ entrées non bornées.
 
 ---
 
+### 5.61 Une vraie photo de téléphone, et le défaut qu'elle a trouvé en cinq minutes
+
+Deuxième photo réelle du projet, et la deuxième fois qu'elle trouve mieux que
+mes images synthétiques.
+
+#### Ce que le fichier contenait
+
+4,3 Mo, JPEG d'iPhone. **Orientation EXIF = 6** — la photo est stockée
+couchée. Segments `APP1 Exif`, `APP2 ICC_PROFILE`, `APP10 AROT`.
+
+**Pas de XMP.** Donc pas de carte de profondeur : ce n'est pas une photo prise
+en mode Portrait. Le chemin `embedded_depth` — GDepth, XMP étendu, Dynamic
+Depth Container — **reste non testé contre un vrai fichier**. Il faut le dire
+plutôt que de laisser croire que cette photo l'a couvert.
+
+Ce qui a été vérifié, et qui l'est pour la première fois sur un fichier réel :
+le décodeur JPEG au huitième (3024×4032 → 378×504), l'orientation EXIF
+appliquée dans le bon sens, le cadrage 48×64 aux proportions de la photo.
+**Aucune violation d'invariant, aucun plantage.**
+
+#### Mon œil s'est trompé avant le code
+
+Le débardeur paraît blanc sur la photo. Il ressort **sombre** dans la mosaïque,
+et j'ai d'abord cru à un défaut de quantification. Mesure : le pixel vaut
+`#535D72`, **L\* = 39**. La personne est à contre-jour ; le vêtement est dans
+son ombre. Notre système visuel corrige l'éclairement, la mosaïque non — et
+elle a raison, elle rend ce que la photo contient.
+
+C'est utile à écrire : la fidélité se mesure sur les pixels, pas sur ce qu'on
+croit voir.
+
+#### Le vrai défaut : décider sur une grille qu'on modifie ensuite
+
+Le journal annonçait « tramage : appliqué — 710 tuiles isolées », puis
+« nettoyage : 673 tuiles isolées effacées ». La chaîne **tramait, puis effaçait
+son propre tramage**.
+
+Mesuré sur cette photo :
+
+| | par tuile | tonal 4×4 moyen | tonal 4×4 **pire** | tuiles isolées |
+|---|---|---|---|---|
+| sans tramage, brut | 9,79 | 7,45 | 14,65 | 58 |
+| avec tramage, brut | 10,52 | **3,96** | **9,45** | 710 |
+| sans tramage, **livré** | 9,80 | 7,57 | 14,65 | 27 |
+| avec tramage, **livré** | 9,99 | 6,70 | **14,65** | 106 |
+
+Le critère « auto » compare le **pire écart tonal** et exige 1 ΔE de gain. Sur
+les grilles brutes il voyait **+5,20** — franchement au-dessus du seuil. Sur la
+grille réellement livrée, après nettoyage, le gain est **+0,00**.
+
+Le nettoyage efface 604 des 710 tuiles tramées et, avec elles, tout l'avantage
+qui justifiait le tramage. On payait **227 pièces** (+16 %) et tout le grain
+visible pour un gain nul.
+
+La cause est structurelle et banale : le tramage automatique et le nettoyage
+des tuiles isolées ont été ajoutés à des moments différents (§ 5.x et § 5.54),
+la décision vit dans `mosaic.quantize` et le nettoyage dans `pipeline.run`.
+**Le module qui décide ne savait pas ce que l'appelant ferait ensuite.**
+
+La correction est de juger les candidats **tels qu'ils seront livrés** :
+`quantize(..., denoise_tolerance=…)`. Sur cette photo, le tramage est
+désormais écarté — 1405 pièces au lieu de 1632, aucune perte sur la grille
+livrée. Sur un ciel dégradé, le cas d'école, il reste choisi : le gain y
+**survit** au nettoyage (+1,05). Deux tests gardent les deux sens, et le
+premier vérifie d'abord que son image pose bien la question — gain franc avant
+nettoyage, gain effacé après — sans quoi il ne prouverait rien.
+
+#### Ce qui limite encore le rendu, et que le code ne peut pas corriger
+
+La palette provisoire compte **douze couleurs**, avec un trou de clarté entre
+L\* = 46 et L\* = 67 : exactement là où vivent un chemin de sable ensoleillé et
+une silhouette à contre-jour. Le ciel part en blanc pur, les mi-tons
+s'aplatissent. La chaîne le dit en tête de journal à chaque fabrication —
+`LDConfig.ldr` introuvable, la palette officielle divise l'écart par deux — mais
+elle livre quand même, et l'utilisateur voit d'abord le résultat.
+
+Ce n'est pas un défaut de code. C'est la limite que l'installation d'une
+palette officielle lève, et la seule chose que je puisse faire de plus est de
+continuer à le dire clairement.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

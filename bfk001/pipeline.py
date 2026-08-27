@@ -473,7 +473,7 @@ def run(
     # L'image est deja au bon rapport : plus rien a rogner ici.
     grille = mosaic.quantize(
         image, palette, reglages.studs, hauteur, TRAMAGES[reglages.tramage],
-        "stretch",
+        "stretch", denoise_tolerance=reglages.debruitage,
     )
     # Le tramage est un ARBITRAGE, pas un reglage technique : il achete de la
     # justesse tonale avec du grain visible. `blending_tiles` dit que l'oeil ne

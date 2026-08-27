@@ -221,6 +221,7 @@ def quantize(
     dither: object = "auto",
     fit: str = "crop",
     offset=0.5,
+    denoise_tolerance: float = 0.0,
 ) -> Tuple[Tuple[LegoColor, ...], ...]:
     """Image -> grille de couleurs LEGO.
 
@@ -246,6 +247,12 @@ def quantize(
                  tenons voisins, ce qui simule des teintes absentes.
       "adaptive" diffusion PONDEREE par l'ecart a la palette : pleine la ou la
                  couleur voulue n'existe pas, nulle la ou elle existe deja.
+
+    `denoise_tolerance` sert au seul mode "auto" : il dit avec quelle tolerance
+    l'appelant nettoiera les tuiles isolees ensuite, pour que la decision porte
+    sur la grille LIVREE et non sur une grille intermediaire. A zero, la
+    decision se prend sur les grilles brutes — ce que faisait la chaine, et
+    c'etait un defaut (voir le corps de la fonction).
 
     Le defaut est "adaptive", et cette valeur a ete etablie, puis renversee,
     puis retablie. L'histoire vaut d'etre lue avant de la changer.
@@ -309,6 +316,16 @@ def quantize(
         # pas de grappiller une moyenne. S'il n'y arrive pas, il n'ajoute que
         # du grain. La marge de 1 delta E est le seuil de perception : en deca,
         # on ne troque pas du grain visible contre un gain invisible.
+        #
+        # `denoise_tolerance` n'est pas un raffinement : sans lui, la decision
+        # portait sur une grille que l'appelant MODIFIE ensuite. Mesure sur une
+        # photo reelle : le tramage gagnait 5,20 delta E sur le pire ecart tonal
+        # — et le nettoyage des tuiles isolees, applique juste apres, effacait
+        # 604 des 710 tuiles tramees et ramenait le gain a 0,00. On payait 227
+        # pieces et tout le grain pour rien, parce que les deux etapes ont ete
+        # ajoutees a des moments differents et que personne n'avait regarde leur
+        # interaction. On juge donc les candidats TELS QU'ILS SERONT LIVRES.
+        #
         # Le cadrage et le reechantillonnage sont faits UNE fois et partages :
         # les repeter pour chacune des deux quantifications triplerait le
         # travail le plus cher de la chaine sur une photo de douze megapixels.
@@ -316,7 +333,12 @@ def quantize(
         reduite = resample_box(cadree, studs_x, studs_y)
         sans = _quantifier(reduite, palette, studs_x, studs_y, False)
         avec = _quantifier(reduite, palette, studs_x, studs_y, "adaptive")
-        gain = fidelity(sans, cadree, 4)[1] - fidelity(avec, cadree, 4)[1]
+        if denoise_tolerance > 0:
+            juge_sans = denoise(sans, cadree, denoise_tolerance, "stretch", 0.5)
+            juge_avec = denoise(avec, cadree, denoise_tolerance, "stretch", 0.5)
+        else:
+            juge_sans, juge_avec = sans, avec
+        gain = fidelity(juge_sans, cadree, 4)[1] - fidelity(juge_avec, cadree, 4)[1]
         return avec if gain >= DITHER_AUTO_MIN_GAIN else sans
 
     if dither not in (True, False, "adaptive"):
