@@ -510,6 +510,31 @@ derrière un visage lisse l'attire vers le feuillage — un test le démontre.
 
 ---
 
+## La table de couleurs BrickLink s'importe
+
+`LDConfig.ldr` porte le **LEGOID** — l'identifiant de couleur du système LEGO —
+en commentaire au-dessus de chaque couleur, pour 131 de ses 162 entrées.
+BrickLink publie le même identifiant dans son export de couleurs. La
+correspondance se **déduit** donc, elle ne se recopie pas :
+
+```bash
+python3 demo_lego_art.py photo.jpg --bricklink couleurs_bricklink.tsv
+```
+
+`--bricklink` accepte indifféremment l'export téléchargé depuis BrickLink ou une
+table à deux colonnes remplie à la main — le format est reconnu tout seul.
+L'appariement se fait d'abord **par LEGOID** (exact), puis **par nom normalisé**
+(`Dark_Bluish_Grey` = `Dark Bluish Gray`). Ce qui ne s'apparie ni par l'un ni par
+l'autre est **rendu, pas deviné**, et la chaîne écrit `couleurs_a_completer.csv`
+avec le nom, la valeur RVB et le LEGOID de chaque couleur manquante. Une ligne
+remplie suffit ; une ligne laissée vide est une absence, pas une erreur.
+
+**Aucune correspondance n'est écrite de mémoire dans ce dépôt.** Une liste de
+course avec une couleur inventée est pire qu'une liste incomplète : la seconde se
+voit, la première se paie à la livraison.
+
+---
+
 ## Commander la liste
 
 ```bash

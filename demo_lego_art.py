@@ -84,7 +84,9 @@ def main() -> int:
         "--bricklink", type=pathlib.Path, default=None,
         help="table « code LDraw, code BrickLink » (deux colonnes). Produit "
              "commande_bricklink.xml, uploadable tel quel. Sans elle la liste "
-             "reste en CSV : les codes couleur BrickLink ne se devinent pas.")
+             "reste en CSV. Deux formats acceptes : la table a deux colonnes, "
+             "ou l'export de couleurs telecharge depuis BrickLink — la "
+             "correspondance se deduit alors du LEGOID que porte LDConfig.")
     analyseur.add_argument(
         "--codes-couleur", default=None,
         help="restreindre a ces codes LDraw, separes par des virgules. Le "
@@ -148,7 +150,12 @@ def main() -> int:
 
     table = None
     if options.bricklink:
-        table = bfk.load_color_map(options.bricklink.read_text())
+        # Deux formats circulent, et l'utilisateur n'a pas a savoir lequel il
+        # tient : la table a deux colonnes, ou l'export de couleurs BrickLink.
+        table, orphelines = bfk.bricklink.read_color_map(
+            options.bricklink.read_text(), complete)
+        print(f"  couleurs : {len(table)} correspondances BrickLink importees"
+              + (f", {len(orphelines)} sans equivalent" if orphelines else ""))
 
     try:
         resultat = run(

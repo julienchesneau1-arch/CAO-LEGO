@@ -576,6 +576,20 @@ def run(
         except bricklink.UnmappedColors as manque:
             journal.append((
                 "alerte", f"  commande BrickLink NON produite — {manque}"))
+            # Un refus sec n'aide personne : on livre le gabarit de ce qui
+            # manque, avec de quoi le retrouver. Une ligne remplie suffit.
+            manquantes = [
+                c for c in palette_complete
+                if c.code in {l.color_id for l in nomenclature}
+                and c.code not in table_bricklink
+            ]
+            fichiers["couleurs_a_completer.csv"] = bricklink.color_map_template(
+                manquantes, table_bricklink).encode("utf-8")
+            journal.append((
+                "info",
+                f"  gabarit : couleurs_a_completer.csv, {len(manquantes)} "
+                "couleur(s) a renseigner puis a repasser en --bricklink",
+            ))
         else:
             journal.append((
                 "info",

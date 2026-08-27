@@ -1967,6 +1967,61 @@ que quatre ΔE. Un test l'exige.
 
 ---
 
+### 5.55 Les deux dernières décisions, prises — et la table qui s'importe
+
+Il restait deux « décisions du propriétaire ». Elles m'ont été déléguées. Voici
+ce que j'ai décidé, et pourquoi.
+
+#### `LDConfig.ldr` : NON, on ne le redistribue pas
+
+La licence CC BY 2.0 fournie avec LDraw définit l'Œuvre comme les pièces portant
+`0 !LICENSE Redistributable under CCAL version 2.0`. `3001.dat` la porte —
+c'est ce qui a permis d'en tirer les conventions d'axes pour l'export LDraw
+(§ 5.39). **`LDConfig.ldr` ne la porte pas.**
+
+Une délégation de décision technique n'est pas un consentement éclairé à un
+risque juridique sur le dépôt de quelqu'un d'autre. Je ne commets pas un fichier
+dont je n'ai pas pu confirmer la licence. C'est aussi la discipline du projet
+appliquée à elle-même : ne jamais recopier une donnée qu'on n'a pas vérifiée.
+
+Ce que j'ai fait à la place, pour que l'absence cesse de coûter : la recherche
+lit désormais **`LDRAWDIR`**, la variable que la distribution LDraw pose
+elle-même et que tous ses outils lisent — demander à l'installation où elle est
+plutôt que de le supposer. Plus quatre emplacements d'installation de plus
+(Stud.io sous Windows, la bibliothèque de pièces de Studio sous macOS,
+`~/Documents/LDraw`).
+
+#### La table BrickLink : elle s'IMPORTE, elle ne se recopie pas
+
+Je disais depuis le début ne pas pouvoir la fournir sans l'inventer. C'était
+vrai, et j'avais arrêté de chercher trop tôt. **LDConfig contient le LEGOID** —
+l'identifiant de couleur du système LEGO — en commentaire au-dessus de chaque
+couleur, pour 131 de ses 162 entrées. BrickLink publie le même identifiant dans
+son export de couleurs.
+
+La correspondance se **déduit** donc, en deux passes ordonnées par la confiance :
+
+1. **par LEGOID** — exact, c'est le même numéro des deux côtés ;
+2. **par nom normalisé** — `Dark_Bluish_Grey` et `Dark Bluish Gray` désignent la
+   même couleur ; le tiret bas et l'orthographe ne sont pas des différences de
+   couleur. Employé seulement quand le LEGOID manque.
+
+Ce qui ne s'apparie ni par l'un ni par l'autre est **rendu, pas deviné**.
+
+Et un refus sec n'aide personne : la chaîne écrit `couleurs_a_completer.csv`,
+un gabarit qui liste exactement ce qui manque avec le nom, la valeur RVB et le
+LEGOID de chaque couleur. Une ligne remplie, on repasse le fichier en
+`--bricklink`, et c'est fini. Le lecteur accepte les deux formats sans qu'on ait
+à lui dire lequel on tient, ignore les commentaires en fin de ligne — c'est ce
+que le gabarit produit — et traite une ligne vide comme une absence et non
+comme une erreur.
+
+**Ce que je n'ai pas fait, et ne ferai pas** : recopier une seule correspondance
+de mémoire. Une liste de course avec une couleur inventée est pire qu'une liste
+incomplète : la seconde se voit, la première se paie à la livraison.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -1977,7 +2032,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 |---|---:|---|
 | Photo → analyse | **~99 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon, recadrage attentionnel par énergie de gradient. **Interface web** : glisser-déposer, réglages, aperçus, ZIP (§ 5.50). Manque : rien d'identifié. |
 | → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Relief en plateaux, aux seuils d'Otsu, et profondeur **mesurée** quand la photo en porte une (§ 6.10). Découpe en sections bâties séparément (§ 5.51). Manque : rien d'identifié en 2D. |
-| → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
+| → liste de course | **~97 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Table de correspondance BrickLink **importée** de l'export officiel via le LEGOID (§ 5.55). Manque : les prix — hors périmètre assumé. |
 | → notice de montage | **~92 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Encart des pieces par etape, bande dessinee avec une lettre par piece, deux a quatre etapes par page, page du cadre (§ 5.52). Manque : les dessins de pieces en perspective des vraies notices. |
 
 **Environ 92 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
@@ -2154,10 +2209,12 @@ BrickLink. Ce qui reste se range en trois catégories très différentes.
 point de la demande d'origine qui restait littéralement ouvert. Il ne l'est plus
 (§ 5.50).
 
-**Des données, pas du code.** La table de correspondance des couleurs BrickLink
-et le fichier `LDConfig.ldr`. Le code qui s'en sert existe et est testé ; ni
-l'une ni l'autre n'a pu être vérifiée ici. Ce sont des décisions
-d'approvisionnement, pas d'ingénierie.
+**Des données, tranchées (§ 5.55).** `LDConfig.ldr` n'est pas redistribué — sa
+licence n'a pas pu être confirmée — mais il est désormais cherché via `LDRAWDIR`
+et dans quatre emplacements de plus. La table de correspondance BrickLink
+n'est plus une donnée manquante : elle **s'importe** d'un export BrickLink, via
+le LEGOID que porte LDConfig, et ce qui reste non apparié sort en gabarit à
+compléter.
 
 **Une préférence esthétique.** Ce qui reste de la ligne graphique : les vraies
 notices dessinent chaque pièce en perspective, avec ses tenons. La nôtre les

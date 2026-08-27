@@ -54,6 +54,14 @@ class LegoColor:
     name: str
     rgb: Rgb
     finish: str = "solid"
+    lego_id: Optional[int] = None
+    """Identifiant de couleur du systeme LEGO, quand LDConfig le donne.
+
+    Il est en commentaire dans le fichier officiel — « // LEGOID 26 - Black » —
+    et c'est le SEUL identifiant partage entre LDraw et les catalogues
+    commerciaux. Sans lui, faire correspondre une couleur LDraw a une couleur
+    BrickLink demande de recopier une table a la main ; avec lui, la
+    correspondance s'importe. 138 des 162 couleurs en portent un."""
 
     @property
     def is_solid(self) -> bool:
@@ -555,11 +563,20 @@ def load_ldconfig(text: str) -> Palette:
     """
     colors = []
     seen = set()
+    dernier_legoid = None
     for line in text.splitlines():
+        # Le LEGOID precede sa couleur, en commentaire. On le retient pour la
+        # ligne !COLOUR qui suit, et on l'oublie ensuite : l'associer a la
+        # mauvaise couleur serait pire que de ne pas l'avoir.
+        marque = _LEGOID_LINE.match(line)
+        if marque:
+            dernier_legoid = int(marque.group(1))
+            continue
         match = _COLOUR_LINE.match(line)
         if not match:
             continue
         name, code, value = match.group(1), int(match.group(2)), match.group(3)
+        legoid, dernier_legoid = dernier_legoid, None
         if code in seen:
             continue
         seen.add(code)
@@ -569,12 +586,15 @@ def load_ldconfig(text: str) -> Palette:
                 name.replace("_", " "),
                 (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)),
                 _finish_of(line),
+                legoid,
             )
         )
     if not colors:
         raise ValueError("aucune ligne !COLOUR exploitable dans ce LDConfig")
     return Palette(colors)
 
+
+_LEGOID_LINE = re.compile(r"^0\s+//\s*LEGOID\s+(\d+)\s*-")
 
 LDCONFIG_EMPLACEMENTS = (
     "~/.ldraw/LDConfig.ldr",
@@ -589,6 +609,10 @@ LDCONFIG_EMPLACEMENTS = (
     "~/.local/share/leocad/library/LDConfig.ldr",
     "C:/Program Files/Studio 2.0/ldraw/LDConfig.ldr",
     "/Applications/Studio 2.0/ldraw/LDConfig.ldr",
+    "C:/Program Files/BrickLink/Stud.io/ldraw/LDConfig.ldr",
+    "/Applications/Studio 2.0/PartsLibrary/ldraw/LDConfig.ldr",
+    "~/Documents/LDraw/LDConfig.ldr",
+    "~/Applications/LDraw/LDConfig.ldr",
 )
 """Ou LDraw, LeoCAD et BrickLink Studio deposent le fichier de couleurs.
 
@@ -610,7 +634,16 @@ def find_ldconfig(extra: Optional[Sequence[str]] = None) -> Optional[str]:
     """
     import os
 
-    for chemin in list(extra or ()) + list(LDCONFIG_EMPLACEMENTS):
+    # LDRAWDIR est la variable d'environnement que la distribution LDraw pose
+    # elle-meme, et que tous ses outils lisent. La chercher avant les chemins
+    # devines, c'est demander a l'installation ou elle est plutot que de le
+    # supposer — et c'est la seule facon de trouver une installation posee
+    # ailleurs que dans les six endroits habituels.
+    racines = [os.environ[nom] for nom in ("LDRAWDIR", "LDRAW_DIR", "LDRAWPATH")
+               if os.environ.get(nom)]
+    depuis_env = [os.path.join(racine, sous, "LDConfig.ldr")
+                  for racine in racines for sous in ("", "ldraw")]
+    for chemin in list(extra or ()) + depuis_env + list(LDCONFIG_EMPLACEMENTS):
         complet = os.path.expanduser(chemin)
         if os.path.isfile(complet) and os.access(complet, os.R_OK):
             return complet

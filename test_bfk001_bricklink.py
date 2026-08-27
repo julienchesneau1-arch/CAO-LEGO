@@ -123,3 +123,97 @@ class TestChaineComplete(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestImportDeLaTableDeCouleurs(unittest.TestCase):
+    """La table de correspondance s'IMPORTE, elle ne se recopie pas.
+
+    C'etait la derniere donnee que je disais ne pas pouvoir fournir sans
+    l'inventer. LDConfig porte le LEGOID — l'identifiant de couleur du systeme
+    LEGO — pour 131 de ses 162 couleurs, et BrickLink publie le meme dans son
+    export. La correspondance se deduit.
+    """
+
+    EXPORT = "\n".join([
+        "Color ID\tColor Name\tRGB\tType\tLEGO Color ID",
+        "11\tBlack\t212121\tSolid\t26",
+        "86\tDark Bluish Gray\t6C6E68\tSolid\t199",
+        "8\tBrown\t583927\tSolid\t217",
+        "3\tYellow\tF2CD37\tSolid\t24",
+    ])
+
+    def palette(self):
+        return bfk.Palette([
+            bfk.LegoColor(0, "Black", (5, 19, 29), "solid", 26),
+            bfk.LegoColor(72, "Dark_Bluish_Grey", (108, 110, 104), "solid", 199),
+            bfk.LegoColor(6, "Brown", (88, 57, 39), "solid", None),
+            bfk.LegoColor(999, "Inventee", (1, 2, 3), "solid", 4242),
+        ])
+
+    def test_l_appariement_se_fait_par_legoid(self):
+        table, orphelines = bfk.bricklink.color_map_from_catalog(
+            self.EXPORT, self.palette())
+        self.assertEqual(table[0], 11)
+        self.assertEqual(table[72], 86, "LEGOID 199 des deux cotes")
+
+    def test_le_nom_rattrape_ce_que_le_legoid_ne_couvre_pas(self):
+        # « Brown » n'a pas de LEGOID dans cette palette de test : c'est le nom
+        # normalise qui l'apparie.
+        table, _ = bfk.bricklink.color_map_from_catalog(
+            self.EXPORT, self.palette())
+        self.assertEqual(table[6], 8)
+
+    def test_grey_et_gray_designent_la_meme_couleur(self):
+        # LDraw ecrit « Dark_Bluish_Grey », BrickLink « Dark Bluish Gray ».
+        # Le tiret bas et l'orthographe ne sont pas des differences de couleur.
+        sans_legoid = bfk.Palette([
+            bfk.LegoColor(72, "Dark_Bluish_Grey", (108, 110, 104))])
+        table, orphelines = bfk.bricklink.color_map_from_catalog(
+            self.EXPORT, sans_legoid)
+        self.assertEqual(table.get(72), 86)
+        self.assertEqual(orphelines, ())
+
+    def test_ce_qui_ne_s_apparie_pas_est_rendu_et_non_devine(self):
+        table, orphelines = bfk.bricklink.color_map_from_catalog(
+            self.EXPORT, self.palette())
+        self.assertNotIn(999, table)
+        self.assertEqual(len(orphelines), 1)
+        self.assertIn("Inventee", orphelines[0])
+
+    def test_les_colonnes_sont_reconnues_a_leur_entete(self):
+        # L'ordre des colonnes n'est promis nulle part.
+        inverse = "\n".join([
+            "LEGO Color ID;Color Name;Color ID",
+            "26;Black;11",
+            "199;Dark Bluish Gray;86",
+        ])
+        table, _ = bfk.bricklink.color_map_from_catalog(inverse, self.palette())
+        self.assertEqual(table[0], 11)
+        self.assertEqual(table[72], 86)
+
+    def test_les_deux_formats_se_reconnaissent_tout_seuls(self):
+        table, orphelines = bfk.bricklink.read_color_map(
+            self.EXPORT, self.palette())
+        self.assertEqual(table[0], 11)
+        deux_colonnes, rien = bfk.bricklink.read_color_map("0,11\n72,86\n")
+        self.assertEqual(deux_colonnes, {0: 11, 72: 86})
+        self.assertEqual(rien, ())
+
+    def test_un_export_sans_palette_est_refuse_plutot_que_devine(self):
+        with self.assertRaises(ValueError):
+            bfk.bricklink.read_color_map(self.EXPORT)
+
+    def test_le_gabarit_donne_de_quoi_completer(self):
+        gabarit = bfk.bricklink.color_map_template(self.palette(), {0: 11})
+        self.assertIn("0,11", gabarit)
+        self.assertIn("999,", gabarit)
+        self.assertIn("LEGOID 4242", gabarit)
+        self.assertIn("#010203", gabarit)
+        # Il se relit meme PARTIELLEMENT rempli : une ligne vide est une
+        # absence, pas une erreur. La couleur ressort simplement non appariee.
+        partiel = bfk.load_color_map(gabarit)
+        self.assertEqual(partiel, {0: 11})
+        rempli = gabarit.replace("999,", "999,777")
+        table = bfk.load_color_map(rempli)
+        self.assertEqual(table[999], 777)
+        self.assertEqual(table[0], 11)
