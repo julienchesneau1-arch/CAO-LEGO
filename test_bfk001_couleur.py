@@ -772,3 +772,66 @@ class TestDebruitage(unittest.TestCase):
         avant = bfk.mosaic.fidelity(grille, image, 1)[0]
         apres = bfk.mosaic.fidelity(propre, image, 1)[0]
         self.assertLess(apres - avant, 0.5)
+
+
+class TestRechercheDeLaPaletteOfficielle(unittest.TestCase):
+    """Trouver LDConfig sans drapeau, ou dire clairement qu'on ne l'a pas."""
+
+    def test_ldrawdir_est_consulte_avant_les_emplacements_devines(self):
+        # La variable que la distribution LDraw pose elle-meme : demander a
+        # l'installation ou elle est vaut mieux que de le supposer.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as dossier:
+            racine = os.path.join(dossier, "ldraw")
+            os.makedirs(racine)
+            fichier = os.path.join(racine, "LDConfig.ldr")
+            with open(fichier, "w") as sortie:
+                sortie.write("0 !COLOUR Essai CODE 4242 VALUE #123456 EDGE #000000\n")
+            ancien = os.environ.get("LDRAWDIR")
+            os.environ["LDRAWDIR"] = racine
+            try:
+                trouve = bfk.palette.find_ldconfig()
+                palette, provenance = bfk.load_best_palette()
+            finally:
+                if ancien is None:
+                    os.environ.pop("LDRAWDIR", None)
+                else:
+                    os.environ["LDRAWDIR"] = ancien
+        self.assertEqual(trouve, fichier)
+        self.assertEqual([c.code for c in palette], [4242])
+        self.assertNotIn("provisoire", provenance)
+
+    def test_sans_rien_la_palette_provisoire_se_nomme(self):
+        # Une palette silencieusement degradee est pire qu'une palette absente.
+        import os
+        ancien = {nom: os.environ.pop(nom, None)
+                  for nom in ("LDRAWDIR", "LDRAW_DIR", "LDRAWPATH")}
+        emplacements = bfk.palette.LDCONFIG_EMPLACEMENTS
+        bfk.palette.LDCONFIG_EMPLACEMENTS = ()
+        try:
+            palette, provenance = bfk.load_best_palette()
+        finally:
+            bfk.palette.LDCONFIG_EMPLACEMENTS = emplacements
+            for nom, valeur in ancien.items():
+                if valeur is not None:
+                    os.environ[nom] = valeur
+        self.assertIn("provisoire", provenance)
+        self.assertEqual(len(palette), len(bfk.PROVISIONAL_PALETTE))
+
+    def test_le_legoid_est_lu_et_associe_a_la_bonne_couleur(self):
+        # Le LEGOID precede sa couleur en commentaire. L'associer a la
+        # suivante serait pire que de ne pas l'avoir.
+        texte = "\n".join([
+            "0 // LEGOID  26 - Black",
+            "0 !COLOUR Black CODE 0 VALUE #05131D EDGE #595959",
+            "0 !COLOUR Sans_Legoid CODE 1 VALUE #FFFFFF EDGE #000000",
+            "0 // LEGOID 199 - Dark Stone Grey",
+            "0 !COLOUR Dark_Bluish_Grey CODE 72 VALUE #6C6E68 EDGE #333333",
+        ])
+        palette = bfk.load_ldconfig(texte)
+        par_code = {c.code: c for c in palette}
+        self.assertEqual(par_code[0].lego_id, 26)
+        self.assertIsNone(par_code[1].lego_id,
+                          "un LEGOID s'est propage a la couleur suivante")
+        self.assertEqual(par_code[72].lego_id, 199)

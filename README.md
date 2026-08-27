@@ -28,8 +28,9 @@ commande le dit et nomme les couleurs qui manquent.
 
 **Palette officielle.** Les 12 couleurs intégrées ne suffisent à aucune photo
 (17,8 ΔE sur un paysage, contre 9,7 avec la palette officielle). Fournir
-`--ldconfig LDConfig.ldr` — le fichier est livré avec LDraw, LeoCAD et
-BrickLink Studio, et se trouve aussi dans le paquet PyPI `pyldraw`. Les
+`--ldconfig LDConfig.ldr` — ou rien du tout si `LDRAWDIR` est posée, ou si
+LDraw, LeoCAD ou BrickLink Studio est installé : le fichier est alors trouvé
+tout seul. Il se trouve aussi dans le paquet PyPI `pyldraw`. Les
 couleurs transparentes, chromées, nacrées et caoutchouc en sont écartées
 automatiquement : une liste de course doit être commandable.
 
@@ -382,9 +383,18 @@ Bout en bout, en CIEDE2000, palette officielle, 48×48 :
 | avant | 17,00 | 11,19 | 24,35 |
 | **après** | 17,80 | **6,02** | **9,12** |
 
-**Palette officielle.** `LDConfig.ldr` est cherché aux emplacements où LDraw,
-LeoCAD et BrickLink Studio le déposent — aucun drapeau à fournir si l'un d'eux
-est installé. Il n'est pas embarqué dans ce dépôt : voir § 5.27 du registre.
+**Palette officielle.** `LDConfig.ldr` est cherché d'abord via **`LDRAWDIR`** —
+la variable d'environnement que la distribution LDraw pose elle-même et que tous
+ses outils lisent, c'est-à-dire en demandant à l'installation où elle est plutôt
+qu'en le supposant — puis dans seize emplacements où LDraw, LeoCAD et BrickLink
+Studio le déposent. Aucun drapeau à fournir si l'un d'eux est installé.
+
+Il n'est **pas** embarqué dans ce dépôt, et c'est une décision, pas un oubli : la
+licence CC BY 2.0 livrée avec LDraw définit l'Œuvre comme les pièces portant le
+marqueur `0 !LICENSE Redistributable under CCAL version 2.0`. `3001.dat` le
+porte — c'est ce qui a permis d'en tirer les conventions d'axes de l'export
+LDraw. `LDConfig.ldr` ne le porte pas. On ne redistribue pas un fichier dont la
+licence n'a pas pu être confirmée (§ 5.27 et § 5.55).
 Sur la même photo, 14,2 → **7,7 ΔE** par tuile.
 
 ### Le cadrage : la chaîne écrasait toute photo non carrée
