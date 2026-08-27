@@ -70,103 +70,248 @@ PAGE = r"""<!doctype html>
 <title>BrickForge — une photo, une mosaique LEGO Art</title>
 <style>
   :root {
-    --encre: #16181d; --papier: #f7f7f5; --carte: #ffffff;
-    --trait: #dcdcd6; --doux: #6b6f76; --vif: #b4361c; --ok: #1f7a4d;
+    --encre:#15171c; --papier:#f4f1ea; --carte:#ffffff; --creux:#ebe6dc;
+    --trait:#ddd6c8; --doux:#6e6a62; --vif:#d0342c; --sombre:#9d2620;
+    --tenon:#f2b705; --ok:#0f7a4e; --ombre:0 1px 2px rgba(20,18,14,.06),
+                                        0 8px 24px -12px rgba(20,18,14,.18);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --encre:#e9e9e6; --papier:#15171b; --carte:#1d2026;
-            --trait:#31353d; --doux:#9aa0a8; --vif:#e2704f; --ok:#5fbb8a; }
+    :root { --encre:#eeeae2; --papier:#111318; --carte:#1a1d23; --creux:#15181d;
+            --trait:#2e323a; --doux:#98948c; --vif:#ef6a52; --sombre:#b8412f;
+            --tenon:#f2b705; --ok:#4fbd8b;
+            --ombre:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7); }
   }
-  * { box-sizing: border-box; }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
   body { margin:0; background:var(--papier); color:var(--encre);
-         font:15px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI,
-              Roboto, Helvetica, Arial, sans-serif; }
-  header { padding:28px 24px 8px; max-width:1180px; margin:0 auto; }
-  h1 { font-size:22px; margin:0 0 4px; letter-spacing:-.01em; }
-  header p { margin:0; color:var(--doux); font-size:14px; }
-  main { display:grid; grid-template-columns:340px 1fr; gap:22px;
-         max-width:1180px; margin:0 auto; padding:18px 24px 60px; }
-  @media (max-width: 900px) { main { grid-template-columns:1fr; } }
+         font:16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+              Roboto, Helvetica, Arial, sans-serif;
+         -webkit-font-smoothing:antialiased; }
+
+  /* La frise de tenons. Trois cercles par brique, en degrade radial : aucune
+     image, aucune requete — la page doit rester utilisable hors ligne. */
+  .tenons { height:14px; background-repeat:repeat-x; background-size:28px 14px;
+            background-image:radial-gradient(circle at 14px 3px,
+              var(--tenon) 0 5px, transparent 5.5px); opacity:.9; }
+
+  header { max-width:1220px; margin:0 auto; padding:26px 24px 0; }
+  .marque { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:34px; line-height:1.05; margin:0; letter-spacing:-.035em;
+       font-weight:800; }
+  h1 em { font-style:normal; color:var(--vif); }
+  header p { margin:8px 0 0; color:var(--doux); font-size:15px; max-width:62ch; }
+
+  main { display:grid; grid-template-columns:360px 1fr; gap:24px;
+         max-width:1220px; margin:0 auto; padding:20px 24px 72px;
+         align-items:start; }
+  @media (max-width:940px) { main { grid-template-columns:1fr; } }
+
   .carte { background:var(--carte); border:1px solid var(--trait);
-           border-radius:10px; padding:16px; }
-  #zone { border:2px dashed var(--trait); border-radius:10px; padding:26px 14px;
-          text-align:center; cursor:pointer; transition:border-color .15s; }
-  #zone.actif { border-color:var(--vif); }
-  #zone strong { display:block; margin-bottom:4px; }
+           border-radius:16px; padding:20px; box-shadow:var(--ombre); }
+
+  /* Les etapes numerotees. Trois gestes, pas huit reglages. */
+  .etape { display:flex; align-items:center; gap:9px; margin:22px 0 10px;
+           font-size:13px; font-weight:700; letter-spacing:.06em;
+           text-transform:uppercase; color:var(--doux); }
+  .etape:first-child { margin-top:0; }
+  .etape b { width:22px; height:22px; border-radius:50%; flex:none;
+             display:grid; place-items:center; background:var(--encre);
+             color:var(--papier); font-size:12px; letter-spacing:0; }
+
+  #zone { border:2px dashed var(--trait); border-radius:14px;
+          padding:26px 14px; text-align:center; cursor:pointer;
+          background:var(--creux); transition:border-color .15s, transform .15s; }
+  #zone:hover { border-color:var(--vif); }
+  #zone.actif { border-color:var(--vif); transform:scale(1.01); }
+  #zone strong { display:block; font-size:15px; margin-bottom:2px; }
   #zone span { color:var(--doux); font-size:13px; }
-  #vignette { max-width:100%; max-height:160px; border-radius:6px; margin-top:12px; }
-  label { display:block; margin:14px 0 4px; font-size:13px; font-weight:600; }
-  .aide { font-weight:400; color:var(--doux); display:block; font-size:12px;
-          margin-top:2px; }
+  #vignette { max-width:100%; max-height:170px; border-radius:10px;
+              margin-top:12px; box-shadow:var(--ombre); }
+
+  label { display:block; margin:14px 0 5px; font-size:13.5px; font-weight:650; }
+  .aide { font-weight:400; color:var(--doux); display:block; font-size:12.5px;
+          line-height:1.45; margin-top:2px; }
   input[type=number], select, input[type=text] {
-    width:100%; padding:7px 9px; border:1px solid var(--trait); border-radius:6px;
-    background:var(--papier); color:var(--encre); font:inherit; font-size:14px; }
-  .ligne { display:flex; gap:8px; align-items:center; }
-  .ligne input[type=checkbox] { width:auto; }
-  button { width:100%; margin-top:18px; padding:11px; border:0; border-radius:8px;
-           background:var(--encre); color:var(--papier); font:inherit;
-           font-weight:600; cursor:pointer; }
-  button:disabled { opacity:.5; cursor:default; }
-  .secondaire { background:var(--ok); }
+    width:100%; padding:9px 11px; border:1px solid var(--trait);
+    border-radius:10px; background:var(--carte); color:var(--encre);
+    font:inherit; font-size:14.5px; }
+  select { appearance:none; cursor:pointer;
+           background-image:linear-gradient(45deg,transparent 50%,var(--doux) 50%),
+                            linear-gradient(135deg,var(--doux) 50%,transparent 50%);
+           background-position:calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+           background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
+           padding-right:34px; }
+  input:focus-visible, select:focus-visible, button:focus-visible,
+  a:focus-visible, summary:focus-visible {
+    outline:2px solid var(--vif); outline-offset:2px; }
+  .ligne { display:flex; gap:9px; align-items:center; }
+  .ligne input[type=checkbox] { width:auto; accent-color:var(--vif); }
+  .duo { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .duo label { margin-top:10px; }
+
+  /* Les puces de format : on clique une taille, on ne la tape pas. */
+  .puces { display:flex; flex-wrap:wrap; gap:7px; }
+  .puces button { flex:1 1 auto; padding:8px 4px; border-radius:10px;
+                  border:1px solid var(--trait); background:var(--carte);
+                  color:var(--encre); font:inherit; font-size:13.5px;
+                  font-weight:650; cursor:pointer; line-height:1.15;
+                  transition:background .12s, border-color .12s; }
+  .puces button small { display:block; font-weight:400; font-size:11px;
+                        color:var(--doux); margin-top:1px; }
+  .puces button:hover { border-color:var(--vif); }
+  .puces button[aria-pressed=true] { background:var(--encre);
+    color:var(--papier); border-color:var(--encre); }
+  /* PAS `rgba(255,255,255,.7)` : en theme sombre le fond enfonce est CLAIR,
+     et du blanc translucide dessus disparait. La couleur du papier suit le
+     theme, l'opacite fait le reste. */
+  .puces button[aria-pressed=true] small { color:var(--papier); opacity:.72; }
+
+  /* Les couleurs de cadre se choisissent a l'oeil, pas dans une liste. */
+  .teintes { display:flex; gap:8px; flex-wrap:wrap; }
+  .teintes button { width:38px; height:38px; border-radius:10px; padding:0;
+                    border:2px solid var(--trait); cursor:pointer;
+                    position:relative; transition:transform .12s; }
+  .teintes button:hover { transform:translateY(-2px); }
+  .teintes button[aria-pressed=true] { border-color:var(--vif); }
+  .teintes button[aria-pressed=true]::after { content:""; position:absolute;
+    inset:auto 0 -9px 0; height:3px; border-radius:2px; background:var(--vif); }
+  .teintes .sans { background:var(--carte); color:var(--doux); font-size:11px;
+                   font-weight:700; width:auto; padding:0 10px; }
+
+  /* Un bouton se presse comme une brique : il descend sur son epaisseur. */
+  button.brique { width:100%; margin-top:20px; padding:14px; border:0;
+    border-radius:12px; background:var(--vif); color:#fff; font:inherit;
+    font-size:16px; font-weight:750; cursor:pointer;
+    box-shadow:0 4px 0 var(--sombre); transition:transform .06s, box-shadow .06s; }
+  button.brique:active:not(:disabled) { transform:translateY(3px);
+    box-shadow:0 1px 0 var(--sombre); }
+  button.brique:disabled { opacity:.45; cursor:default; box-shadow:0 4px 0 var(--trait); }
+  button.brique.verte { background:var(--ok); box-shadow:0 4px 0 #0a5c3a; }
+  @media (prefers-reduced-motion:reduce) {
+    button.brique, .teintes button, #zone { transition:none; }
+  }
+
   #resultat { display:none; }
-  #onglets { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
-  #onglets button { width:auto; margin:0; padding:6px 12px; font-size:13px;
-                    font-weight:500; background:transparent; color:var(--doux);
-                    border:1px solid var(--trait); }
+  #resultat.montre { display:block; animation:apparait .35s ease-out; }
+  @keyframes apparait { from { opacity:0; transform:translateY(10px); } }
+  @media (prefers-reduced-motion:reduce) { #resultat.montre { animation:none; } }
+
+  #onglets { display:flex; gap:7px; margin-bottom:12px; flex-wrap:wrap; }
+  #onglets button { padding:7px 14px; font-size:13px; font-weight:600;
+    background:transparent; color:var(--doux); border:1px solid var(--trait);
+    border-radius:999px; cursor:pointer; font-family:inherit; }
   #onglets button[aria-selected=true] { background:var(--encre);
-                    color:var(--papier); border-color:var(--encre); }
-  #rendu { width:100%; image-rendering:pixelated; border-radius:8px;
-           border:1px solid var(--trait); background:var(--papier); }
-  .chiffres { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
-              gap:10px; margin:16px 0; }
-  .chiffre { border:1px solid var(--trait); border-radius:8px; padding:9px 11px; }
-  .chiffre b { display:block; font-size:18px; letter-spacing:-.02em;
-               white-space:nowrap; }
+    color:var(--papier); border-color:var(--encre); }
+
+  /* Le comparateur. La photo est rognee, moyennee par tenon et encadree
+     exactement comme l'oeuvre : les deux images se superposent au pixel pres,
+     sans quoi on croirait juger la quantification en regardant un decalage. */
+  #scene { position:relative; border-radius:12px; overflow:hidden;
+           border:1px solid var(--trait); background:var(--creux);
+           touch-action:none; }
+  #rendu { display:block; width:100%; image-rendering:pixelated; }
+  #avant { position:absolute; inset:0; clip-path:inset(0 50% 0 0); }
+  #avant img { display:block; width:100%; height:100%; image-rendering:pixelated; }
+  #poignee { position:absolute; top:0; bottom:0; left:50%; width:2px;
+             background:#fff; box-shadow:0 0 0 1px rgba(0,0,0,.35);
+             cursor:ew-resize; }
+  #poignee::after { content:"⇄"; position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%); width:38px; height:38px; border-radius:50%;
+    background:#fff; color:#15171c; display:grid; place-items:center;
+    font-size:16px; box-shadow:0 2px 10px rgba(0,0,0,.35); }
+  .etiquette { position:absolute; top:10px; font-size:11px; font-weight:700;
+    letter-spacing:.08em; text-transform:uppercase; padding:4px 9px;
+    border-radius:999px; background:rgba(0,0,0,.55); color:#fff;
+    pointer-events:none; }
+  .etiquette.g { left:10px; } .etiquette.d { right:10px; }
+  #scene.simple #avant, #scene.simple #poignee, #scene.simple .etiquette {
+    display:none; }
+
+  .chiffres { display:grid; gap:10px; margin:18px 0 4px;
+              grid-template-columns:repeat(auto-fit,minmax(142px,1fr)); }
+  .chiffre { border:1px solid var(--trait); border-radius:12px; padding:11px 13px;
+             background:var(--creux); }
+  /* `clamp` plutot qu'une taille fixe : « 29×29 cm » depasse la tuile a 23px
+     et se faisait rogner. Le nombre doit tenir, pas le contraire. */
+  .chiffre b { display:block; font-size:clamp(18px,1.7vw,23px); font-weight:750;
+               letter-spacing:-.03em; white-space:nowrap; }
   .chiffre span { color:var(--doux); font-size:12px; }
+
+  h2 { font-size:17px; margin:22px 0 10px; letter-spacing:-.015em; }
   pre { white-space:pre-wrap; word-break:break-word; font-size:12.5px;
         line-height:1.5; margin:0; font-family:ui-monospace, SFMono-Regular,
         Menlo, Consolas, monospace; }
   pre .alerte { color:var(--vif); }
-  #etat { margin-top:12px; font-size:13px; color:var(--doux); min-height:20px; }
-  #etat.erreur { color:var(--vif); }
-  details { margin-top:14px; }
-  summary { cursor:pointer; font-size:13px; color:var(--doux); }
-  .commande { display:grid; gap:12px;
-              grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
-              margin:4px 0 16px; }
-  .boutique { border:1px solid var(--trait); border-radius:8px; padding:13px 14px; }
-  .boutique h3 { margin:0 0 2px; font-size:14px; }
-  .boutique p { margin:0 0 10px; color:var(--doux); font-size:12.5px; }
+  #etat { margin-top:14px; font-size:13.5px; color:var(--doux); min-height:20px; }
+  #etat.erreur { color:var(--vif); font-weight:600; }
+
+  /* Pendant la fabrication : des tenons qui se posent l'un apres l'autre.
+     Indetermine et assume — la chaine ne rend pas d'avancement, et une barre
+     qui progresserait toute seule mentirait. */
+  #chantier { display:none; gap:6px; margin-top:12px; }
+  #chantier.tourne { display:flex; }
+  #chantier i { width:11px; height:11px; border-radius:3px; background:var(--vif);
+                opacity:.25; animation:pose 1.1s infinite ease-in-out; }
+  #chantier i:nth-child(2) { animation-delay:.13s; }
+  #chantier i:nth-child(3) { animation-delay:.26s; }
+  #chantier i:nth-child(4) { animation-delay:.39s; }
+  #chantier i:nth-child(5) { animation-delay:.52s; }
+  @keyframes pose { 0%,70%,100% { opacity:.22; transform:translateY(0); }
+                    35% { opacity:1; transform:translateY(-5px); } }
+
+  details { margin-top:16px; border-top:1px solid var(--trait); padding-top:12px; }
+  summary { cursor:pointer; font-size:13.5px; font-weight:650; color:var(--doux);
+            list-style:none; display:flex; align-items:center; gap:7px; }
+  summary::-webkit-details-marker { display:none; }
+  summary::before { content:"›"; display:inline-block; transition:transform .15s;
+                    font-size:17px; line-height:1; }
+  details[open] > summary::before { transform:rotate(90deg); }
+
+  .commande { display:grid; gap:12px; margin:4px 0 18px;
+              grid-template-columns:repeat(auto-fit,minmax(276px,1fr)); }
+  .boutique { border:1px solid var(--trait); border-radius:14px;
+              padding:15px 16px; background:var(--creux); }
+  .boutique h3 { margin:0 0 2px; font-size:15px; }
+  .boutique p { margin:0 0 11px; color:var(--doux); font-size:12.5px; }
   .boutique a.action, .boutique button.action {
-    display:block; width:100%; margin:0 0 7px; padding:9px 10px; border:0;
-    border-radius:7px; background:var(--encre); color:var(--papier);
-    font:inherit; font-size:13px; font-weight:600; text-align:center;
-    text-decoration:none; cursor:pointer; }
-  .boutique a.suite { display:inline-block; font-size:12.5px;
-                      color:var(--doux); }
-  .boutique .manque { color:var(--vif); font-size:12.5px; margin:6px 0 0; }
-  .boutique.vide { border-style:dashed; }
-  #catalogues p { margin:6px 0 0; font-size:12.5px; color:var(--doux); }
-  #catalogues .etat { color:var(--ok); font-weight:600; }
-  #catalogues input[type=file] { font-size:12px; margin-top:3px; width:100%; }
-  #catalogues button { margin-top:10px; }
+    display:block; width:100%; margin:0 0 9px; padding:11px 10px; border:0;
+    border-radius:10px; background:var(--encre); color:var(--papier);
+    font:inherit; font-size:13.5px; font-weight:700; text-align:center;
+    text-decoration:none; cursor:pointer; box-shadow:0 3px 0 rgba(0,0,0,.25);
+    transition:transform .06s, box-shadow .06s; }
+  .boutique a.action:active, .boutique button.action:active {
+    transform:translateY(2px); box-shadow:0 1px 0 rgba(0,0,0,.25); }
+  .boutique a.suite { display:inline-block; font-size:12.5px; color:var(--doux); }
+  .boutique .manque { color:var(--vif); font-size:12.5px; margin:6px 0 0;
+                      font-weight:600; }
+  .boutique.vide { border-style:dashed; background:transparent; }
+
+  #catalogues p { margin:7px 0 0; font-size:12.5px; color:var(--doux); }
+  #catalogues .etat { color:var(--ok); font-weight:650; }
+  #catalogues input[type=file] { font-size:12px; margin-top:4px; width:100%; }
+  #catalogues button.brique { margin-top:14px; padding:11px; font-size:14px; }
   #catalogues button.mineur { background:transparent; color:var(--doux);
-                              border:1px solid var(--trait); font-weight:500;
-                              padding:7px; font-size:12.5px; }
-  #xml { width:100%; height:80px; margin-top:6px; font-size:11px;
+    border:1px solid var(--trait); font-weight:500; padding:9px;
+    font-size:12.5px; box-shadow:none; margin-top:8px; }
+  #xml { width:100%; height:84px; margin-top:7px; font-size:11px;
          font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-         border:1px solid var(--trait); border-radius:6px; padding:6px;
-         background:var(--papier); color:var(--encre); }
+         border:1px solid var(--trait); border-radius:8px; padding:7px;
+         background:var(--carte); color:var(--encre); }
+  a { color:var(--vif); }
 </style>
 
+<div class="tenons"></div>
 <header>
-  <h1>BrickForge</h1>
+  <div class="marque">
+    <h1>Brick<em>Forge</em></h1>
+  </div>
   <p>Une photo, une mosaique LEGO Art : le modele, la liste de courses et la
      notice de montage. Rien n'est livre qui ne tienne debout.</p>
 </header>
 
 <main>
   <form class="carte" id="formulaire">
+    <div class="etape"><b>1</b> La photo</div>
     <div id="zone">
       <strong>Deposez une photo</strong>
       <span>ou cliquez — JPEG, PNG ou PPM</span>
@@ -174,15 +319,47 @@ PAGE = r"""<!doctype html>
     </div>
     <input type="file" id="fichier" accept="image/*" hidden>
 
-    <label>Taille en tenons
-      <span class="aide">48 est le format des sets LEGO Art (38 cm).</span>
-      <input type="number" id="studs" value="48" min="2" max="192" step="1">
-    </label>
+    <div class="etape"><b>2</b> Le format</div>
+    <div class="puces" id="formats">
+      <button type="button" data-studs="32">32<small>26 cm</small></button>
+      <button type="button" data-studs="48">48<small>38 cm</small></button>
+      <button type="button" data-studs="64">64<small>51 cm</small></button>
+      <button type="button" data-studs="96">96<small>77 cm</small></button>
+    </div>
+    <div class="duo">
+      <label>Largeur en tenons
+        <input type="number" id="studs" value="48" min="2" max="192" step="1">
+      </label>
+      <label>Hauteur
+        <input type="number" id="hauteur" placeholder="auto" min="2" max="192">
+      </label>
+    </div>
+    <span class="aide">48 tenons est le format des sets LEGO Art. Hauteur vide :
+      les proportions de la photo sont gardees.</span>
 
-    <label>Hauteur
-      <span class="aide">Vide : les proportions de la photo sont gardees.</span>
-      <input type="number" id="hauteur" placeholder="auto" min="2" max="192">
+    <label>Cadre
+      <span class="aide">Un tableau se cadre. Le cadre depasse la surface et
+        porte son ombre dessus ; il ceinture aussi les sections.</span>
     </label>
+    <div class="teintes" id="teintes">
+      <button type="button" data-cadre="2|0" style="background:#1b2a34"
+              title="noir"></button>
+      <button type="button" data-cadre="2|72" style="background:#6c6e68"
+              title="gris fonce"></button>
+      <button type="button" data-cadre="2|71" style="background:#a0a5a9"
+              title="gris clair"></button>
+      <button type="button" data-cadre="2|70" style="background:#583927"
+              title="brun rougeatre"></button>
+      <button type="button" data-cadre="2|15" style="background:#f4f4f4"
+              title="blanc"></button>
+      <button type="button" class="sans" data-cadre="0">sans</button>
+    </div>
+    <input type="hidden" id="cadre" value="2|0">
+    <div class="ligne" style="margin-top:11px">
+      <input type="checkbox" id="cadre_large">
+      <label for="cadre_large" style="margin:0; font-weight:400">
+        cadre large — 3 tenons</label>
+    </div>
 
     <label>Relief
       <span class="aide">Etages de plates sous les tuiles. Ne coute aucune
@@ -203,51 +380,41 @@ PAGE = r"""<!doctype html>
           dans le JPEG est lue automatiquement.</span>
       </label>
       <input type="file" id="carte" accept="image/*">
-      <div class="ligne" style="margin-top:8px">
+      <div class="ligne" style="margin-top:9px">
         <input type="checkbox" id="inversee">
         <label for="inversee" style="margin:0; font-weight:400">
           la carte encode une distance (proche = sombre)</label>
       </div>
     </div>
 
-    <label>Cadre
-      <span class="aide">Un tableau se cadre. Le cadre depasse la surface et
-        porte son ombre dessus ; il ceinture aussi les sections.</span>
-      <select id="cadre">
-        <option value="2">2 tenons — noir</option>
-        <option value="2|72">2 tenons — gris fonce</option>
-        <option value="2|71">2 tenons — gris clair</option>
-        <option value="2|70">2 tenons — brun rougeatre</option>
-        <option value="2|15">2 tenons — blanc</option>
-        <option value="3">3 tenons — noir</option>
-        <option value="0">aucun cadre</option>
-      </select>
-    </label>
-
-    <label>Decouper en sections
-      <span class="aide">Au-dela d'une cinquantaine de tenons, une mosaique ne
-        passe plus sur une table. Chaque section est un modele complet avec sa
-        propre notice ; une couche de plates les reunit par-dessous.</span>
-      <select id="sections">
-        <option value="0">non — d'un seul tenant</option>
-        <option value="16">sections de 16 tenons (13 cm)</option>
-        <option value="24">sections de 24 tenons (19 cm)</option>
-        <option value="32">sections de 32 tenons (26 cm)</option>
-        <option value="48">sections de 48 tenons (38 cm)</option>
-      </select>
-    </label>
-
-    <label>Jeu de tuiles
-      <select id="references">
-        <option value="standard">standard — 1x1, 1x2, 1x4</option>
-        <option value="minimal">minimal — 1x1 seule, grille reguliere</option>
-        <option value="large">large — jusqu'a 1x8, moins de pieces</option>
-        <option value="art">art — tuiles rondes, prix plein</option>
-      </select>
-    </label>
+    <div class="etape"><b>3</b> Fabriquer</div>
+    <button type="submit" class="brique" id="lancer" disabled>
+      Fabriquer la mosaique</button>
+    <div id="chantier" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <div id="etat"></div>
 
     <details id="fins">
       <summary>Reglages fins</summary>
+      <label>Jeu de tuiles
+        <select id="references">
+          <option value="standard">standard — 1x1, 1x2, 1x4</option>
+          <option value="minimal">minimal — 1x1 seule, grille reguliere</option>
+          <option value="large">large — jusqu'a 1x8, moins de pieces</option>
+          <option value="art">art — tuiles rondes, prix plein</option>
+        </select>
+      </label>
+      <label>Decouper en sections
+        <span class="aide">Au-dela d'une cinquantaine de tenons, une mosaique ne
+          passe plus sur une table. Chaque section est un modele complet avec sa
+          propre notice ; une couche de plates les reunit par-dessous.</span>
+        <select id="sections">
+          <option value="0">non — d'un seul tenant</option>
+          <option value="16">sections de 16 tenons (13 cm)</option>
+          <option value="24">sections de 24 tenons (19 cm)</option>
+          <option value="32">sections de 32 tenons (26 cm)</option>
+          <option value="48">sections de 48 tenons (38 cm)</option>
+        </select>
+      </label>
       <label>Tramage
         <select id="tramage">
           <option value="auto">auto — decide par image</option>
@@ -309,24 +476,29 @@ PAGE = r"""<!doctype html>
       </label>
       <input type="file" id="cat_bricklink" accept=".csv,.tsv,.txt,.gz,.zip">
 
-      <button type="button" id="poser_catalogues">Enregistrer les catalogues</button>
-      <button type="button" class="mineur" id="oublier_catalogues">Tout oublier</button>
+      <button type="button" class="brique" id="poser_catalogues">
+        Enregistrer les catalogues</button>
+      <button type="button" class="brique mineur" id="oublier_catalogues">
+        Tout oublier</button>
     </details>
-
-    <button type="submit" id="lancer" disabled>Fabriquer la mosaique</button>
-    <div id="etat"></div>
   </form>
 
   <section>
     <div class="carte" id="resultat">
       <div id="onglets"></div>
-      <img id="rendu" alt="Apercu de la mosaique">
+      <div id="scene">
+        <img id="rendu" alt="Apercu de la mosaique">
+        <div id="avant"><img id="avant_img" alt="La photo, vue par la mosaique"></div>
+        <span class="etiquette g">photo</span>
+        <span class="etiquette d">LEGO</span>
+        <div id="poignee" role="separator" aria-label="Comparer"></div>
+      </div>
       <div class="chiffres" id="chiffres"></div>
-      <h2 style="font-size:15px;margin:18px 0 8px">Commander</h2>
+      <h2>Commander</h2>
       <div class="commande" id="commander"></div>
-      <a id="telecharger" download><button type="button" class="secondaire">
+      <a id="telecharger" download><button type="button" class="brique verte">
         Telecharger le dossier complet (ZIP)</button></a>
-      <details open style="margin-top:16px">
+      <details open>
         <summary>Journal de fabrication</summary>
         <pre id="journal"></pre>
       </details>
@@ -341,6 +513,7 @@ PAGE = r"""<!doctype html>
   var champ = document.getElementById('fichier');
   var lancer = document.getElementById('lancer');
   var etat = document.getElementById('etat');
+  var chantier = document.getElementById('chantier');
 
   function lire(fichier, suite) {
     var lecteur = new FileReader();
@@ -387,9 +560,86 @@ PAGE = r"""<!doctype html>
 
   function valeur(id) { return document.getElementById(id).value.trim(); }
 
+  // Un groupe de boutons qui se comportent comme des radios : un seul enfonce,
+  // et c'est le champ cache ou le champ nombre qui porte la valeur reelle.
+  function groupe(conteneur, choisir, correspond) {
+    var boutons = Array.prototype.slice.call(conteneur.children);
+    function peindre() {
+      boutons.forEach(function (b) {
+        b.setAttribute('aria-pressed', correspond(b) ? 'true' : 'false');
+      });
+    }
+    boutons.forEach(function (b) {
+      b.addEventListener('click', function () { choisir(b); peindre(); });
+    });
+    peindre();
+    return peindre;
+  }
+
+  var studs = document.getElementById('studs');
+  var peindreFormats = groupe(
+    document.getElementById('formats'),
+    function (b) { studs.value = b.dataset.studs; },
+    function (b) { return b.dataset.studs === studs.value; });
+  studs.addEventListener('input', peindreFormats);
+
+  var cadre = document.getElementById('cadre');
+  var large = document.getElementById('cadre_large');
+  function epaisseur() {
+    // Le champ cache porte « epaisseur|couleur » ; les pastilles ne changent
+    // que la couleur, la case ne change que l'epaisseur.
+    var part = cadre.value.split('|');
+    if (part[0] === '0') return;
+    cadre.value = (large.checked ? '3' : '2') + '|' + (part[1] || '0');
+  }
+  groupe(document.getElementById('teintes'),
+    function (b) { cadre.value = b.dataset.cadre; epaisseur(); },
+    function (b) {
+      return b.dataset.cadre.split('|')[1] === cadre.value.split('|')[1]
+             && (b.dataset.cadre === '0') === (cadre.value === '0');
+    });
+  large.addEventListener('change', epaisseur);
+
+  // ---------------------------------------------------------------- //
+  // Le comparateur photo / LEGO
+  // ---------------------------------------------------------------- //
+  var scene = document.getElementById('scene');
+  var avant = document.getElementById('avant');
+  var poignee = document.getElementById('poignee');
+  var tire = false;
+
+  function placer(part) {
+    part = Math.max(0, Math.min(100, part));
+    avant.style.clipPath = 'inset(0 ' + (100 - part) + '% 0 0)';
+    poignee.style.left = part + '%';
+  }
+
+  function depuis(e) {
+    var boite = scene.getBoundingClientRect();
+    if (!boite.width) return;
+    placer(((e.clientX - boite.left) / boite.width) * 100);
+  }
+
+  scene.addEventListener('pointerdown', function (e) {
+    if (scene.classList.contains('simple')) return;
+    tire = true; scene.setPointerCapture(e.pointerId); depuis(e);
+  });
+  scene.addEventListener('pointermove', function (e) { if (tire) depuis(e); });
+  ['pointerup', 'pointercancel'].forEach(function (nom) {
+    scene.addEventListener(nom, function () { tire = false; });
+  });
+
   function montrer(nom) {
     onglet = nom;
     document.getElementById('rendu').src = apercus[nom];
+    // Le comparateur n'a de sens que sur le rendu : superposer la photo a la
+    // vue des joints ou du relief comparerait deux choses differentes.
+    var comparable = nom === 'apercu.png' && !!apercus['apercu_source.png'];
+    scene.classList.toggle('simple', !comparable);
+    if (comparable) {
+      document.getElementById('avant_img').src = apercus['apercu_source.png'];
+      placer(50);
+    }
     Array.prototype.forEach.call(
       document.getElementById('onglets').children, function (b) {
         b.setAttribute('aria-selected', b.dataset.nom === nom);
@@ -412,20 +662,18 @@ PAGE = r"""<!doctype html>
   // ---------------------------------------------------------------- //
   // Les catalogues de commande : donnes une fois, gardes ensuite.
   // ---------------------------------------------------------------- //
-  var catalogues = { elements: null, bricklink: null };
   var etatCat = document.getElementById('etat_catalogues');
 
-  function direCatalogues(etat) {
-    catalogues = etat;
+  function direCatalogues(etat_) {
     etatCat.textContent = '';
     var lignes = [];
-    if (etat.elements) {
-      lignes.push('Elements LEGO : ' + etat.elements.references
-                  + ' references — ' + etat.elements.note);
+    if (etat_.elements) {
+      lignes.push('Elements LEGO : ' + etat_.elements.references
+                  + ' references — ' + etat_.elements.note);
     }
-    if (etat.bricklink) {
-      lignes.push('BrickLink : ' + etat.bricklink.couleurs
-                  + ' couleurs — ' + etat.bricklink.note);
+    if (etat_.bricklink) {
+      lignes.push('BrickLink : ' + etat_.bricklink.couleurs
+                  + ' couleurs — ' + etat_.bricklink.note);
     }
     if (!lignes.length) {
       etatCat.textContent = 'Aucun catalogue : la liste de courses sortira en '
@@ -439,22 +687,18 @@ PAGE = r"""<!doctype html>
       etatCat.appendChild(n);
       etatCat.appendChild(document.createElement('br'));
     });
-    if (etat.dossier) {
+    if (etat_.dossier) {
       var d = document.createElement('span');
-      d.textContent = 'Gardes dans ' + etat.dossier + ' sur cette machine.';
+      d.textContent = 'Gardes dans ' + etat_.dossier + ' sur cette machine.';
       etatCat.appendChild(d);
     }
     // Un resultat deja affiche a ete fabrique SANS ces catalogues : sa carte
     // « Commander » est perimee, et rien ne le dirait autrement.
-    if (document.getElementById('resultat').style.display === 'block') {
-      etat_dit('Catalogues enregistres — refabriquez la mosaique pour en '
-               + 'obtenir la commande.');
+    if (document.getElementById('resultat').classList.contains('montre')) {
+      etat.className = '';
+      etat.textContent = 'Catalogues enregistres — refabriquez la mosaique '
+        + 'pour en obtenir la commande.';
     }
-  }
-
-  function etat_dit(texte) {
-    etat.className = '';
-    etat.textContent = texte;
   }
 
   fetch('/catalogues').then(function (r) { return r.json(); })
@@ -509,10 +753,10 @@ PAGE = r"""<!doctype html>
   var PICK_A_BRICK = 'https://www.lego.com/pick-and-build/pick-a-brick';
   var BRICKLINK_IMPORT = 'https://www.bricklink.com/v2/wanted/upload.page';
 
-  function boite(titre, sous) {
+  function boite(titre_, sous) {
     var d = document.createElement('div');
     d.className = 'boutique';
-    var h = document.createElement('h3'); h.textContent = titre;
+    var h = document.createElement('h3'); h.textContent = titre_;
     var p = document.createElement('p'); p.textContent = sous;
     d.appendChild(h); d.appendChild(p);
     return d;
@@ -570,10 +814,10 @@ PAGE = r"""<!doctype html>
   }
 
   function secours(texte, retour) {
-    var zone = document.getElementById('xml');
-    zone.hidden = false;
-    zone.value = texte;
-    zone.focus(); zone.select();
+    var zone_ = document.getElementById('xml');
+    zone_.hidden = false;
+    zone_.value = texte;
+    zone_.focus(); zone_.select();
     var copie = false;
     try { copie = document.execCommand('copy'); } catch (e) { copie = false; }
     retour(copie ? 'XML copie — collez-le dans la page BrickLink.'
@@ -581,8 +825,8 @@ PAGE = r"""<!doctype html>
   }
 
   function commander(jeton, m, fichiers) {
-    var zone = document.getElementById('commander');
-    zone.textContent = '';
+    var zone_ = document.getElementById('commander');
+    zone_.textContent = '';
     var eu = false;
 
     if (m.commande_lego_lots) {
@@ -608,7 +852,7 @@ PAGE = r"""<!doctype html>
       }
       note(d, 'La disponibilite reelle n\'est pas connue ici : Pick a Brick la '
               + 'dira a l\'envoi.');
-      zone.appendChild(d); eu = true;
+      zone_.appendChild(d); eu = true;
     }
 
     if (m.commande_bricklink_lots) {
@@ -625,7 +869,7 @@ PAGE = r"""<!doctype html>
       var aire = document.createElement('textarea');
       aire.id = 'xml'; aire.readOnly = true; aire.hidden = true;
       b.appendChild(aire);
-      zone.appendChild(b); eu = true;
+      zone_.appendChild(b); eu = true;
     }
 
     if (!eu) {
@@ -637,7 +881,7 @@ PAGE = r"""<!doctype html>
               + 'couleur est attribue par LEGO, il ne se calcule pas.');
       v.appendChild(lienDehors('https://rebrickable.com/downloads/',
         'Ou telecharger elements.csv et colors.csv →'));
-      zone.appendChild(v);
+      zone_.appendChild(v);
       document.getElementById('catalogues').open = true;
     }
   }
@@ -647,9 +891,9 @@ PAGE = r"""<!doctype html>
     if (!photo) return;
     lancer.disabled = true;
     etat.className = '';
-    etat.textContent = 'Fabrication en cours — quelques secondes a une minute '
-      + 'selon la taille. Les six invariants du noyau sont verifies avant '
-      + 'toute livraison.';
+    etat.textContent = 'Fabrication en cours — les six invariants du noyau '
+      + 'sont verifies avant toute livraison.';
+    chantier.classList.add('tourne');
     var debut = Date.now();
 
     fetch('/fabriquer', {
@@ -684,14 +928,20 @@ PAGE = r"""<!doctype html>
       apercus = reponse.apercus;
       var onglets = document.getElementById('onglets');
       onglets.textContent = '';
-      Object.keys(apercus).sort().forEach(function (nom) {
+      Object.keys(apercus).sort().filter(function (nom) {
+        // La source n'est pas un onglet : c'est la moitie gauche du
+        // comparateur, et elle n'a aucun sens seule.
+        return nom !== 'apercu_source.png';
+      }).forEach(function (nom) {
         var b = document.createElement('button');
         b.type = 'button'; b.dataset.nom = nom;
         b.textContent = titre(nom);
         b.addEventListener('click', function () { montrer(nom); });
         onglets.appendChild(b);
       });
-      montrer(apercus['apercu.png'] ? 'apercu.png' : Object.keys(apercus)[0]);
+      montrer(apercus['apercu.png'] ? 'apercu.png'
+              : Object.keys(apercus).filter(function (n) {
+                  return n !== 'apercu_source.png'; })[0]);
 
       var m = reponse.mesures;
       var cases = [
@@ -727,7 +977,7 @@ PAGE = r"""<!doctype html>
 
       document.getElementById('telecharger').href =
         '/telecharger/' + reponse.jeton + '.zip';
-      document.getElementById('resultat').style.display = 'block';
+      document.getElementById('resultat').classList.add('montre');
       etat.textContent = 'Termine en '
         + ((Date.now() - debut) / 1000).toFixed(1) + ' s.';
     }).catch(function (raison) {
@@ -735,6 +985,7 @@ PAGE = r"""<!doctype html>
       etat.textContent = String(raison.message || raison);
     }).finally(function () {
       lancer.disabled = false;
+      chantier.classList.remove('tourne');
     });
   });
 })();

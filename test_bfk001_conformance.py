@@ -339,3 +339,57 @@ def test_oracle_verdict_is_invariant_under_rigid_motion():
             for part_id, part in parts.items()
         }
         assert len(bfk.physical_pairs(moved, tolerance)) == reference_bonds
+
+
+def test_h4_par_composantes_rend_exactement_ce_que_rendait_le_parcours_par_piece():
+    """H4 se calculait par un parcours du graphe PAR PIECE : n parcours de n
+    pieces, donc un cout quadratique la ou une seule passe suffit. Les
+    composantes connexes ne dependent pas de la piece par laquelle on
+    interroge.
+
+    Le remplacement n'a d'interet que s'il rend EXACTEMENT la meme chose,
+    ordre des violations compris — c'est ce que ce tirage verifie, sur des
+    graphes ou tout se produit : composantes multiples, pieces isolees,
+    fondations absentes, fondations partout.
+    """
+    from bfk001.validation import (InvariantViolation, _adjacency, _component,
+                                   check_h4_floating)
+
+    class Graphe:
+        def __init__(self, parts, edges):
+            self.parts, self.edges = parts, edges
+
+    def par_piece(graph, founded_part_ids):
+        adjacency = _adjacency(graph)
+        founded = set(founded_part_ids)
+        return tuple(
+            InvariantViolation("H4_FLOATING", f"piece flottante : {part_id}")
+            for part_id, _, _ in graph.parts
+            if part_id not in founded
+            and not (_component(adjacency, part_id) & founded)
+        )
+
+    alea = random.Random(SEED)
+    vus_flottants = vus_sains = 0
+    for _ in range(300):
+        n = alea.randint(1, 22)
+        parts = tuple((f"p{i}", None, None) for i in range(n))
+        # Densite tiree elle aussi : tantot un graphe eclate, tantot connexe.
+        densite = alea.choice((0.0, 0.06, 0.15, 0.4))
+        edges = tuple(
+            (f"p{i}", f"p{j}", (object(),) if alea.random() < 0.9 else ())
+            for i in range(n) for j in range(i + 1, n)
+            if alea.random() < densite
+        )
+        graphe = Graphe(parts, edges)
+        fondees = tuple(f"p{i}" for i in range(n) if alea.random() < 0.25)
+
+        attendu = par_piece(graphe, fondees)
+        obtenu = check_h4_floating(graphe, fondees)
+        assert [v.detail for v in attendu] == [v.detail for v in obtenu]
+        assert [v.invariant for v in attendu] == [v.invariant for v in obtenu]
+        vus_flottants += bool(obtenu)
+        vus_sains += not obtenu
+
+    # Un tirage qui ne produirait jamais de violation ne prouverait rien.
+    assert vus_flottants > 20 and vus_sains > 20

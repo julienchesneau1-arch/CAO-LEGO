@@ -558,6 +558,14 @@ def run(
         mosaic.preview(mosaique, scale=12, seams=True, frame_rgb=rvb_cadre))
     fichiers["apercu.png"] = write_png(
         mosaic.preview(mosaique, scale=8, frame_rgb=rvb_cadre))
+    # La photo telle que la mosaique l'a vue : meme cadrage, meme moyenne par
+    # tenon, meme cadre. Elle se superpose au pixel pres a `apercu.png`, ce qui
+    # est la seule facon de comparer honnetement — et elle montre au passage ce
+    # que le cadrage a coupe, qui n'apparaissait nulle part ailleurs.
+    fichiers["apercu_source.png"] = write_png(
+        mosaic.source_preview(
+            imaging.resample_box(image, reglages.studs, hauteur),
+            mosaique, scale=8, frame_rgb=rvb_cadre))
 
     nomenclature = bill_of_materials(a_controler.instances,
                                      a_controler.placed_parts)

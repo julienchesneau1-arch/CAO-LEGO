@@ -1959,6 +1959,42 @@ def preview(
     return oeuvre
 
 
+def source_preview(reduite: Image, mosaic: Mosaic, scale: int = 8,
+                   frame_rgb=None) -> Image:
+    """La PHOTO telle que la mosaique l'a vue : un pixel par tenon, agrandi.
+
+    Sert a comparer. Un « avant / apres » ne veut rien dire si les deux images
+    ne montrent pas la meme chose : la photo d'origine est rognee au rapport de
+    l'oeuvre, moyennee par tenon, et l'apercu porte un cadre qu'elle n'a pas.
+    Superposer la photo brute produirait un glissement, et un glissement fait
+    mentir la comparaison — on croirait juger la quantification alors qu'on
+    regarde un decalage.
+
+    Cette image-ci sort du MEME cadrage et du MEME reechantillonnage que la
+    grille quantifiee, et recoit le meme cadre. Elle se superpose au pixel pres.
+
+    Elle montre aussi ce que le cadrage a coupe, qui n'etait visible nulle part.
+    """
+    if scale <= 0:
+        raise ValueError("echelle invalide")
+    if reduite.width != mosaic.studs_x or reduite.height != mosaic.studs_y:
+        raise ValueError(
+            f"la source reduite fait {reduite.width}x{reduite.height}, "
+            f"la mosaique {mosaic.studs_x}x{mosaic.studs_y}"
+        )
+    data = bytearray()
+    for y in range(mosaic.studs_y):
+        ligne = bytearray()
+        for x in range(mosaic.studs_x):
+            debut = (y * reduite.width + x) * 3
+            ligne.extend(reduite.data[debut:debut + 3] * scale)
+        data.extend(ligne * scale)
+    oeuvre = Image(mosaic.studs_x * scale, mosaic.studs_y * scale, bytes(data))
+    if mosaic.frame:
+        oeuvre = _entourer(oeuvre, mosaic, scale, frame_rgb)
+    return oeuvre
+
+
 def _rvb_du_cadre(code: int, fourni):
     """Couleur du cadre pour l'apercu, sans imposer une palette a `preview`.
 

@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **416 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **428 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -41,7 +41,7 @@ mieux *cette* photo — et atteint désormais ce qui en demandait quatre-vingts
 égale. Le sélecteur était bridé par un plafond de 24 grappes dans son propre
 résumé de l'image ; voir § 5.30 du registre.
 
-Produit `apercu.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` (plus `commande_bricklink.xml` avec `--bricklink`, `commande_lego.csv` avec `--elements`) —
+Produit `apercu.png`, `apercu_source.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` (plus `commande_bricklink.xml` avec `--bricklink`, `commande_lego.csv` avec `--elements`) —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
 qui ne tiendrait pas ensemble n'est pas livrée.
 
@@ -61,6 +61,23 @@ Puis <http://127.0.0.1:8000> : déposez une photo, réglez la taille et le relie
 récupérez le dossier complet en ZIP. Aucune dépendance — `http.server` et
 `zipfile` sont dans la bibliothèque standard, et la page est un seul fichier
 sans une seule ressource externe.
+
+**Trois gestes, pas huit réglages.** ① la photo ② le format ③ fabriquer. Le
+format se choisit sur des pastilles (32 / 48 / 64 / 96 tenons, avec les cm), la
+couleur du cadre sur des pastilles de couleur, et tout le reste — tramage,
+sections, nettoyage, seuils — se replie sous « Réglages fins », **après** le
+bouton : l'action principale ne se cherche pas derrière deux sections repliées.
+
+**Le comparateur.** Sur l'aperçu, une poignée qu'on tire révèle la photo sous
+l'œuvre. Ce n'est pas la photo brute : c'est
+`apercu_source.png`, la photo **telle que la mosaïque l'a vue** — même rognage,
+même moyenne par tenon, même cadre. Elle se superpose au pixel près, sans quoi
+on croirait juger la quantification en regardant un décalage. Elle montre au
+passage ce que le cadrage a coupé, qui n'était visible nulle part.
+
+Aucun fichier n'est chargé de l'extérieur : la frise de tenons, les boutons qui
+s'enfoncent comme une brique et les tenons qui se posent pendant la fabrication
+sont du CSS. La page reste utilisable hors ligne.
 
 Il n'y a **pas deux chaînes**. L'interface appelle `bfk001/pipeline.py`,
 exactement comme `demo_lego_art.py` : deux façades, un seul calcul, aucune

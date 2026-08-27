@@ -2251,6 +2251,155 @@ un CSV à deux colonnes avec une liste de courses. Un test le fait.
 
 ---
 
+### 5.58 Un parcours de graphe quadratique, et un profileur qui m'a menti
+
+« Vois-tu des choses à optimiser ? » — j'ai mesuré plutôt que de supposer, et
+la mesure a donné une réponse que je n'attendais pas, plus une leçon sur
+l'outil de mesure lui-même.
+
+#### Où passait vraiment le temps
+
+Sur une mosaïque de 96 tenons (3 450 pièces), **les deux tiers du temps
+étaient dans la validation**, pas dans le solveur. C'est normal et voulu — le
+noyau refuse de livrer ce qu'il n'a pas vérifié. Mais un tiers de cette
+validation partait dans une bêtise.
+
+`check_h4_floating` demandait, **pour chaque pièce non fondée** : « la
+composante connexe de cette pièce contient-elle une fondation ? » Et chaque
+question refaisait le parcours entier du graphe. Or H5 exige que tout se
+tienne : la composante est donc unique et contient tout. On refaisait *n*
+parcours de *n* pièces.
+
+Les composantes ne dépendent pas de la pièce par laquelle on interroge. Une
+seule passe suffit.
+
+| Format | Pièces | H4 avant | H4 après | |
+|---|---|---|---|---|
+| 48 tenons | 951 | 0,13 s | 0,001 s | **225×** |
+| 96 tenons | 3 201 | 2,03 s | 0,003 s | **632×** |
+| 128 tenons | 5 328 | 9,80 s | 0,006 s | **1 532×** |
+
+Le rapport grandit avec la taille, parce que c'est un changement d'ordre de
+grandeur et non un réglage : *O(n·(n+e))* devient *O(n+e)*. Sur la chaîne
+complète, 128 tenons passe d'environ 27 s à **17 s**.
+
+Le remplacement ne vaut que s'il rend **exactement** la même chose, ordre des
+violations compris. Un tirage de 300 graphes aléatoires — composantes
+multiples, pièces isolées, fondations absentes ou partout — le vérifie, et
+refuse de passer si le tirage ne produit jamais de violation.
+
+#### Le profileur m'a menti, et voici comment
+
+Après cette correction, `cProfile` désignait un nouveau coupable :
+`_require_int`, la vérification que chaque coordonnée est un entier de ℤ.
+11,4 millions d'appels, 4,3 s sur 50 — 8,6 % du temps.
+
+J'ai écrit le chemin rapide (`type(value) is int` d'abord, le test complet
+ensuite pour les sous-classes), prouvé le verdict identique sur tous les cas
+qui peuvent passer par là, et mesuré : **40 % de gain sur la fonction, moins
+de 2 % sur la chaîne.**
+
+L'écart n'est pas une erreur de mesure, c'est la nature de l'outil.
+`cProfile` facture son propre coût **par appel** : plus une fonction est
+appelée, plus il la gonfle. Une fonction de trois lignes appelée onze millions
+de fois est exactement le pire cas. Le profileur ne m'a pas montré où était le
+temps — il m'a montré où étaient les **appels**.
+
+Ce qui l'a démasqué : `check_h4_floating`, lui, n'apparaissait pas comme un
+point chaud par temps propre — son coût était *cumulé*, dans `_component`.
+Deux lectures du même rapport, deux conclusions opposées. La bonne était celle
+qu'un chronomètre sur la fonction entière confirmait.
+
+Le chemin rapide est gardé — deux lignes, verdict prouvé identique — mais son
+commentaire dit maintenant le chiffre vrai, pas celui du profileur.
+
+#### Ce que je n'ai pas fait
+
+`check_h2_collision` reste le premier poste. Il décompose exactement les
+solides, boîte par boîte, et c'est ce qui rend le contrôle exact plutôt
+qu'approché. Je n'y touche pas pour grappiller : le gain est incertain, le
+risque porte sur le cœur du contrat, et la chaîne est maintenant assez rapide
+pour qu'un utilisateur n'attende jamais.
+
+Je n'ai pas non plus fait ruisseler le journal en direct dans la page. Ce
+serait la bonne réponse à une longue attente — mais l'attente réelle est de
+1,5 s sur les formats courants. On n'anime pas ce qu'on ne voit pas.
+
+---
+
+### 5.59 « Ça fait très ancien » — la page refaite, et le comparateur
+
+Le reproche était juste. La page était un formulaire d'outil interne : huit
+contrôles empilés, du gris 13 px sous chacun, un aplat de cartes sans identité,
+et l'image — la seule chose que l'utilisateur veut voir — traitée comme une
+donnée parmi les chiffres.
+
+#### Ce que j'ai changé, et pourquoi chaque chose
+
+**Trois gestes numérotés** au lieu de huit réglages : ① la photo ② le format
+③ fabriquer. Tout le reste se replie — et se replie **sous** le bouton. La
+version précédente enterrait l'action principale derrière deux sections
+repliées ; on ne cherche pas le bouton « Fabriquer » après « Catalogues de
+commande ».
+
+**Des pastilles plutôt que des champs.** Le format se clique (32 / 48 / 64 /
+96, avec les centimètres), la couleur du cadre se choisit à l'œil sur des
+pastilles de couleur. Une pastille n'est pas un doublon du champ : c'est le
+champ qu'elle remplit, et un test vérifie les deux sens — cliquer écrit, taper
+une valeur libre n'enfonce aucune pastille. S'ils divergeaient, on fabriquerait
+une taille et on en lirait une autre.
+
+**Un bouton qui s'enfonce sur son épaisseur**, comme une brique qu'on presse.
+Une ombre portée de 4 px, `translateY(3px)` au clic. C'est du CSS, ça ne coûte
+rien, et ça donne à l'objet la matière qu'il décrit.
+
+**Des tenons qui se posent pendant la fabrication.** Indéterminé et assumé : la
+chaîne ne rend pas d'avancement, et une barre qui progresserait toute seule
+mentirait.
+
+Rien n'est chargé de l'extérieur. La frise de tenons est un
+`radial-gradient` répété, pas une image — la page doit rester utilisable hors
+ligne, et le test qui l'exige n'a pas bougé.
+
+#### Le comparateur, et le piège qu'il fallait éviter
+
+Le geste le plus satisfaisant pour un outil photo → mosaïque, c'est de tirer
+une poignée et de voir l'une devenir l'autre. La tentation était de superposer
+la photo d'origine. **Ç'aurait été faux.**
+
+L'œuvre est rognée au rapport de la mosaïque, moyennée par tenon, et entourée
+d'un cadre que la photo n'a pas. Superposer la photo brute produit un
+glissement — et un glissement fait **mentir** la comparaison : on croirait
+juger la quantification alors qu'on regarde un décalage.
+
+D'où `apercu_source.png` : la photo passée par le **même** cadrage, le **même**
+rééchantillonnage et le **même** cadre que la grille quantifiée. Elle se
+superpose au pixel près. Les tests le vérifient des deux côtés — mêmes
+dimensions sur trois épaisseurs de cadre, même couleur au coin du cadre, et
+dans le navigateur les deux `naturalWidth` mesurés.
+
+Un effet de bord que je n'avais pas cherché : **elle montre ce que le cadrage a
+coupé**, qui n'était visible nulle part jusqu'ici.
+
+Et là où la comparaison n'a pas de sens — la vue des joints, le relief éclairé
+— le comparateur disparaît, parce qu'il comparerait deux choses différentes.
+
+#### Deux défauts que seul le thème sombre montrait
+
+J'avais écrit `color: rgba(255,255,255,.7)` pour le sous-titre d'une pastille
+enfoncée. En thème clair, le fond enfoncé est sombre : lisible. **En thème
+sombre, ce fond devient clair**, et du blanc translucide dessus disparaît. Les
+centimètres étaient invisibles pour la moitié des utilisateurs. Une couleur ne
+se code pas en dur quand le thème inverse les rôles.
+
+Et `29×29 cm` en 23 px gras débordait sa tuile. `clamp()` plutôt qu'une taille
+fixe : le nombre doit tenir, pas le contraire.
+
+Les deux ne se voient qu'en regardant — d'où les captures en clair, en sombre
+et en 390 px de large avant de conclure.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

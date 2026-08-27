@@ -130,7 +130,7 @@ class TestPageDansUnNavigateur(unittest.TestCase):
             else:
                 self.page.fill("#" + identifiant, valeur)
         self.page.click("#lancer")
-        self.page.wait_for_selector("#resultat", state="visible", timeout=180000)
+        self.page.wait_for_selector("#resultat.montre", timeout=180000)
 
     def test_la_page_se_charge_sans_la_moindre_erreur(self):
         self.page.goto(self.base + "/", wait_until="load")
@@ -198,6 +198,92 @@ class TestPageDansUnNavigateur(unittest.TestCase):
                          "aucun resultat ne doit s'afficher apres un refus")
 
     # ------------------------------------------------------------------ #
+    # Les commandes qui ne sont pas des champs de saisie
+    # ------------------------------------------------------------------ #
+
+    def test_les_puces_de_format_ecrivent_dans_le_champ(self):
+        # Une puce n'est pas un doublon du champ : c'est le champ qu'elle
+        # remplit. Si les deux divergeaient, on fabriquerait une taille et on
+        # en lirait une autre.
+        self.page.goto(self.base + "/", wait_until="load")
+        self.page.click("#formats button:has-text('64')")
+        self.assertEqual(self.page.input_value("#studs"), "64")
+        self.assertEqual(
+            self.page.get_attribute("#formats button:has-text('64')",
+                                    "aria-pressed"), "true")
+        self.assertEqual(
+            self.page.get_attribute("#formats button:has-text('48')",
+                                    "aria-pressed"), "false")
+        # Et dans l'autre sens : taper une taille libre n'enfonce aucune puce.
+        self.page.fill("#studs", "40")
+        self.page.dispatch_event("#studs", "input")
+        enfoncees = self.page.eval_on_selector_all(
+            "#formats button", "n => n.filter(b => b.ariaPressed === 'true').length")
+        self.assertEqual(enfoncees, 0)
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    def test_les_pastilles_de_cadre_pilotent_le_champ_cache(self):
+        self.page.goto(self.base + "/", wait_until="load")
+        self.assertEqual(self.page.input_value("#cadre"), "2|0")
+        self.page.click("#teintes button[title='brun rougeatre']")
+        self.assertEqual(self.page.input_value("#cadre"), "2|70")
+        # L'epaisseur et la couleur sont deux choix independants.
+        self.page.check("#cadre_large")
+        self.assertEqual(self.page.input_value("#cadre"), "3|70")
+        # « sans » n'a pas d'epaisseur : la case ne doit pas le ressusciter.
+        self.page.click("#teintes button.sans")
+        self.assertEqual(self.page.input_value("#cadre"), "0")
+        self.page.uncheck("#cadre_large")
+        self.assertEqual(self.page.input_value("#cadre"), "0")
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    def test_le_comparateur_superpose_deux_images_de_meme_taille(self):
+        # Un « avant / apres » desaligne ferait juger un decalage plutot que la
+        # quantification. Les deux images doivent avoir les MEMES dimensions
+        # naturelles, mesurees dans le navigateur.
+        self.fabriquer(studs="16", hauteur="16")
+        tailles = self.page.eval_on_selector_all(
+            "#scene img",
+            "n => n.map(i => [i.naturalWidth, i.naturalHeight])")
+        self.assertEqual(len(tailles), 2)
+        self.assertEqual(tailles[0], tailles[1])
+        self.assertGreater(tailles[0][0], 0)
+        self.assertFalse(self.page.eval_on_selector(
+            "#scene", "n => n.classList.contains('simple')"))
+
+    def test_tirer_la_poignee_devoile_la_photo(self):
+        self.fabriquer(studs="16", hauteur="16")
+        boite = self.page.locator("#scene").bounding_box()
+        avant = self.page.eval_on_selector("#avant", "n => n.style.clipPath")
+        self.page.mouse.move(boite["x"] + boite["width"] * 0.5,
+                             boite["y"] + boite["height"] * 0.5)
+        self.page.mouse.down()
+        self.page.mouse.move(boite["x"] + boite["width"] * 0.85,
+                             boite["y"] + boite["height"] * 0.5, steps=6)
+        self.page.mouse.up()
+        apres = self.page.eval_on_selector("#avant", "n => n.style.clipPath")
+        self.assertNotEqual(avant, apres, "la poignee n'a rien deplace")
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    def test_le_comparateur_se_retire_hors_du_rendu(self):
+        # Superposer la photo a la vue des joints comparerait deux choses
+        # differentes : la ou ca n'a pas de sens, ca ne s'affiche pas.
+        self.fabriquer(studs="16", hauteur="16")
+        self.page.click("#onglets button:has-text('Joints reels')")
+        self.page.wait_for_timeout(120)
+        self.assertTrue(self.page.eval_on_selector(
+            "#scene", "n => n.classList.contains('simple')"))
+        self.assertFalse(self.page.is_visible("#poignee"))
+        self.page.click("#onglets button:has-text('Rendu')")
+        self.page.wait_for_timeout(120)
+        self.assertTrue(self.page.is_visible("#poignee"))
+
+    def test_la_source_n_est_pas_un_onglet(self):
+        # Elle n'a aucun sens seule : c'est la moitie gauche du comparateur.
+        self.fabriquer(studs="16", hauteur="16")
+        self.assertNotIn("source", self.page.inner_text("#onglets").lower())
+
+    # ------------------------------------------------------------------ #
     # Commander : le trajet complet, depuis la page
     # ------------------------------------------------------------------ #
 
@@ -236,7 +322,7 @@ class TestPageDansUnNavigateur(unittest.TestCase):
         self.page.fill("#studs", "16")
         self.page.fill("#hauteur", "16")
         self.page.click("#lancer")
-        self.page.wait_for_selector("#resultat", state="visible", timeout=180000)
+        self.page.wait_for_selector("#resultat.montre", timeout=180000)
 
         commander = self.page.inner_text("#commander")
         self.assertIn("Pick a Brick", commander)
@@ -265,7 +351,7 @@ class TestPageDansUnNavigateur(unittest.TestCase):
         self.page.fill("#studs", "16")
         self.page.fill("#hauteur", "16")
         self.page.click("#lancer")
-        self.page.wait_for_selector("#resultat", state="visible", timeout=180000)
+        self.page.wait_for_selector("#resultat.montre", timeout=180000)
         self.page.click("#commander button.action")
         self.page.wait_for_selector("#commander .boutique:last-child p:last-of-type",
                                     timeout=15000)
@@ -298,7 +384,7 @@ class TestPageDansUnNavigateur(unittest.TestCase):
         self.page.fill("#studs", "16")
         self.page.fill("#hauteur", "16")
         self.page.click("#lancer")
-        self.page.wait_for_selector("#resultat", state="visible", timeout=180000)
+        self.page.wait_for_selector("#resultat.montre", timeout=180000)
         liens = self.page.eval_on_selector_all(
             "#commander a[href^='http']",
             "n => n.map(a => [a.href, a.target, a.rel])")

@@ -59,8 +59,9 @@ class TestChaine(unittest.TestCase):
         resultat = run(photo(), PETIT)
         self.assertEqual(
             sorted(resultat.fichiers),
-            ["apercu.png", "apercu_joints.png", "liste_de_course.csv",
-             "modele.json", "modele.ldr", "notice.pdf", "notice.txt"],
+            ["apercu.png", "apercu_joints.png", "apercu_source.png",
+             "liste_de_course.csv", "modele.json", "modele.ldr",
+             "notice.pdf", "notice.txt"],
         )
         self.assertTrue(resultat.fichiers["notice.pdf"].startswith(b"%PDF-"))
         self.assertTrue(resultat.fichiers["apercu.png"].startswith(
@@ -513,6 +514,75 @@ class TestTrajetHttpCommande(unittest.TestCase):
         self.assertEqual(saisi.exception.code, 400)
         self.assertTrue(json.loads(saisi.exception.read())["erreur"])
 
+
+class TestComparateurSource(unittest.TestCase):
+    """L'apercu de la source : « avant / apres » n'a de sens que s'il s'aligne.
+
+    Superposer la photo BRUTE a l'oeuvre produirait un glissement — rognage,
+    moyenne par tenon, cadre — et un glissement fait mentir la comparaison : on
+    croirait juger la quantification en regardant un decalage.
+    """
+
+    def petite(self, cote=24, frame=0):
+        from bfk001 import mosaic
+        from bfk001.imaging import resample_box
+        from bfk001.pipeline import palette_utilisable
+
+        complete, _ = palette_utilisable()
+        palette = complete.solids_only()
+        pixels = []
+        for y in range(96):
+            for x in range(96):
+                pixels.append((x * 255 // 96, y * 255 // 96,
+                               (x + y) * 255 // 192))
+        image = bfk.Image.from_pixels(96, 96, pixels)
+        grille = mosaic.quantize(image, palette, cote, cote, dither=False)
+        mosaique = mosaic.build(grille, substrate_color=71, frame=frame)
+        reduite = resample_box(mosaic._cadrer(image, cote, cote, "crop", 0.5),
+                               cote, cote)
+        return mosaic, mosaique, reduite
+
+    def test_les_deux_apercus_ont_exactement_la_meme_taille(self):
+        for frame in (0, 2, 3):
+            mosaic, mosaique, reduite = self.petite(frame=frame)
+            rendu = mosaic.preview(mosaique, scale=8)
+            source = mosaic.source_preview(reduite, mosaique, scale=8)
+            self.assertEqual((rendu.width, rendu.height),
+                             (source.width, source.height),
+                             f"cadre de {frame} tenons")
+
+    def test_une_source_qui_ne_correspond_pas_est_refusee(self):
+        # Une source de la mauvaise taille produirait un glissement muet.
+        mosaic, mosaique, reduite = self.petite()
+        fausse = bfk.Image.from_pixels(8, 8, [(0, 0, 0)] * 64)
+        with self.assertRaises(ValueError) as capture:
+            mosaic.source_preview(fausse, mosaique, scale=8)
+        self.assertIn("8x8", str(capture.exception))
+
+    def test_la_source_n_est_pas_le_rendu(self):
+        # Si les deux images etaient identiques, le comparateur ne montrerait
+        # rien — et la quantification serait parfaite, ce qu'elle n'est pas.
+        mosaic, mosaique, reduite = self.petite()
+        self.assertNotEqual(mosaic.preview(mosaique, scale=8).data,
+                            mosaic.source_preview(reduite, mosaique, scale=8).data)
+
+    def test_le_cadre_de_la_source_est_celui_de_l_oeuvre(self):
+        # Le coin superieur gauche est du cadre dans les deux images : c'est ce
+        # qui garantit que la poignee du comparateur ne revele pas un bord
+        # different d'un cote et de l'autre.
+        mosaic, mosaique, reduite = self.petite(frame=2)
+        rendu = mosaic.preview(mosaique, scale=8, frame_rgb=(20, 20, 20))
+        source = mosaic.source_preview(reduite, mosaique, scale=8,
+                                       frame_rgb=(20, 20, 20))
+        self.assertEqual(rendu.data[:3], source.data[:3])
+
+    def test_la_chaine_livre_la_source_a_cote_de_l_apercu(self):
+        resultat = run(photo(), Reglages(studs=16, hauteur=16, cadre=0))
+        self.assertIn("apercu_source.png", resultat.fichiers)
+        rendu = bfk.read_png(resultat.fichiers["apercu.png"])
+        source = bfk.read_png(resultat.fichiers["apercu_source.png"])
+        self.assertEqual((rendu.width, rendu.height),
+                         (source.width, source.height))
 
 class TestDecoupeEnSections(unittest.TestCase):
     """La decoupe traverse-t-elle la chaine jusqu'aux fichiers livres ?"""

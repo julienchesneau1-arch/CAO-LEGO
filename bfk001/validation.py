@@ -8,7 +8,7 @@ mecanique, collide pour la geometrie, check_foundation pour la fondation).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from .collision import (
     CollisionGeometry,
@@ -201,6 +201,36 @@ def _component(adjacency: Mapping[str, Set[str]], start: str) -> Set[str]:
     return seen
 
 
+def _composantes(adjacency: Mapping[str, Set[str]],
+                 part_ids: Iterable[str]) -> Dict[str, int]:
+    """Numero de composante connexe de chaque piece, en UN parcours.
+
+    « La composante de A contient-elle une fondation ? » se demandait une fois
+    par piece, et chaque question refaisait le parcours entier. Sur une mosaique
+    ou tout se tient — c'est-a-dire toujours, puisque H5 l'exige — cela faisait
+    n parcours de n pieces. Les composantes ne dependent pas de la piece par
+    laquelle on interroge : elles se calculent une fois.
+
+    Le resultat est exactement le meme, y compris l'ORDRE des violations, qui
+    suit toujours celui de `graph.parts`.
+    """
+    numero: Dict[str, int] = {}
+    courant = 0
+    for depart in part_ids:
+        if depart in numero:
+            continue
+        numero[depart] = courant
+        pile = [depart]
+        while pile:
+            piece = pile.pop()
+            for voisin in adjacency.get(piece, ()):
+                if voisin not in numero:
+                    numero[voisin] = courant
+                    pile.append(voisin)
+        courant += 1
+    return numero
+
+
 def check_h4_floating(
     graph: ConstructionGraph,
     founded_part_ids: Tuple[str, ...],
@@ -208,11 +238,15 @@ def check_h4_floating(
     """H4_FLOATING : toute piece non fondee a une chaine de bonds vers une fondation."""
     adjacency = _adjacency(graph)
     founded = set(founded_part_ids)
+    identifiants = [part_id for part_id, _, _ in graph.parts]
+    composante = _composantes(adjacency, identifiants)
+    portantes = {composante[part_id] for part_id in founded
+                 if part_id in composante}
     violations: List[InvariantViolation] = []
-    for part_id, _, _ in graph.parts:
+    for part_id in identifiants:
         if part_id in founded:
             continue
-        if not (_component(adjacency, part_id) & founded):
+        if composante.get(part_id) not in portantes:
             violations.append(
                 InvariantViolation("H4_FLOATING", f"piece flottante : {part_id}")
             )
