@@ -43,6 +43,9 @@ __all__ = [
     "denoise",
     "isolated_tiles",
     "DENOISE_TOLERANCE",
+    "palette_floor",
+    "grille_de_mesure",
+    "detail_gap",
     "DITHER_AUTO_MIN_GAIN",
     "PaletteCost",
     "palette_cost_curve",
@@ -359,6 +362,92 @@ pieces en moins et 40 a 75 % de tuiles isolees en moins.
 
 A zero, rien n'est efface.
 """
+
+
+def palette_floor(reduced: Image, palette: Palette) -> float:
+    """L'ecart moyen INCOMPRESSIBLE : chaque tenon a la meilleure couleur qui existe.
+
+    C'est le plancher. Aucun algorithme ne descend en dessous a resolution et
+    palette donnees — il faudrait des couleurs qui n'existent pas.
+
+    Mesure : sur une photo reelle a 48 tenons avec les 80 couleurs solides,
+    plancher 6,68 et resultat 6,68. La quantification n'est pas « bonne », elle
+    est OPTIMALE, et la marge de progres a resolution egale est exactement nulle.
+    Le savoir change la question : on cesse de chercher un meilleur choix de
+    couleur pour se demander si l'on veut plus de tenons.
+    """
+    total = 0.0
+    for y in range(reduced.height):
+        for x in range(reduced.width):
+            voulu = reduced.pixel(x, y)
+            total += delta_e(voulu, palette.nearest(voulu).rgb)
+    return total / (reduced.width * reduced.height)
+
+
+ECHANTILLONS_DETAIL = 3
+"""Points de mesure par tenon de la plus GRANDE mosaique comparee.
+
+Deux pieges, tombes l'un apres l'autre en construisant cette mesure.
+
+Une grille trop grossiere d'abord : la premiere version employait 120 points de
+large pour comparer jusqu'a 128 tenons. Elle ne mesurait plus le detail d'une
+mosaique plus fine qu'elle, elle le ratait — et faisait passer 128 tenons pour
+PIRE que 96. L'artefact venait de la mesure, pas de l'oeuvre.
+
+Une grille variable ensuite : la deuxieme la calculait depuis la taille de
+chaque mosaique. Chaque taille etait alors mesuree sur sa propre echelle, ce
+qui ne compare rien. La grille se calcule donc une fois, depuis la plus grande
+des tailles comparees, et sert a toutes.
+"""
+
+
+def grille_de_mesure(studs_x: int, studs_y: int,
+                     finesse: int = ECHANTILLONS_DETAIL) -> Tuple[int, int]:
+    """Grille de comparaison pour la PLUS GRANDE des mosaiques a comparer."""
+    return (studs_x * finesse, studs_y * finesse)
+
+
+def detail_gap(grid, image: Image, studs_x: int, studs_y: int,
+               mesure: Tuple[int, int], pas: int = 2) -> float:
+    """Ecart entre l'oeuvre et la photo, mesure a finesse CONSTANTE.
+
+    `fidelity(block=1)` compare chaque tuile a la zone qu'elle remplace : la
+    zone retrecit avec le nombre de tenons, si bien que la mesure reste
+    quasiment plate quand on triple la resolution (6,79 -> 6,66 de 32 a 96
+    tenons). Elle mesure la FIDELITE DE COULEUR, bornee par la palette, et pas
+    du tout ce qu'on gagne en detail.
+
+    Celle-ci echantillonne l'oeuvre et la photo aux MEMES points physiques,
+    quelle que soit la taille : deux mosaiques de tailles differentes deviennent
+    comparables. Sur la meme photo : 10,00 a 32 tenons, 7,35 a 160.
+
+    `mesure` est la grille de comparaison, et elle est FOURNIE plutot que
+    deduite de la taille : une grille qui change avec la mosaique mesurerait
+    chaque taille sur sa propre echelle, donc ne comparerait rien. Elle doit
+    etre au moins aussi fine que la plus fine des mosaiques comparees —
+    `grille_de_mesure` la calcule.
+
+    `pas` saute des points. La moyenne sur un point sur quatre ne bouge que de
+    quelques centiemes et coute quatre fois moins ; c'est un echantillonnage
+    assume, pas une approximation cachee.
+    """
+    largeur, hauteur = mesure
+    if largeur < studs_x or hauteur < studs_y:
+        raise ValueError(
+            f"grille de mesure {largeur}x{hauteur} plus grossiere que la "
+            f"mosaique {studs_x}x{studs_y} : elle raterait son detail au lieu "
+            "de le mesurer"
+        )
+    source = resample_box(image, largeur, hauteur)
+    rendu = _render_rgb(grid)
+    total, nombre = 0.0, 0
+    for gy in range(0, hauteur, pas):
+        ligne = rendu[min(studs_y - 1, gy * studs_y // hauteur)]
+        for gx in range(0, largeur, pas):
+            total += delta_e(source.pixel(gx, gy),
+                             ligne[min(studs_x - 1, gx * studs_x // largeur)])
+            nombre += 1
+    return total / nombre
 
 
 def isolated_tiles(grid):

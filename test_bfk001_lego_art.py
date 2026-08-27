@@ -227,3 +227,117 @@ def test_le_tramage_auto_reste_choisi_la_ou_il_sert_vraiment():
     trame = _quantifier(reduite, palette, sx, sy, "adaptive")
     assert quantize(ciel, palette, sx, sy, "auto", "crop", 0.5,
                     denoise_tolerance=4.0) == trame
+
+
+def test_la_quantification_atteint_le_plancher_de_la_palette():
+    """Aucun choix de couleur ne fait mieux, et on peut le prouver.
+
+    Le plancher est l'ecart si chaque tenon prenait la MEILLEURE couleur
+    existante. Si le resultat l'atteint, la quantification est optimale — pas
+    « bonne », optimale — et chercher un meilleur algorithme de choix est perdu
+    d'avance. Mesure sur une photo reelle : plancher 6,68, obtenu 6,68.
+    """
+    from bfk001.mosaic import _cadrer, _quantifier, fidelity, palette_floor
+    from bfk001.imaging import resample_box
+
+    palette = bfk.PROVISIONAL_PALETTE.solids_only()
+    cote = 200
+    pixels = [(int(20 + 200 * x / cote), int(60 + 150 * y / cote),
+               int((x * y) % 233))
+              for y in range(cote) for x in range(cote)]
+    image = bfk.Image.from_pixels(cote, cote, pixels)
+
+    sx = sy = 32
+    cadree = _cadrer(image, sx, sy, "crop", 0.5)
+    reduite = resample_box(cadree, sx, sy)
+    grille = _quantifier(reduite, palette, sx, sy, False)
+
+    plancher = palette_floor(reduite, palette)
+    obtenu = fidelity(grille, cadree, 1)[0]
+    # Sans tramage, chaque tenon prend le plus proche : le resultat EST le
+    # plancher. Un ecart signalerait que `nearest` n'est pas optimal.
+    assert abs(obtenu - plancher) < 0.05, (obtenu, plancher)
+    # Et le plancher est strictement positif : une palette finie ne peut pas
+    # rendre une photo continue.
+    assert plancher > 0.5
+
+
+def test_la_mesure_de_detail_refuse_une_grille_trop_grossiere():
+    """Une grille plus grossiere que la mosaique rate son detail au lieu de le
+    mesurer — et faisait passer 128 tenons pour pire que 96."""
+    from bfk001.mosaic import _cadrer, _quantifier, detail_gap, grille_de_mesure
+    from bfk001.imaging import resample_box
+
+    palette = bfk.PROVISIONAL_PALETTE.solids_only()
+    image = bfk.Image.from_pixels(128, 128, [
+        (x * 2, y * 2, 128) for y in range(128) for x in range(128)])
+    cadree = _cadrer(image, 48, 48, "crop", 0.5)
+    grille = _quantifier(resample_box(cadree, 48, 48), palette, 48, 48, False)
+
+    with pytest.raises(ValueError, match="plus grossiere"):
+        detail_gap(grille, cadree, 48, 48, (16, 16))
+    assert detail_gap(grille, cadree, 48, 48, grille_de_mesure(48, 48)) > 0
+
+
+def test_le_detail_s_ameliore_avec_la_taille_la_ou_l_ecart_par_tuile_stagne():
+    """Les deux mesures ne disent pas la meme chose, et c'est le sujet.
+
+    `fidelity(block=1)` compare chaque tuile a la zone qu'elle remplace : la
+    zone retrecit avec le nombre de tenons, donc la mesure reste plate. Elle est
+    bornee par la palette. `detail_gap` compare aux MEMES points physiques,
+    quelle que soit la taille — c'est elle qui voit ce qu'on gagne.
+
+    Sur une photo reelle : par tuile 6,79 -> 6,66 de 32 a 96 tenons (rien),
+    detail 10,0 -> 7,9 (beaucoup).
+    """
+    from bfk001.mosaic import (_cadrer, _quantifier, detail_gap, fidelity,
+                               grille_de_mesure)
+    from bfk001.imaging import resample_box
+
+    palette = bfk.PROVISIONAL_PALETTE.solids_only()
+    # La structure doit vivre a une echelle que 24 tenons ratent et que 96
+    # resout : dans une image de 240 pixels, cela fait des motifs d'une
+    # douzaine de pixels (10 px par tenon a 24, 2,5 px a 96). Un damier plus
+    # fin que TOUTES les resolutions comparees serait moyenne pareil par
+    # toutes, et ne prouverait rien — c'est l'erreur du premier essai.
+    n = 240
+    pixels = []
+    for y in range(n):
+        for x in range(n):
+            clair = ((x // 12) + (y // 12)) % 2
+            pixels.append((230, 225, 210) if clair else (35, 45, 70))
+    image = bfk.Image.from_pixels(n, n, pixels)
+
+    tailles = (24, 48, 96)
+    mesure = grille_de_mesure(max(tailles), max(tailles))
+    par_tuile, details = [], []
+    for cote in tailles:
+        cadree = _cadrer(image, cote, cote, "crop", 0.5)
+        grille = _quantifier(resample_box(cadree, cote, cote), palette,
+                             cote, cote, False)
+        par_tuile.append(fidelity(grille, cadree, 1)[0])
+        details.append(detail_gap(grille, cadree, cote, cote, mesure))
+
+    # Le detail s'ameliore franchement, et de facon monotone.
+    assert details == sorted(details, reverse=True), details
+    assert details[0] - details[-1] > 1.0, details
+    # L'ecart par tuile, lui, bouge a peine : il ne repond pas a la question.
+    assert abs(par_tuile[0] - par_tuile[-1]) < details[0] - details[-1]
+
+
+def test_le_conseil_de_format_met_les_formats_en_balance():
+    from bfk001.pipeline import conseil_de_format
+
+    palette = bfk.PROVISIONAL_PALETTE.solids_only()
+    n = 160
+    image = bfk.Image.from_pixels(n, n, [
+        (int(30 + 200 * x / n), int(70 + 140 * y / n), (x * y) % 251)
+        for y in range(n) for x in range(n)])
+
+    conseils = conseil_de_format(image, 24, 24, palette, multiples=(1.0, 2.0))
+    assert [c["studs_x"] for c in conseils] == [24, 48]
+    # Plus grand : plus de pieces, et plus de detail.
+    assert conseils[1]["pieces"] > conseils[0]["pieces"]
+    assert conseils[1]["detail"] < conseils[0]["detail"]
+    # Les centimetres suivent le pas de 8 mm.
+    assert conseils[0]["largeur_cm"] == round(24 * 0.8)

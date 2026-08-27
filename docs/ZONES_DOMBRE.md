@@ -2665,6 +2665,87 @@ selon ce que la palette permet — c'est exactement ce qu'on lui demande.
 
 ---
 
+### 5.63 « Peux-tu être encore plus précis ? » — oui, et la mesure dit exactement où
+
+Question à réponse mesurable. Deux nombres, et le premier réfute la moitié de
+la question.
+
+#### Le choix des couleurs est déjà optimal, et c'est démontrable
+
+Le **plancher de la palette** est l'écart qu'on aurait si chaque tenon prenait
+la meilleure couleur qui existe. C'est l'erreur incompressible à résolution et
+palette données.
+
+Sur une photo réelle, 48 tenons, 80 couleurs solides : plancher **6,68**,
+obtenu **6,68**. Marge de progrès : **+0,00**.
+
+Sans tramage, chaque tenon prend le plus proche — donc le résultat *est* le
+plancher par construction, et l'égalité vérifie surtout que `nearest` ne se
+trompe jamais. Mais la conséquence compte : chercher un meilleur algorithme de
+choix de couleur est perdu d'avance. La chaîne le dit maintenant dans son
+journal, pour deux centièmes de seconde.
+
+#### L'écart par tuile ne répond pas à la question posée
+
+| tenons | écart par tuile | détail (grille commune) |
+|---|---|---|
+| 32 | 6,79 | 9,97 |
+| 48 | 6,76 | 9,07 |
+| 64 | 6,72 | 8,56 |
+| 96 | 6,66 | 7,85 |
+| 128 | — | 7,50 |
+
+Tripler la résolution gagne **0,13** sur l'écart par tuile. Pourquoi ? Parce
+que cette mesure compare chaque tuile à la zone qu'elle remplace, et que la
+zone rétrécit avec le nombre de tenons. Elle mesure la **fidélité de couleur**,
+bornée par la palette — pas du tout ce qu'on gagne en **détail**.
+
+D'où `detail_gap`, qui compare aux mêmes points physiques quelle que soit la
+taille : 10,0 à 32 tenons, 7,5 à 128. Là, le gain est réel.
+
+#### Deux pièges, tombés l'un après l'autre
+
+**Une grille trop grossière.** Ma première mesure employait 120 points de large
+pour comparer jusqu'à 128 tenons. Elle ne mesurait plus le détail d'une
+mosaïque plus fine qu'elle : elle le ratait. Résultat : 128 tenons ressortaient
+**pires** que 96. J'ai failli conclure à un optimum autour de 96 — l'artefact
+venait de ma mesure, pas de l'œuvre. Avec une grille trois fois plus fine que
+la plus fine des mosaïques, la courbe est monotone.
+
+**Une grille variable.** Ma deuxième version la calculait depuis la taille de
+chaque mosaïque. Chaque format était alors mesuré sur sa propre échelle, ce qui
+ne compare rien. La grille se calcule une fois, depuis la plus grande des
+tailles, et sert à toutes. La fonction l'exige en paramètre et refuse une
+grille plus grossière que la mosaïque, plutôt que de la déduire silencieusement.
+
+Deux fois le même défaut, sous deux formes : **l'instrument de mesure faisait
+partie de ce qui était mesuré.**
+
+#### Ce que ça donne comme conseil
+
+| format | pièces | détail | gain | pièces par 0,1 de gain |
+|---|---|---|---|---|
+| 32×48 | 1 060 | 9,89 | | |
+| 48×71 | 2 282 | 8,93 | +0,95 | 128 |
+| 72×106 | 4 606 | 8,32 | +0,61 | 380 |
+| 96×142 | 7 871 | 7,75 | +0,58 | 567 |
+
+Le coût d'un pas de finesse **triple** entre 48 et 96 tenons. C'est
+l'arbitrage le plus conséquent de toute la chaîne — on engage des milliers de
+pièces — et rien n'aidait à le prendre.
+
+Il ne peut pas être tranché une fois pour toutes : un portrait lisse et une
+façade ciselée n'ont pas le même point de rupture. Il se calcule **par photo**,
+d'où `--conseil-format`. Dix secondes, et à la demande : c'est une question
+qu'on pose une fois avant d'acheter, pas à chaque fabrication.
+
+#### La réponse courte
+
+**En couleur, non** — on est au plancher de ce que 80 couleurs permettent.
+**En détail, oui**, et chaque pas coûte trois fois le précédent.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

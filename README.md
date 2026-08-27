@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **448 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **452 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -82,6 +82,45 @@ Trois sources sont essayées dans l'ordre (les deux adresses officielles de
 LDraw.org, puis le miroir que LPub3D distribue), et le programme dit laquelle
 il tente. Une fois installée dans `~/.brickforge/`, elle est trouvée **sans
 aucun drapeau** — par la commande comme par l'atelier.
+
+---
+
+## Jusqu'où peut-on aller ? La mesure répond
+
+Deux nombres, et ils ne disent pas la même chose.
+
+**L'écart par tuile est déjà au plancher.** Le plancher, c'est l'écart qu'on
+aurait si chaque tenon prenait la *meilleure couleur qui existe*. Sur une photo
+réelle à 48 tenons : plancher 6,68, obtenu **6,68**. La quantification n'est
+pas « bonne », elle est **optimale** — aucun choix de couleur ne fera mieux, et
+la chaîne le dit maintenant dans son journal. Ce chiffre est borné par la
+palette, pas par la taille : tripler la résolution ne le bouge que de 0,13.
+
+**Le détail, lui, s'améliore vraiment.** Mesuré aux mêmes points physiques
+quelle que soit la taille — sans quoi on compare deux échelles différentes :
+
+```bash
+python3 demo_lego_art.py photo.jpg --studs 48 --conseil-format
+```
+
+| format | pièces | détail | gain | pièces par 0,1 de gain |
+|---|---|---|---|---|
+| 32×48 | 1 060 | 9,89 | | |
+| **48×71** | 2 282 | 8,93 | +0,95 | **128** |
+| 72×106 | 4 606 | 8,32 | +0,61 | 380 |
+| 96×142 | 7 871 | 7,75 | +0,58 | 567 |
+
+Le coût de chaque pas de finesse **triple** entre 48 et 96 tenons. Le calcul se
+fait **par photo** : un portrait lisse et une façade ciselée n'ont pas le même
+point de rupture, et une table figée dans une documentation serait fausse pour
+l'un des deux.
+
+Deux pièges sont tombés en construisant cette mesure, et ils sont dans le
+registre (§ 5.63) : une grille de mesure plus grossière que la mosaïque *rate*
+son détail au lieu de le mesurer — elle faisait passer 128 tenons pour pire que
+96 — et une grille qui *change* avec la taille mesure chaque format sur sa
+propre échelle, donc ne compare rien. La fonction refuse désormais la première
+et exige qu'on lui fournisse la seconde.
 
 ---
 

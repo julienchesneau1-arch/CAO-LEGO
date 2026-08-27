@@ -313,6 +313,57 @@ def carte_de_relief(image, origine, cadrage, brut, reglages, hauteur,
     ), "CONVENTION du bas-relief, clair = haut — aucune profondeur mesuree"
 
 
+FORMATS_CONSEILLES = (0.67, 1.0, 1.5, 2.0)
+"""Multiples de la taille demandee qu'on met en balance.
+
+Un en dessous, celle qu'on a demandee, et deux au-dessus : assez pour voir ou
+la courbe se casse, sans facturer six quantifications a qui pose la question.
+"""
+
+
+def conseil_de_format(image, studs_x: int, studs_y: int, palette,
+                      tramage=False, cadrage=0.5,
+                      multiples=FORMATS_CONSEILLES):
+    """Ce que chaque format gagne en detail, et ce qu'il coute en pieces.
+
+    L'arbitrage le plus consequent de toute la chaine — on engage des milliers
+    de pieces — et rien n'aidait a le prendre. Il ne peut pas etre tranche une
+    fois pour toutes dans la documentation : un portrait lisse et une facade
+    ciselee n'ont pas le meme point de rupture. Il se calcule PAR PHOTO.
+
+    L'ecart par tuile ne repond pas a la question : il est borne par la palette
+    et reste quasiment plat quand on triple la resolution (6,79 -> 6,66 de 32 a
+    96 tenons). C'est `detail_gap`, mesure sur une grille commune a tous les
+    formats, qui voit ce qu'on gagne vraiment (10,0 -> 7,4 sur la meme plage).
+
+    Rend une liste de dicts, du plus petit au plus grand.
+    """
+    tailles = []
+    for facteur in sorted(multiples):
+        cote = max(2, round(studs_x * facteur))
+        hauteur = max(2, round(studs_y * facteur))
+        if (cote, hauteur) not in tailles:
+            tailles.append((cote, hauteur))
+    # Une seule grille de mesure, celle de la plus grande : mesurer chaque
+    # format sur sa propre echelle ne comparerait rien.
+    mesure = mosaic.grille_de_mesure(*tailles[-1])
+
+    conseils = []
+    for cote, hauteur in tailles:
+        cadree = mosaic._cadrer(image, cote, hauteur, "crop", cadrage)
+        grille = mosaic.quantize(cadree, palette, cote, hauteur, tramage,
+                                 "stretch")
+        conseils.append({
+            "studs_x": cote,
+            "studs_y": hauteur,
+            "largeur_cm": round(cote * 0.8),
+            "hauteur_cm": round(hauteur * 0.8),
+            "pieces": mosaic.build(grille, frame=0).part_count,
+            "detail": mosaic.detail_gap(grille, cadree, cote, hauteur, mesure),
+        })
+    return conseils
+
+
 def _nom_couleur(palette: Palette, code: int) -> str:
     for couleur in palette:
         if couleur.code == code:
@@ -822,8 +873,23 @@ def run(
 
     par_tuile = mosaic.fidelity(mosaique.grid, image, 1)
     tonal = mosaic.fidelity(mosaique.grid, image, 4)
+    # Le plancher : l'ecart si chaque tenon prenait la MEILLEURE couleur qui
+    # existe. Il coute deux centiemes de seconde et il recadre tout le reste —
+    # quand le resultat l'atteint, chercher un meilleur choix de couleur est
+    # perdu d'avance, et la seule question qui reste est le nombre de tenons.
+    plancher = mosaic.palette_floor(
+        imaging.resample_box(image, reglages.studs, hauteur), palette)
     verdict = ("excellent" if par_tuile[0] < 6
                else "correct" if par_tuile[0] < 12 else "palette insuffisante")
+    marge = par_tuile[0] - plancher
+    journal.append((
+        "info",
+        f"  palette : plancher a {plancher:.1f} delta E — "
+        + ("la quantification l'atteint, aucun choix de couleur ne fera mieux. "
+           "Plus de finesse ne s'obtient qu'en augmentant le nombre de tenons"
+           if marge < 0.25 else
+           f"la quantification est a {marge:.1f} au-dessus"),
+    ))
     journal.append((
         "info",
         f"fidelite: {par_tuile[0]:.1f} delta E par tuile ({verdict})"
@@ -849,6 +915,7 @@ def run(
             "etapes": len(plan.steps),
             "pages": pages,
             "delta_e": par_tuile[0],
+            "plancher": plancher,
             "verdict": verdict,
             "tonal_moyen": tonal[0],
             "tonal_pire": tonal[1],

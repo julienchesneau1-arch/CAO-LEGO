@@ -26,7 +26,8 @@ import pathlib
 import sys
 
 import bfk001_kernel as bfk
-from bfk001.pipeline import ModeleRefuse, Reglages, palette_utilisable, run
+from bfk001.pipeline import (ModeleRefuse, Reglages, conseil_de_format,
+                             lire_image, palette_utilisable, run)
 
 
 def _installer() -> bool:
@@ -53,6 +54,13 @@ def main() -> int:
     analyseur.add_argument("--studs", type=int, default=48, help="cote en tenons")
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
+    analyseur.add_argument(
+        "--conseil-format", action="store_true",
+        help="met quatre formats en balance avant de fabriquer : ce que chacun "
+             "gagne en detail et ce qu'il coute en pieces. L'ecart par tuile ne "
+             "repond pas a la question — il est borne par la palette et reste "
+             "plat quand on triple la resolution. Compte une dizaine de "
+             "secondes.")
     analyseur.add_argument(
         "--installer-palette", action="store_true",
         help="telecharge la palette officielle LDraw (159 couleurs, 80 "
@@ -213,6 +221,30 @@ def main() -> int:
                  if elements.lignes_ecartees else "")
               + (f", {elements.lignes_ignorees} ligne(s) illisible(s)"
                  if elements.lignes_ignorees else ""))
+
+    if options.conseil_format:
+        image = bfk.read_png(options.image.read_bytes()) \
+            if options.image.suffix.lower() == ".png" \
+            else lire_image(options.image.read_bytes())
+        hauteur = options.hauteur or max(
+            1, round(options.studs * image.height / image.width))
+        print(f"  format        pieces   detail   gain   pieces par 0,1 de gain")
+        precedent = None
+        for etape in conseil_de_format(image, options.studs, hauteur, palette):
+            if precedent is None:
+                gain, cout = "", ""
+            else:
+                ecart = precedent["detail"] - etape["detail"]
+                gain = f"{ecart:+5.2f}"
+                cout = (f"{(etape['pieces'] - precedent['pieces']) / (ecart * 10):8.0f}"
+                        if ecart > 0.001 else "       -")
+            marque = " <-" if etape["studs_x"] == options.studs else "   "
+            print(f"  {etape['studs_x']:3d}x{etape['studs_y']:<3d} "
+                  f"{etape['largeur_cm']:3d}x{etape['hauteur_cm']:<3d}cm "
+                  f"{etape['pieces']:6d}   {etape['detail']:5.2f}  {gain}  {cout}{marque}")
+            precedent = etape
+        print("  (detail : ecart a la photo mesure a finesse constante ; "
+              "plus bas = plus fidele)")
 
     try:
         resultat = run(
