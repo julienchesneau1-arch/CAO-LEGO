@@ -29,7 +29,7 @@ import threading
 import zipfile
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Dict, Optional, Tuple
+from typing import Dict, Mapping, Optional, Tuple
 
 from .palette import Palette
 from .pipeline import ModeleRefuse, Reglages, palette_utilisable, run
@@ -441,7 +441,9 @@ class Atelier:
 
     def __init__(self, palette: Optional[Palette] = None,
                  palette_complete: Optional[Palette] = None,
-                 note_palette: Optional[Tuple[str, str]] = None):
+                 note_palette: Optional[Tuple[str, str]] = None,
+                 table_bricklink: Optional[Mapping[int, int]] = None,
+                 table_elements=None):
         if palette is None:
             complete, note_palette = palette_utilisable()
             palette_complete = complete
@@ -450,6 +452,12 @@ class Atelier:
         self.palette = palette
         self.palette_complete = palette_complete or palette
         self.note_palette = note_palette
+        # Les catalogues de commande sont une propriete de l'INSTALLATION, pas
+        # de l'oeuvre : on les donne une fois au lanceur et chaque fabrication
+        # en profite. Les demander a l'utilisateur a chaque photo alourdirait la
+        # page sans rien apporter — c'est toujours le meme fichier.
+        self.table_bricklink = table_bricklink
+        self.table_elements = table_elements
         self._resultats: "OrderedDict[str, Dict[str, bytes]]" = OrderedDict()
         self._verrou = threading.Lock()
 
@@ -470,6 +478,8 @@ class Atelier:
             palette=self.palette,
             palette_complete=self.palette_complete,
             carte_profondeur=carte,
+            table_bricklink=self.table_bricklink,
+            table_elements=self.table_elements,
             note_palette=self.note_palette,
         )
 

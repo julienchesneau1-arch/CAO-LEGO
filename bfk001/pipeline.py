@@ -22,8 +22,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from . import (bricklink, imaging, instructions, jpeg, ldraw, mosaic, palette
-               as palette_module)
+from . import (bricklink, imaging, instructions, jpeg, ldraw, mosaic,
+               pickabrick, palette as palette_module)
 from .booklet import build_booklet
 from .catalog import bill_of_materials
 from .depth import NoEmbeddedDepth, embedded_depth, heights_from_depth, read_depth_map
@@ -248,6 +248,7 @@ def run(
     palette_complete: Optional[Palette] = None,
     carte_profondeur: Optional[bytes] = None,
     table_bricklink: Optional[Mapping[int, str]] = None,
+    table_elements: Optional["pickabrick.TableElements"] = None,
     note_palette: Optional[Tuple[str, str]] = None,
 ) -> Resultat:
     """Photo -> fichiers livrables. Leve `ModeleRefuse` si ca ne tient pas.
@@ -596,6 +597,58 @@ def run(
                 f"  commande BrickLink : {len(nomenclature)} lots, "
                 f"{sum(l.quantity for l in nomenclature)} pieces, prete a l'envoi",
             ))
+
+    if table_elements:
+        # Pick a Brick ne veut pas le numero de moule mais l'ELEMENT ID, qui
+        # designe un moule DANS UNE COULEUR. Ce numero est attribue, pas
+        # calcule : il vient du catalogue que l'utilisateur a fourni.
+        trouves, absents, replis = pickabrick.elements_for_bom(
+            nomenclature, table_elements, palette_complete)
+        if not trouves:
+            journal.append((
+                "alerte",
+                "  commande LEGO NON produite — aucun des "
+                f"{len(nomenclature)} lots n'a d'element id dans ce catalogue. "
+                "Verifiez qu'il couvre bien les pieces et les couleurs employees",
+            ))
+        else:
+            envois = pickabrick.dumps_upload(trouves)
+            for rang, envoi in enumerate(envois, start=1):
+                nom = ("commande_lego.csv" if len(envois) == 1
+                       else f"commande_lego_{rang}.csv")
+                fichiers[nom] = envoi.encode("utf-8")
+            journal.append((
+                "info",
+                f"  commande LEGO : {len(trouves)} lots, "
+                f"{sum(q for _, q in trouves)} pieces, "
+                + (f"{len(envois)} fichiers a televerser sur Pick a Brick "
+                   f"(limite de {pickabrick.ELEMENTS_PAR_ENVOI} references par "
+                   "envoi)" if len(envois) > 1
+                   else "a televerser sur Pick a Brick"),
+            ))
+            if replis:
+                journal.append((
+                    "info",
+                    f"  dont {replis} lot(s) apparies par la reference tronquee "
+                    "(3070b -> 3070) : meme moule, ecriture differente",
+                ))
+        if absents:
+            # Un lot introuvable est un lot ABSENT du fichier, pas un lot faux :
+            # on le constate a l'upload, la liste a la main. C'est pourquoi on
+            # livre quand meme, contrairement a la commande BrickLink.
+            fichiers["pieces_sans_element.csv"] = pickabrick.missing_report(
+                absents, palette_complete).encode("utf-8")
+            journal.append((
+                "alerte",
+                f"  {len(absents)} lot(s) sans element id — "
+                f"{sum(l.quantity for l in absents)} pieces a chercher a la "
+                "main, voir pieces_sans_element.csv",
+            ))
+        journal.append((
+            "info",
+            "  la disponibilite reelle n'est pas connue ici : c'est Pick a "
+            "Brick qui dira, a l'envoi, ce qui est vendable aujourd'hui",
+        ))
 
     plan = instructions.plan_build(
         a_controler.placed_parts, etat.graph, a_controler.instances,

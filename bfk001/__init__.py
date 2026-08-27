@@ -35,7 +35,7 @@ elle reexporte l'integralite de cette API publique.
 from __future__ import annotations
 
 from . import (booklet, bricklink, depth, imaging, instructions, jpeg, ldraw,
-               mosaic, palette, panels)
+               mosaic, palette, panels, pickabrick)
 from .catalog import (
     CATALOG,
     LDRAW_COLORS,
@@ -80,6 +80,8 @@ from .jpeg import apply_orientation, exif_orientation, read_jpeg_eighth
 from .instructions import BuildStep, plan_build, render_text
 from .ldraw import dumps_ldr
 from .bricklink import UnmappedColors, dumps_wanted_list, load_color_map
+from .pickabrick import (ElementsIllisibles, TableElements, dumps_upload,
+                         elements_for_bom, read_color_names, read_elements)
 from .depth import (DepthMismatch, NoEmbeddedDepth, embedded_depth,
                     heights_from_depth, read_depth_map)
 from .booklet import build_booklet, render_progress, render_layer, row_runs, write_pdf
@@ -266,6 +268,7 @@ __all__ = [
     "mosaic",
     "booklet",
     "bricklink",
+    "pickabrick",
     "ldraw",
     "depth",
     "panels",
@@ -273,6 +276,12 @@ __all__ = [
     "heights_from_depth",
     "embedded_depth",
     "DepthMismatch",
+    "TableElements",
+    "ElementsIllisibles",
+    "read_elements",
+    "read_color_names",
+    "elements_for_bom",
+    "dumps_upload",
     "NoEmbeddedDepth",
     "instructions",
     "Image",

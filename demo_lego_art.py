@@ -88,6 +88,20 @@ def main() -> int:
              "ou l'export de couleurs telecharge depuis BrickLink — la "
              "correspondance se deduit alors du LEGOID que porte LDConfig.")
     analyseur.add_argument(
+        "--elements", type=pathlib.Path, default=None,
+        help="catalogue d'element ids — le numero qui designe un moule DANS "
+             "UNE COULEUR. Produit commande_lego.csv, le CSV que le bouton "
+             "« Upload list » de Pick a Brick attend. Ce numero est attribue, "
+             "pas calcule : il faut un catalogue (celui de Rebrickable, celui "
+             "de BrickLink, ou tout fichier portant element, piece et couleur).")
+    analyseur.add_argument(
+        "--elements-couleurs", type=pathlib.Path, default=None,
+        help="table « id, nom » des couleurs de ce catalogue, quand il ne "
+             "designe les siennes que par un numero (chez Rebrickable, "
+             "colors.csv a cote de elements.csv). Sans elle un tel catalogue "
+             "est refuse : un numero de couleur ne veut rien dire tant qu'on "
+             "ignore de quel systeme il vient.")
+    analyseur.add_argument(
         "--codes-couleur", default=None,
         help="restreindre a ces codes LDraw, separes par des virgules. Le "
              "programme ne connait ni les prix ni les stocks : si vous savez "
@@ -157,6 +171,17 @@ def main() -> int:
         print(f"  couleurs : {len(table)} correspondances BrickLink importees"
               + (f", {len(orphelines)} sans equivalent" if orphelines else ""))
 
+    elements = None
+    if options.elements:
+        noms = (bfk.pickabrick.read_color_names(
+            options.elements_couleurs.read_text())
+            if options.elements_couleurs else None)
+        elements = bfk.pickabrick.read_elements(
+            options.elements.read_text(), noms)
+        print(f"  elements : {len(elements)} references importees"
+              + (f", {elements.lignes_ignorees} ligne(s) illisible(s)"
+                 if elements.lignes_ignorees else ""))
+
     try:
         resultat = run(
             options.image.read_bytes(),
@@ -166,6 +191,7 @@ def main() -> int:
             carte_profondeur=(pathlib.Path(options.carte_profondeur).read_bytes()
                               if options.carte_profondeur else None),
             table_bricklink=table,
+            table_elements=elements,
             note_palette=ligne_palette,
         )
     except ValueError as raison:

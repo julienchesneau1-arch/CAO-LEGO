@@ -2022,6 +2022,121 @@ incomplète : la seconde se voit, la première se paie à la livraison.
 
 ---
 
+### 5.56 « Peut-on commander directement chez LEGO ? » — oui, et ce que ça exige
+
+La question était factuelle et portait sur un service extérieur qui change. Je
+suis allé vérifier plutôt que de répondre de mémoire, et la réponse a une moitié
+que je n'attendais pas.
+
+#### Ce qui existe
+
+Pick a Brick a un bouton **« Upload list »** : un CSV à deux colonnes,
+`elementId,quantity`, jusqu'à **400 références différentes** par envoi. Ce n'est
+pas un projet ni une rumeur, c'est en service.
+
+#### Le mur, et il est réel
+
+Le fichier ne veut pas le numéro de **moule** — 3024, 3020, 2431, ceux que
+notre nomenclature porte — mais l'**element id** : le numéro qui désigne un
+moule **dans une couleur**. Et ce numéro est **attribué, pas calculé**. Il
+n'existe aucune fonction de (moule, couleur) vers element ; deux couleurs
+voisines d'une même pièce ont des numéros sans rapport. On ne le déduit pas de
+ce qu'on a.
+
+C'était exactement la situation de la table BrickLink en § 5.55, à un détail
+près qui la rend plus dure : là-bas il fallait apparier **162 couleurs**, ici il
+faudrait connaître un numéro par **combinaison** moule × couleur. Le recopier de
+mémoire n'était pas envisageable ; ça ne l'est pas davantage ici, et à plus
+grande échelle.
+
+#### Ce que j'ai fait
+
+La même chose qu'en § 5.55, pour la même raison : **on importe.**
+`bfk001/pickabrick.py` lit un catalogue d'elements fourni par l'utilisateur —
+celui que publie Rebrickable, celui que publie BrickLink, ou n'importe quel
+fichier portant les trois colonnes utiles — et écrit `commande_lego.csv`. Les
+colonnes sont reconnues **à leur en-tête**, jamais à leur position : aucun de
+ces catalogues ne promet un ordre, et l'un d'eux l'a déjà changé.
+
+#### Le refus qui est le cœur du module
+
+Une colonne `color id` **nue** est refusée. Le numéro 71 vaut `Light Bluish
+Gray` chez LDraw, un tout autre gris chez BrickLink, autre chose encore
+ailleurs. L'interpréter au hasard ne donnerait pas une liste incomplète mais une
+liste **fausse** : des pièces de la mauvaise couleur, livrées, payées,
+inutilisables — et personne ne s'en apercevrait avant le colis. Il faut donc
+soit une colonne d'identifiants LEGO (que LDConfig nous donne aussi, par son
+LEGOID), soit des **noms** de couleur, soit le second fichier qui dit à quoi les
+numéros correspondent. Chez Rebrickable, c'est `colors.csv`, à côté de
+`elements.csv`, sur la même page.
+
+#### Le défaut que ce refus a failli laisser passer
+
+En écrivant la reconnaissance des colonnes, j'ai cherché la colonne de nom par
+préfixe : `color`. Sur un export dont les en-têtes sont `Item No, Color ID,
+Color Name, Code`, ce préfixe attrape **`Color ID`** avant `Color Name`. On
+aurait alors lu « 86 » comme un *nom* de couleur, aucune correspondance ne
+serait tombée juste — et **aucune erreur ne se serait levée** : le fichier
+produit aurait simplement été vide ou faux, sans rien dire. C'est le mode de
+panne que tout ce module existe pour empêcher, et je venais de l'introduire dans
+son propre lecteur.
+
+La correction est une liste d'en-têtes qu'une autre colonne revendique
+exactement, exclue de la recherche par préfixe. Le test qui la garde ne vérifie
+pas un cas particulier : il vérifie qu'**aucune clé de couleur de la table lue
+n'est un nombre**. Une clé numérique dans une table indexée par nom est
+impossible ; c'est la propriété, pas l'exemple.
+
+#### Une différence assumée avec l'export BrickLink
+
+`dumps_wanted_list` **refuse** d'écrire une commande BrickLink incomplète.
+`dumps_upload` écrit quand même, et livre à côté la liste de ce qui manque. Ce
+n'est pas une inconséquence : le mode de panne n'est pas le même.
+
+| | BrickLink | Pick a Brick |
+|---|---|---|
+| Un lot non apparié obligerait à… | **deviner un code couleur** | rien : la ligne est **absente** |
+| L'erreur se constate… | à la **livraison** | à l'**upload**, liste en main |
+| Donc | refuser tout | écrire, et nommer les manquants |
+
+Perdre les 45 autres lots pour un lot exotique ne protégerait de rien.
+`pieces_sans_element.csv` nomme chaque manquant avec son LEGOID, de quoi le
+chercher à la main en trente secondes.
+
+#### Deux détails qui ne sont pas des détails
+
+**`3070b` et `3070`.** LDraw écrit `3070b` la tuile 1×1 à rainure, pour la
+distinguer de `3070a` qui n'en avait pas ; LEGO ne fabrique plus que la
+rainurée et lui donne le numéro de moule `3070` tout court. Selon la colonne
+qu'on lit dans le catalogue, on tombe sur l'une ou sur l'autre. L'écriture
+exacte est donc essayée **en premier**, la troncature n'est qu'un recours — et
+le nombre de lots qui en ont eu besoin est **compté et affiché**. C'est la seule
+correspondance de ce module qui ne soit pas littérale ; elle se déclare.
+
+**La limite de 400.** Au-delà, l'envoi échoue en bloc, et rien ne dit que c'est
+le *nombre de références* qui gêne. La chaîne découpe donc en
+`commande_lego_1.csv`, `commande_lego_2.csv`… Le test ne vérifie pas le
+découpage ligne à ligne : il vérifie que **rien n'est perdu et rien n'est en
+double**, ce qui est tout ce qu'un découpage doit promettre.
+
+#### Ce que ce dépôt ne saura jamais
+
+Qu'un element **existe** au catalogue ne dit rien de sa **disponibilité**. Pick
+a Brick a son propre stock, variable selon le pays et le jour. Aucun prix,
+aucune disponibilité n'est inventé ici — la chaîne le dit dans son journal à
+chaque fois. C'est l'envoi lui-même qui tranchera.
+
+#### Une décision d'interface, prise sans demander
+
+Dans l'atelier, ces catalogues se donnent **au lanceur**, pas à chaque photo :
+`app_lego_art.py --elements … --elements-couleurs …`. Un catalogue d'elements
+est une propriété de l'**installation**, pas de l'œuvre ; c'est toujours le même
+fichier. Le demander à chaque fabrication alourdirait la page sans rien
+apporter. Et une erreur de lecture arrête le lanceur au démarrage plutôt que de
+se découvrir après avoir fabriqué une mosaïque.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

@@ -7,8 +7,9 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **87 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
-LEGO réelle + couche CAO + conformité par tirage aléatoire).
+État : **394 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
+LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
 Toutes les zones d'ombre — fermées comme ouvertes — sont recensées dans
 [`docs/ZONES_DOMBRE.md`](docs/ZONES_DOMBRE.md) : chacune est soit fermée avec sa
@@ -40,7 +41,7 @@ mieux *cette* photo — et atteint désormais ce qui en demandait quatre-vingts
 égale. Le sélecteur était bridé par un plafond de 24 grappes dans son propre
 résumé de l'image ; voir § 5.30 du registre.
 
-Produit `apercu.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` (plus `commande_bricklink.xml` avec `--bricklink`) —
+Produit `apercu.png`, `apercu_joints.png`, `liste_de_course.csv`, `notice.txt`, **`notice.pdf`**, **`modele.ldr`** et `modele.json` (plus `commande_bricklink.xml` avec `--bricklink`, `commande_lego.csv` avec `--elements`) —
 **mais seulement si le modèle passe les six invariants du noyau**. Une mosaïque
 qui ne tiendrait pas ensemble n'est pas livrée.
 
@@ -89,6 +90,7 @@ pytest test_bfk001_booklet.py           # structure du PDF, rendu des pages, ord
 pytest test_bfk001_substrat.py          # emprise exacte du fond et connexité, 1521 formats
 pytest test_bfk001_couleur.py           # lumière linéaire, CIEDE2000, palette officielle
 pytest test_bfk001_atelier.py           # la chaîne partagée, et un vrai aller-retour HTTP
+pytest test_bfk001_pickabrick.py        # commande LEGO : ce qu'un catalogue d'elements a le droit de dire
 pytest test_bfk001_page.py              # la page dans un vrai navigateur (se saute sans Playwright)
 ```
 
@@ -129,6 +131,7 @@ page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
 | `bfk001/booklet.py` | — | Notice imprimable : PDF écrit à la main, mosaïque bande par bande (**hors contrat**) |
 | `bfk001/ldraw.py` | — | Export `.ldr` : conventions d'axes et d'origine lues dans une pièce officielle (**hors contrat**) |
 | `bfk001/bricklink.py` | — | Liste de souhaits BrickLink ; refuse de deviner une couleur absente de la table (**hors contrat**) |
+| `bfk001/pickabrick.py` | — | Commande LEGO Pick a Brick : l'**element id** s'importe d'un catalogue, il ne se calcule pas (**hors contrat**) |
 | `bfk001/depth.py` | — | Profondeur **mesurée** : cartes externes, et extraction de la carte embarquée par les appareils en mode portrait (**hors contrat**) |
 | `bfk001/pipeline.py` | — | **La chaîne** : photo → fichiers livrables, en mémoire. Une seule, appelée à l'identique par la commande et par l'interface (**hors contrat**) |
 | `bfk001/webapp.py` | — | L'atelier dans le navigateur : serveur local et page autonome, sans aucune ressource externe (**hors contrat**) |
@@ -562,6 +565,65 @@ source de votre choix.
 **Ce qui n'est pas dans la table n'est pas deviné** : l'export refuse et nomme
 les couleurs manquantes. Une liste incomplète se paie en pièces manquantes le
 jour du montage ; une liste fausse se paie en pièces inutilisables.
+
+---
+
+## Commander chez LEGO, directement
+
+Oui, mais pas avec le même fichier. Pick a Brick a un bouton **« Upload list »**
+qui avale un CSV à deux colonnes, `elementId,quantity`, jusqu'à **400 références
+différentes** par envoi. Une chose seulement sépare notre nomenclature de ce
+fichier, et elle est de taille.
+
+Pick a Brick ne veut pas le numéro de **moule** (3024, 3020, 2431…) mais
+l'**element id** : le numéro qui désigne un moule **dans une couleur**. Et ce
+numéro est **attribué, pas calculé**. Il n'existe aucune fonction de (moule,
+couleur) vers element ; deux couleurs voisines d'une même pièce ont des numéros
+sans aucun rapport. Le déduire est impossible, l'inventer est exclu.
+
+Donc la même règle que pour BrickLink, pour la même raison : **on importe.**
+
+```bash
+# catalogue portant lui-même les noms de couleur (export BrickLink, par ex.)
+python3 demo_lego_art.py photo.jpg --elements catalogue.csv
+
+# catalogue qui ne désigne ses couleurs que par un numéro (Rebrickable)
+python3 demo_lego_art.py photo.jpg \
+    --elements elements.csv --elements-couleurs colors.csv
+```
+
+Produit **`commande_lego.csv`**, à déposer tel quel sur Pick a Brick — et
+`commande_lego_1.csv`, `commande_lego_2.csv`… si la mosaïque dépasse les 400
+lots, parce qu'au-delà l'envoi échoue en bloc sans dire que c'est le *nombre de
+références* qui gêne.
+
+Trois façons de désigner une couleur sont reconnues, par ordre de confiance :
+un **identifiant LEGO** (exact — LDConfig porte le même, c'est le LEGOID), un
+**nom** (apparié après normalisation), ou un **identifiant nu**, qui est
+**refusé seul**. Le numéro 71 vaut `Light Bluish Gray` chez LDraw et tout autre
+chose ailleurs : l'interpréter au hasard ne donnerait pas une liste incomplète
+mais une liste **fausse**, des pièces de la mauvaise couleur livrées et payées.
+Avec la table de couleurs qui accompagne le catalogue, le même fichier passe.
+
+Une différence assumée avec l'export BrickLink : ici, un lot introuvable
+**n'empêche pas** l'écriture du fichier. Le mode de panne n'est pas le même —
+chez BrickLink il faudrait *deviner un code* et l'erreur ne se voit qu'à la
+livraison ; ici un lot introuvable est un lot **absent**, constaté à l'upload,
+et `pieces_sans_element.csv` le nomme avec son LEGOID pour qu'on le cherche à la
+main. Perdre les 45 autres lots pour un lot exotique ne protégerait de rien.
+
+**Ce que ce dépôt ne saura jamais** : qu'un element existe au catalogue ne dit
+rien de sa **disponibilité**. Pick a Brick a son propre stock, variable selon le
+pays et le jour. Aucun prix, aucune disponibilité n'est inventé ici ; c'est
+l'envoi lui-même qui dira ce qui est vendable aujourd'hui.
+
+Dans l'atelier, ces catalogues se donnent **une fois au lanceur** — ce sont des
+propriétés de l'installation, pas de l'œuvre :
+
+```bash
+python3 app_lego_art.py --bricklink couleurs.csv \
+    --elements elements.csv --elements-couleurs colors.csv
+```
 
 ---
 
