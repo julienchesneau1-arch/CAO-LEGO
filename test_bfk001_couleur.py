@@ -10,7 +10,8 @@ import inspect
 import unittest
 
 import bfk001 as bfk
-from bfk001.palette import _delta_e2000_lab, delta_e2000, delta_e76, srgb_to_lab
+from bfk001.palette import (_delta_e2000_lab, delta_e2000, delta_e76,
+                            delta_e_selection, srgb_to_lab)
 
 
 def lumiere(canal: int) -> float:
@@ -175,8 +176,11 @@ class TestMetriquePerceptive(unittest.TestCase):
         for _ in range(40):
             rgb = tuple(rnd.randrange(256) for _ in range(3))
             choisie = palette.nearest(rgb)
-            meilleur = min(delta_e2000(rgb, c.rgb) for c in palette)
-            self.assertAlmostEqual(delta_e2000(rgb, choisie.rgb), meilleur, places=12)
+            # `nearest` minimise la metrique de SELECTION, pas CIEDE2000 :
+            # voir sa docstring, et § 5.53 du registre.
+            meilleur = min(delta_e_selection(rgb, c.rgb) for c in palette)
+            self.assertAlmostEqual(
+                delta_e_selection(rgb, choisie.rgb), meilleur, places=12)
 
     def test_le_cache_lab_ne_change_pas_les_resultats(self):
         from bfk001 import palette as module
@@ -348,13 +352,16 @@ class TestSelectionDeSousPalette(unittest.TestCase):
         pixels = self.pixels_riches(48)
         palette = bfk.PROVISIONAL_PALETTE.solids_only()
         complete = sum(
-            delta_e2000(p, palette.nearest(p).rgb) for p in pixels
+            delta_e_selection(p, palette.nearest(p).rgb) for p in pixels
         ) / len(pixels)
         precedent = None
         for budget in (3, 6, 9):
             sous = palette.best_subset(pixels, budget)
             self.assertEqual(len(sous), budget)
-            ecart = sum(delta_e2000(p, sous.nearest(p).rgb) for p in pixels) / len(pixels)
+            # Mesure avec la metrique que `nearest` minimise : la comparer a
+            # CIEDE2000 laissait une sous-palette battre la palette entiere.
+            ecart = sum(delta_e_selection(p, sous.nearest(p).rgb)
+                        for p in pixels) / len(pixels)
             self.assertGreaterEqual(ecart + 1e-9, complete)
             if precedent is not None:
                 self.assertLessEqual(ecart, precedent + 1e-9)
@@ -507,8 +514,12 @@ class TestRechercheExacteEtElaguee(unittest.TestCase):
         from bfk001.palette import _delta_e2000_lab, srgb_to_lab
 
         cible = srgb_to_lab(rgb)
+        # La force brute doit employer la metrique que `nearest` minimise —
+        # la selection, pas la mesure. Voir `Palette.nearest`.
         return min(
-            palette, key=lambda c: (_delta_e2000_lab(srgb_to_lab(c.rgb), cible), c.code)
+            palette,
+            key=lambda c: (_delta_e2000_lab(srgb_to_lab(c.rgb), cible,
+                                            rotation=False), c.code),
         )
 
     def test_identique_a_la_force_brute(self):
@@ -519,8 +530,8 @@ class TestRechercheExacteEtElaguee(unittest.TestCase):
                 attendu = self.force_brute(palette, rgb)
                 obtenu = palette.nearest(rgb)
                 self.assertAlmostEqual(
-                    bfk.delta_e2000(rgb, obtenu.rgb),
-                    bfk.delta_e2000(rgb, attendu.rgb),
+                    delta_e_selection(rgb, obtenu.rgb),
+                    delta_e_selection(rgb, attendu.rgb),
                     places=9,
                     msg=f"{rgb} -> {obtenu.name} au lieu de {attendu.name}",
                 )
@@ -560,3 +571,113 @@ class TestRechercheExacteEtElaguee(unittest.TestCase):
         self.assertEqual(premier, second)
         neuve = bfk.Palette(palette.colors)
         self.assertEqual(premier, [neuve.nearest(rgb).code for rgb in cibles])
+
+
+class TestMetriqueDeSelection(unittest.TestCase):
+    """Choisir une couleur et MESURER un ecart ne demandent pas le meme outil.
+
+    Trouve sur une vraie photographie — un velo noir devant une porte noire —
+    qui peignait des dizaines de tuiles MAGENTA sur du gris sombre neutre.
+    """
+
+    CONTROLE_SHARMA = [
+        ((50.0000, 2.6772, -79.7751), (50.0000, 0.0000, -82.7485), 2.0425),
+        ((50.0000, 3.1571, -77.2803), (50.0000, 0.0000, -82.7485), 2.8615),
+        ((50.0000, 2.8361, -74.0200), (50.0000, 0.0000, -82.7485), 3.4412),
+        ((50.0000, -1.3802, -84.2814), (50.0000, 0.0000, -82.7485), 1.0000),
+        ((50.0000, -1.1848, -84.8006), (50.0000, 0.0000, -82.7485), 1.0000),
+        ((50.0000, -0.9009, -85.5211), (50.0000, 0.0000, -82.7485), 1.0000),
+        ((50.0000, 0.0000, 0.0000), (50.0000, -1.0000, 2.0000), 2.3669),
+        ((50.0000, 2.4900, -0.0010), (50.0000, -2.4900, 0.0009), 7.1792),
+        ((50.0000, 2.4900, -0.0010), (50.0000, -2.4900, 0.0011), 7.2195),
+        ((60.2574, -34.0099, 36.2677), (60.4626, -34.1751, 39.4387), 1.2644),
+        ((63.0109, -31.0961, -5.8663), (62.8187, -29.7946, -4.0864), 1.2630),
+        ((61.2901, 3.7196, -5.3901), (61.4292, 2.2480, -4.9620), 1.8731),
+        ((35.0831, -44.1164, 3.7933), (35.0232, -40.0716, 1.5901), 1.8645),
+        ((22.7233, 20.0904, -46.6940), (23.0331, 14.9730, -42.5619), 2.0373),
+        ((2.0776, 0.0795, -1.1350), (0.9033, -0.0636, -0.5514), 0.9082),
+    ]
+
+    def test_la_mesure_reste_ciede2000_exacte(self):
+        # Les paires de controle de Sharma, Wu et Dalal (2005), publiees
+        # precisement pour verifier une implementation. Quatre decimales.
+        for lab1, lab2, attendu in self.CONTROLE_SHARMA:
+            obtenu = bfk.palette._delta_e2000_lab(lab1, lab2)
+            self.assertAlmostEqual(obtenu, attendu, places=4,
+                                   msg=f"{lab1} / {lab2}")
+
+    def test_le_terme_de_rotation_joue_dans_les_deux_sens(self):
+        # J'avais ecrit « il ne peut qu'abaisser l'ecart ». Faux, et ce test
+        # l'a montre : RT est bien negatif, mais le PRODUIT RT.tC.tH change de
+        # signe avec tC et tH. Il abaisse le plus souvent, il ajoute parfois.
+        import random
+        random.seed(5)
+        abaisse = ajoute = 0
+        for _ in range(400):
+            lab1 = (random.uniform(0, 100), random.uniform(-100, 100),
+                    random.uniform(-100, 100))
+            lab2 = (random.uniform(0, 100), random.uniform(-100, 100),
+                    random.uniform(-100, 100))
+            avec = bfk.palette._delta_e2000_lab(lab1, lab2)
+            sans = bfk.palette._delta_e2000_lab(lab1, lab2, rotation=False)
+            if avec < sans - 1e-9:
+                abaisse += 1
+            elif avec > sans + 1e-9:
+                ajoute += 1
+        self.assertGreater(abaisse, 0)
+        self.assertGreater(ajoute, 0, "le terme n'ajoute jamais ?")
+
+    def test_la_coupure_reste_valide_sans_supposer_de_signe(self):
+        # La borne de `nearest` : ecart >= |dL| / SL_MAX. Sans terme croise,
+        # l'ecart vaut racine(tL^2 + tC^2 + tH^2) >= |tL|, par construction.
+        import random
+        random.seed(6)
+        for _ in range(400):
+            lab1 = (random.uniform(0, 100), random.uniform(-60, 60),
+                    random.uniform(-60, 60))
+            lab2 = (random.uniform(0, 100), random.uniform(-60, 60),
+                    random.uniform(-60, 60))
+            ecart = bfk.palette._delta_e2000_lab(lab1, lab2, rotation=False)
+            self.assertGreaterEqual(
+                ecart + 1e-9, abs(lab2[0] - lab1[0]) / bfk.palette._SL_MAX)
+
+    def test_un_gris_neutre_sombre_ne_devient_pas_violet(self):
+        # Le cas exact de la photographie. Avec le terme de rotation, Purple
+        # (129,0,123) bat Dark Bluish Grey de plus d'un delta E sur un gris
+        # sombre neutre : le terme croise retire 731 au carre de la distance.
+        # Une palette qui contient a la fois un violet sature et un gris
+        # sombre : c'est la configuration qui declenchait le defaut.
+        palette = bfk.Palette([
+            bfk.LegoColor(0, "Black", (5, 19, 29)),
+            bfk.LegoColor(72, "Dark Bluish Grey", (108, 110, 104)),
+            bfk.LegoColor(26, "Purple", (129, 0, 123)),
+            bfk.LegoColor(6, "Brown", (88, 57, 39)),
+            bfk.LegoColor(288, "Dark Green", (24, 70, 50)),
+        ])
+        gris = (62, 68, 70)
+        choisie = palette.nearest(gris)
+        lab_cible = bfk.srgb_to_lab(gris)
+        lab_choisie = bfk.srgb_to_lab(choisie.rgb)
+        chroma_cible = (lab_cible[1] ** 2 + lab_cible[2] ** 2) ** 0.5
+        chroma_choisie = (lab_choisie[1] ** 2 + lab_choisie[2] ** 2) ** 0.5
+        self.assertLess(chroma_choisie - chroma_cible, 25.0,
+                        f"un gris neutre remplace par « {choisie.name} »")
+
+    def test_nearest_rend_bien_le_minimum_de_sa_propre_metrique(self):
+        # La coupure par la clarte reste EXACTE apres le retrait du terme :
+        # retirer un negatif ne peut qu'augmenter l'ecart, donc la borne
+        # dE >= |dL| / 1,748 tient toujours.
+        import random
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        labs = [bfk.srgb_to_lab(c.rgb) for c in palette]
+        random.seed(7)
+        for _ in range(300):
+            cible = (random.randrange(256), random.randrange(256),
+                     random.randrange(256))
+            lab = bfk.srgb_to_lab(cible)
+            force = min(
+                zip(palette, labs),
+                key=lambda paire: bfk.palette._delta_e2000_lab(
+                    paire[1], lab, rotation=False),
+            )[0]
+            self.assertEqual(palette.nearest(cible).code, force.code, cible)

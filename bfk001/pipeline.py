@@ -378,6 +378,33 @@ def run(
         image, palette, reglages.studs, hauteur, TRAMAGES[reglages.tramage],
         "stretch",
     )
+    # Le tramage est un ARBITRAGE, pas un reglage technique : il achete de la
+    # justesse tonale avec du grain visible. `blending_tiles` dit que l'oeil ne
+    # fond jamais deux tuiles de 8 mm, a aucune distance — le grain se verra
+    # donc. La decision doit etre visible, et reversible d'un drapeau.
+    if reglages.tramage == "auto":
+        nette = mosaic.quantize(image, palette, reglages.studs, hauteur,
+                                False, "stretch")
+        if nette != grille:
+            isolees = sum(
+                1 for y in range(hauteur) for x in range(reglages.studs)
+                if all(grille[y][x].code != grille[vy][vx].code
+                       for vy, vx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1))
+                       if 0 <= vy < hauteur and 0 <= vx < reglages.studs)
+            )
+            journal.append((
+                "info",
+                f"  tramage : applique — il gagne de la justesse tonale et "
+                f"laisse {isolees} tuile(s) isolees de grain. "
+                "« --tramage aucun » si le grain vous gene.",
+            ))
+        else:
+            journal.append((
+                "info",
+                "  tramage : ecarte — il ne gagnait pas assez pour le grain "
+                "qu'il aurait coute.",
+            ))
+
     elevations, provenance = (
         carte_de_relief(image, origine, cadrage, photo, reglages, hauteur,
                         carte_profondeur)

@@ -1838,6 +1838,83 @@ catalogue et vérifie les deux bornes.
 
 ---
 
+### 5.53 La première vraie photo, et le défaut qu'elle a trouvé en dix minutes
+
+Tout ce dépôt avait été mesuré sur des images que j'avais fabriquées moi-même.
+La première photographie réelle — un vélo noir devant une porte noire — a
+produit des dizaines de tuiles **magenta** sur la porte.
+
+#### Le défaut
+
+`Palette.nearest` renvoyait bien le minimum de CIEDE2000. Le problème était
+CIEDE2000. Pour un gris sombre neutre, RVB(62, 68, 70) :
+
+| couleur | tL | tC | tH | RT·tC·tH | ΔE2000 |
+|---|---:|---:|---:|---:|---:|
+| Purple (129,0,123) | 0,97 | 25,16 | 17,62 | **−731,03** | **14,61** |
+| Dark Bluish Grey | 15,00 | 0,55 | −4,79 | 0,00 | 15,76 |
+
+Le terme de rotation retire 77 % du carré de la distance : un violet saturé à
+30,7 ΔE devient un « bon candidat » à 14,6 et bat le gris.
+
+Ce terme modélise une interaction observée dans la région bleue **pour de
+petits écarts** — la CIE borne explicitement la formule aux écarts faibles.
+Choisir dans une palette de quatre-vingts teintes, c'est comparer des écarts de
+5 à 40 : le terme y agit hors de son domaine de validité.
+
+#### Le remède : séparer choisir de mesurer
+
+`delta_e_selection` — CIEDE2000 sans le terme croisé — sert à **choisir**.
+`delta_e` garde la formule standard et sert à **mesurer**. Vérifiée exacte à
+quatre décimales sur les quinze paires de contrôle de Sharma, Wu et Dalal
+(2005), publiées précisément pour cet usage.
+
+Effet mesuré, vélo 48×48 :
+
+| | ΔE/tuile | tonal | **pire** | isolées | couleurs |
+|---|---:|---:|---:|---:|---:|
+| CIEDE2000 complet | 7,81 | 5,83 | **18,18** | 154 | 19 |
+| sans rotation | 7,82 | 5,26 | **10,84** | 142 | 17 |
+
+Le pire écart tonal est divisé par près de deux. Sur les Tournesols et le
+portrait : **strictement aucun changement**. Le défaut ne se manifestait que là
+où mes fixtures n'allaient jamais — de grandes régions sombres et désaturées.
+
+#### Trois erreurs de ma part en cours de route
+
+**J'ai accusé le mauvais coupable.** Mon premier diagnostic annonçait « 213
+désaccords sur 400 » entre `nearest` et la force brute. C'était mon erreur :
+`delta_e` prend du **RVB** et je lui passais du **Lab**. Vérifié correctement :
+zéro désaccord sur 400. J'ai failli publier un rapport de bug faux.
+
+**J'ai jugé une correction sur une image mal comparée.** Le rendu corrigé
+paraissait pire — moucheté brun partout — et j'ai bien failli revenir en
+arrière. Les deux rendus ne différaient pas que par la métrique : la décision
+automatique de tramage avait basculé. Le moucheté était du **tramage**, pas la
+métrique.
+
+**J'ai écrit une justification fausse.** « Retirer un terme négatif ne peut
+qu'augmenter l'écart » : RT est négatif, mais le produit RT·tC·tH change de
+signe avec tC et tH. Un test que j'écrivais pour cette affirmation l'a
+démentie. La vraie raison est plus simple : sans terme croisé, l'écart vaut
+√(tL²+tC²+tH²) ≥ |tL| par construction, donc la coupure de `nearest` reste
+exacte sans rien supposer d'aucun signe.
+
+#### Ce que la photo dit d'autre, et qui n'est pas un défaut
+
+Le vélo est un cas difficile, et la chaîne le dit d'elle-même avant de
+commencer : deux teintes de la porte n'existent pas dans la palette (16 et 12
+ΔE du plus proche). La palette LEGO n'a **aucun** neutre sombre entre Black
+(L\*=5) et Dark Bluish Grey (L\*=46) : toute la porte tombe dans ce trou.
+Aucune métrique ne comble un trou de palette.
+
+Et le tramage y est un mauvais marché : +42 % de pièces et 431 tuiles isolées
+de grain pour 2,3 ΔE de pire cas. La chaîne l'annonce désormais au lieu de le
+décider en silence — `blending_tiles` dit que l'œil ne fond jamais deux tuiles
+de 8 mm à aucune distance, donc ce grain se verra.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

@@ -31,6 +31,7 @@ __all__ = [
     "load_ldconfig",
     "srgb_to_lab",
     "delta_e",
+    "delta_e_selection",
     "dominant_colors",
     "PaletteGap",
     "gap_report",
@@ -113,8 +114,14 @@ def delta_e76(first: Rgb, second: Rgb) -> float:
 
 
 def _delta_e2000_lab(lab1, lab2, kL: float = 1.0, kC: float = 1.0,
-                     kH: float = 1.0) -> float:
-    """CIEDE2000 entre deux points L*a*b* deja convertis."""
+                     kH: float = 1.0, rotation: bool = True) -> float:
+    """CIEDE2000 entre deux points L*a*b* deja convertis.
+
+    `rotation=False` omet le terme croise RT.tC.tH. Ce n'est plus CIEDE2000 et
+    ce n'est pas un raccourci de calcul : voir `Palette.nearest`, qui explique
+    pourquoi la formule standard est le mauvais outil pour CHOISIR une couleur
+    dans une palette grossiere.
+    """
     L1, a1, b1 = lab1
     L2, a2, b2 = lab2
     C1, C2 = math.hypot(a1, b1), math.hypot(a2, b2)
@@ -164,7 +171,8 @@ def _delta_e2000_lab(lab1, lab2, kL: float = 1.0, kC: float = 1.0,
     RT = -math.sin(math.radians(60 * math.exp(-(((Hbp - 275) / 25) ** 2)))) * RC
 
     tL, tC, tH = dLp / (kL * SL), dCp / (kC * SC), dHp / (kH * SH)
-    return math.sqrt(max(0.0, tL * tL + tC * tC + tH * tH + RT * tC * tH))
+    croise = RT * tC * tH if rotation else 0.0
+    return math.sqrt(max(0.0, tL * tL + tC * tC + tH * tH + croise))
 
 
 def delta_e2000(first: Rgb, second: Rgb) -> float:
@@ -190,6 +198,19 @@ def delta_e2000(first: Rgb, second: Rgb) -> float:
 
 # Choisir une couleur, c'est un jugement percu : c'est CIEDE2000 qui tranche.
 delta_e = delta_e2000
+
+
+def delta_e_selection(first: Rgb, second: Rgb) -> float:
+    """L'ecart qui sert a CHOISIR une couleur dans une palette grossiere.
+
+    CIEDE2000 sans son terme de rotation. Ce n'est pas une approximation : la
+    formule standard est le mauvais outil ici, et `Palette.nearest` explique
+    pourquoi en detail. `delta_e` reste la mesure de reference — c'est elle
+    qui dit ce que vaut le resultat, et elle est exacte au dix-millieme sur
+    les quinze paires de controle de Sharma.
+    """
+    return _delta_e2000_lab(srgb_to_lab(first), srgb_to_lab(second),
+                            rotation=False)
 
 
 class Palette:
@@ -248,6 +269,39 @@ class Palette:
         et bien plus rapide. Mesure sur 4000 cibles : 1,5 % de desaccords a 8
         candidats, 0,33 % encore a 16. Elle reintroduisait exactement le biais
         de CIE76 que CIEDE2000 sert a corriger. Rejetee.
+
+        LE TERME DE ROTATION EST OMIS ICI, et c'est une decision, pas un
+        raccourci. CIEDE2000 porte un terme croise RT.tC.tH, toujours negatif,
+        qui modelise une interaction observee dans la region bleue POUR DE
+        PETITS ECARTS — la CIE borne explicitement la formule aux ecarts
+        faibles. Choisir une couleur dans une palette de quatre-vingts teintes,
+        c'est comparer des ecarts de 5 a 40 : le terme y agit hors de son
+        domaine de validite, et il retranche.
+
+        Mesure sur un gris sombre neutre, RVB(62, 68, 70), photographie reelle :
+
+            couleur              tL      tC      tH   RT.tC.tH   dE2000
+            Purple             0,97   25,16   17,62    -731,03    14,61
+            Dark Bluish Grey  15,00    0,55   -4,79       0,00    15,76
+
+        Le violet sature gagne. Sans le terme croise il vaut 30,73 et perd, ce
+        qui est le bon resultat : un gris neutre ne se remplace pas par un
+        violet. Sur une photo de velo noir, ce defaut peignait des dizaines de
+        tuiles magenta sur une porte noire.
+
+        L'omission ne casse pas la coupure, et pour une raison plus simple que
+        celle que j'avais d'abord ecrite. J'avais dit « retirer un terme
+        negatif ne peut qu'augmenter l'ecart » — c'est faux, et un test l'a
+        montre : RT est bien negatif, mais le produit RT.tC.tH change de signe
+        avec tC et tH, donc il ajoute parfois. La vraie raison tient en une
+        ligne : sans le terme croise, l'ecart vaut racine(tL^2 + tC^2 + tH^2),
+        qui est superieur ou egal a |tL| par construction. La borne
+        ecart >= |dL| / 1,748 vaut donc directement, sans rien supposer du
+        signe de quoi que ce soit.
+
+        `delta_e2000` et `delta_e` gardent la formule standard, exacte au
+        millieme sur les quinze paires de controle de Sharma : c'est elle qui
+        MESURE la fidelite. Choisir et mesurer ne demandent pas le meme outil.
         """
         # Le mode « auto » interroge trois fois les memes tenons : une fois
         # pour la version sans tramage, une fois pour mesurer l'ecart a la
@@ -281,7 +335,8 @@ class Palette:
                 index, droite, ecart = ordre[droite], droite + 1, ecart_droite
             if ecart / _SL_MAX >= best_distance:
                 break
-            distance = _delta_e2000_lab(self._lab[index], target)
+            distance = _delta_e2000_lab(self._lab[index], target,
+                                        rotation=False)
             if distance < best_distance:
                 best_distance = distance
                 best_index = index

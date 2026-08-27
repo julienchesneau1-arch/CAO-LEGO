@@ -335,6 +335,24 @@ et qu'aucune n'est franchie deux fois (`geometric_relation`, `solid_overlap`,
 
 ---
 
+## Choisir une couleur et en mesurer une : deux outils
+
+`delta_e` est CIEDE2000, exacte à quatre décimales sur les quinze paires de
+contrôle de Sharma. Elle **mesure**.
+
+`delta_e_selection` est CIEDE2000 **sans son terme de rotation**, et c'est elle
+qui **choisit**. Ce n'est pas une approximation. Le terme croisé RT·tC·tH
+modélise une interaction de la région bleue pour de *petits* écarts — la CIE
+borne explicitement la formule aux écarts faibles. Choisir dans une palette de
+quatre-vingts teintes, c'est comparer des écarts de 5 à 40, hors de son domaine.
+
+Trouvé sur la première photographie réelle passée dans la chaîne. Pour un gris
+sombre neutre, le terme retirait **731 au carré de la distance** et faisait
+gagner un violet saturé : des dizaines de tuiles magenta sur une porte noire.
+Le pire écart tonal est passé de 18,2 à 10,8 ΔE. Détail en § 5.53 du registre.
+
+---
+
 ## Colorimétrie : deux erreurs systématiques corrigées
 
 **Le rééchantillonnage moyennait des octets sRGB.** sRGB est un encodage en
