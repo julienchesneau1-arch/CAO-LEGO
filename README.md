@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **394 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **416 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -72,7 +72,14 @@ Le serveur écoute sur la boucle locale, et ce n'est pas un réglage timide :
 rien n'authentifie qui que ce soit et chaque requête coûte plusieurs secondes de
 calcul. Rien n'est servi depuis le disque — tout ce qui sort a été fabriqué en
 mémoire pendant la requête, ce qui retire d'un coup toute la famille des
-traversées de chemin.
+traversées de chemin. Un fichier se télécharge par son **nom**, cherché dans le
+dictionnaire du résultat : il ne peut désigner que ce qui vient d'être fabriqué.
+
+La seule chose que l'atelier écrit hors du dossier de sortie, ce sont les
+**catalogues de commande** — et seulement si on lui donne un dossier où les
+garder. Sans dossier, `Atelier()` ne touche à rien : une bibliothèque n'a pas à
+écrire dans le dossier personnel de qui l'importe parce que c'est pratique pour
+l'application.
 
 ---
 
@@ -134,7 +141,7 @@ page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
 | `bfk001/pickabrick.py` | — | Commande LEGO Pick a Brick : l'**element id** s'importe d'un catalogue, il ne se calcule pas (**hors contrat**) |
 | `bfk001/depth.py` | — | Profondeur **mesurée** : cartes externes, et extraction de la carte embarquée par les appareils en mode portrait (**hors contrat**) |
 | `bfk001/pipeline.py` | — | **La chaîne** : photo → fichiers livrables, en mémoire. Une seule, appelée à l'identique par la commande et par l'interface (**hors contrat**) |
-| `bfk001/webapp.py` | — | L'atelier dans le navigateur : serveur local et page autonome, sans aucune ressource externe (**hors contrat**) |
+| `bfk001/webapp.py` | — | L'atelier dans le navigateur : serveur local, page autonome sans ressource externe, catalogues de commande déposés et retenus (**hors contrat**) |
 | `bfk001/panels.py` | — | Découpe en sections bâties séparément, et la couche de plates qui les réunit (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,
@@ -617,13 +624,50 @@ rien de sa **disponibilité**. Pick a Brick a son propre stock, variable selon l
 pays et le jour. Aucun prix, aucune disponibilité n'est inventé ici ; c'est
 l'envoi lui-même qui dira ce qui est vendable aujourd'hui.
 
-Dans l'atelier, ces catalogues se donnent **une fois au lanceur** — ce sont des
-propriétés de l'installation, pas de l'œuvre :
+---
+
+## Commander depuis l'atelier
+
+C'est le chemin le plus court, et il ne demande aucune ligne de commande.
+
+**Une fois, pour toute la vie de l'installation.** Ouvrez
+« Catalogues de commande » dans la colonne de gauche, déposez-y le catalogue
+d'elements ([`elements.csv` chez Rebrickable](https://rebrickable.com/downloads/),
+avec `colors.csv`) et l'export de couleurs BrickLink si vous en voulez la liste
+de souhaits. Le `.csv.gz` se dépose **tel quel** : c'est reconnu aux octets
+d'en-tête, pas à l'extension, et décompressé pour vous.
+
+Ce qui est gardé sur la machine (`~/.brickforge` par défaut, `--memoire CHEMIN`
+ailleurs, `--sans-memoire` nulle part) n'est **pas le catalogue d'origine** mais
+ce qu'on en a **retenu** : quelques centaines de lignes vérifiées, où les
+couleurs sont désignées par leur **nom**. Deux conséquences — le fichier est
+minuscule, et `colors.csv` n'est plus nécessaire au redémarrage suivant.
+
+**Ensuite, à chaque œuvre.** La carte **Commander** apparaît sous les chiffres :
+
+| | Ce que fait le bouton | Pourquoi |
+|---|---|---|
+| **LEGO Pick a Brick** | télécharge `commande_lego.csv` | son formulaire prend un **fichier** |
+| **BrickLink** | met le XML dans le **presse-papier** | son formulaire d'import ne prend **pas** de fichier — il faut coller |
+
+Chaque encadré porte le lien vers la page où déposer, ouverte dans un nouvel
+onglet. Les lots sans element id sont dits en rouge, avec leur propre fichier.
+
+Sans catalogue, la carte le dit et **ouvre le panneau toute seule** : la réponse
+est à trois centimètres de la question.
+
+Tout reste faisable en ligne de commande — les catalogues se donnent aussi au
+lanceur, et l'atelier les reprend :
 
 ```bash
 python3 app_lego_art.py --bricklink couleurs.csv \
-    --elements elements.csv --elements-couleurs colors.csv
+    --elements elements.csv.gz --elements-couleurs colors.csv
 ```
+
+Et `liste_de_course.csv`, la liste **lisible**, gagne une colonne `element_id`
+dès qu'un catalogue est chargé. Les deux fichiers sortent de la même fonction —
+un test vérifie qu'ils disent la même chose, parce que personne ne compare
+jamais un CSV à deux colonnes avec une liste de courses.
 
 ---
 

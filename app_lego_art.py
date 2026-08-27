@@ -24,7 +24,7 @@ import webbrowser
 
 from bfk001 import bricklink, pickabrick
 from bfk001.pipeline import palette_utilisable
-from bfk001.webapp import Atelier, creer_serveur
+from bfk001.webapp import DOSSIER_DEFAUT, Atelier, creer_serveur
 
 
 def main() -> int:
@@ -46,6 +46,16 @@ def main() -> int:
         "--elements-couleurs", type=pathlib.Path, default=None,
         help="table « id, nom » des couleurs de ce catalogue, quand il ne "
              "designe les siennes que par un numero.")
+    analyseur.add_argument(
+        "--memoire", type=pathlib.Path, default=DOSSIER_DEFAUT,
+        help=f"ou garder les catalogues d'une session a l'autre "
+             f"(defaut : {DOSSIER_DEFAUT}). Ce qui y est ecrit n'est pas le "
+             "catalogue d'origine mais ce qu'on en a retenu — quelques "
+             "centaines de lignes verifiees.")
+    analyseur.add_argument(
+        "--sans-memoire", action="store_true",
+        help="ne rien garder : les catalogues seront a redonner a chaque "
+             "demarrage.")
     analyseur.add_argument("--sans-navigateur", action="store_true")
     options = analyseur.parse_args()
 
@@ -65,15 +75,28 @@ def main() -> int:
               + (f", {len(orphelines)} sans equivalent" if orphelines else ""))
     elements = None
     if options.elements:
-        noms = (pickabrick.read_color_names(
-            options.elements_couleurs.read_text())
+        noms = (pickabrick.read_color_names(pickabrick.decompresser(
+            options.elements_couleurs.read_bytes()))
             if options.elements_couleurs else None)
-        elements = pickabrick.read_elements(options.elements.read_text(), noms)
-        print(f"elements : {len(elements)} references LEGO")
+        elements = pickabrick.read_elements(
+            pickabrick.decompresser(options.elements.read_bytes()), noms,
+            pieces=pickabrick.PIECES_UTILES)
 
     atelier = Atelier(palette=palette, palette_complete=complete,
                       note_palette=note,
-                      table_bricklink=table, table_elements=elements)
+                      table_bricklink=table, table_elements=elements,
+                      dossier=None if options.sans_memoire else options.memoire)
+    etat = atelier.etat_catalogues()
+    if etat["elements"] or etat["bricklink"]:
+        print("commande : "
+              + ", ".join(filter(None, [
+                  f"{etat['elements']['references']} references LEGO"
+                  if etat["elements"] else None,
+                  f"{etat['bricklink']['couleurs']} couleurs BrickLink"
+                  if etat["bricklink"] else None])))
+    else:
+        print("commande : aucun catalogue — deposez-en un dans la page, "
+              "« Catalogues de commande »")
 
     serveur = creer_serveur(options.adresse, options.port, atelier)
     adresse = f"http://{options.adresse}:{serveur.server_address[1]}"

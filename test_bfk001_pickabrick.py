@@ -141,6 +141,49 @@ class TestLectureDuCatalogue(unittest.TestCase):
         self.assertEqual(len(table), 1)
         self.assertEqual(table.lignes_ignorees, 1)
 
+    def test_un_catalogue_compresse_se_lit_sans_qu_on_l_ouvre(self):
+        import gzip
+        import io
+        import zipfile
+        from bfk001.pickabrick import decompresser
+
+        self.assertEqual(decompresser(REBRICKABLE.encode()), REBRICKABLE)
+        self.assertEqual(
+            decompresser(gzip.compress(REBRICKABLE.encode())), REBRICKABLE)
+        tampon = io.BytesIO()
+        with zipfile.ZipFile(tampon, "w") as archive:
+            archive.writestr("elements.csv", REBRICKABLE)
+        self.assertEqual(decompresser(tampon.getvalue()), REBRICKABLE)
+
+    def test_un_petit_fichier_qui_deviendrait_enorme_est_refuse(self):
+        # Un .gz de 200 Ko peut contenir 200 Mo. `gzip.decompress` allouerait
+        # le tout avant qu'on puisse dire non.
+        import gzip
+        from bfk001.pickabrick import (TAILLE_DECOMPRESSEE_MAXIMALE,
+                                       decompresser)
+
+        bombe = gzip.compress(b"\0" * (TAILLE_DECOMPRESSEE_MAXIMALE + 1))
+        self.assertLess(len(bombe), 1 << 20, "la bombe doit rester petite")
+        with self.assertRaises(ElementsIllisibles) as capture:
+            decompresser(bombe)
+        self.assertIn("Mo une fois ouvert", str(capture.exception))
+
+    def test_le_filtre_des_pieces_ne_change_aucun_resultat(self):
+        # Filtrer a la lecture divise la memoire par mille sur un catalogue
+        # complet. Ce qui est ecarte ne pouvait apparaitre dans aucune
+        # nomenclature : les deux lectures doivent donner le meme fichier.
+        from bfk001.pickabrick import PIECES_UTILES
+
+        bruit = "".join(f"90000{i},9999{i},Black\n" for i in range(20))
+        texte = "element_id,design_id,color_name\n600020,3070b,Black\n" + bruit
+        lot = [BomLine("3070b", "Tile 1 x 1", 0, 9)]
+        large = read_elements(texte)
+        etroit = read_elements(texte, pieces=PIECES_UTILES)
+        self.assertEqual(len(etroit), 1)
+        self.assertEqual(etroit.lignes_ecartees, 20)
+        self.assertEqual(elements_for_bom(lot, large, PALETTE)[0],
+                         elements_for_bom(lot, etroit, PALETTE)[0])
+
     def test_un_catalogue_vide_ou_sans_les_colonnes_utiles_est_refuse(self):
         for texte in ("", "\n\n", "element_id,quantity\n600001,4\n",
                       "part_num,color_name\n3024,Black\n"):
@@ -205,6 +248,52 @@ class TestDeLaNomenclatureAuFichier(unittest.TestCase):
         connus = set(table.entrees.values())
         trouves, _, _ = elements_for_bom(BOM, table, PALETTE)
         self.assertTrue(set(e for e, _ in trouves) <= connus)
+
+
+    def test_la_liste_lisible_et_le_fichier_d_envoi_disent_la_meme_chose(self):
+        # Deux fichiers, un seul calcul. S'ils divergeaient, le desaccord
+        # passerait inapercu : personne ne compare un CSV a deux colonnes avec
+        # une liste de courses.
+        from bfk001.imaging import Image, write_png
+        from bfk001.pipeline import Reglages, run
+
+        table = read_elements(
+            "element_id,design_id,color_name\n"
+            "600020,3070b,Black\n"
+            "600021,41539,Light Bluish Gray\n")
+        pixels = [(255, 255, 255) if (x + y) % 2 else (5, 19, 29)
+                  for y in range(8) for x in range(8)]
+        resultat = run(
+            write_png(Image.from_pixels(8, 8, pixels)),
+            Reglages(studs=8, hauteur=8, tramage="aucun", cadre=0),
+            palette=PALETTE, palette_complete=PALETTE, table_elements=table)
+
+        envoi = {}
+        for ligne in resultat.fichiers["commande_lego.csv"].decode(
+                ).splitlines()[1:]:
+            element, quantite = ligne.split(",")
+            envoi[element] = int(quantite)
+
+        lisible = {}
+        lignes = resultat.fichiers["liste_de_course.csv"].decode().splitlines()
+        self.assertIn("element_id", lignes[0])
+        for ligne in lignes[1:]:
+            champs = ligne.rsplit(",", 1)
+            element = champs[1]
+            if element:
+                quantite = int(champs[0].rsplit(",", 1)[1])
+                lisible[element] = lisible.get(element, 0) + quantite
+        self.assertEqual(envoi, lisible)
+
+    def test_sans_catalogue_la_liste_lisible_n_a_pas_la_colonne(self):
+        from bfk001.imaging import Image, write_png
+        from bfk001.pipeline import Reglages, run
+
+        resultat = run(write_png(Image.from_pixels(8, 8, [(5, 19, 29)] * 64)),
+                       Reglages(studs=8, hauteur=8, cadre=0),
+                       palette=PALETTE, palette_complete=PALETTE)
+        entete = resultat.fichiers["liste_de_course.csv"].decode().splitlines()[0]
+        self.assertNotIn("element_id", entete)
 
 
 class TestDuFichierDEnvoi(unittest.TestCase):

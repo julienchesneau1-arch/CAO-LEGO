@@ -2137,6 +2137,120 @@ se découvrir après avoir fabriqué une mosaïque.
 
 ---
 
+### 5.57 « Il faut qu'on puisse commander facilement » — et ma décision d'hier était à moitié fausse
+
+Hier (§ 5.56) j'ai décidé que les catalogues de commande se donnent **au
+lanceur**, parce qu'ils sont une propriété de l'installation et pas de l'œuvre.
+La moitié « une fois, pas à chaque photo » était juste. **La moitié « au
+lanceur » était fausse** : le lanceur est une ligne de commande, et tout
+l'intérêt de l'atelier est qu'on n'y touche pas. J'avais raisonné sur la
+*portée* et conclu sur l'*endroit*. Ce ne sont pas la même question.
+
+#### Ce que « facilement » exigeait vraiment
+
+Compté depuis la photo, commander demandait : trouver trois fichiers, les
+décompresser, retenir trois options de ligne de commande, relancer le serveur,
+fabriquer, télécharger un ZIP, l'ouvrir, y trouver le bon fichier, aller sur le
+bon site, trouver le bon bouton. Dix étapes dont sept hors de l'app.
+
+Ce qu'il en reste : déposer les fichiers **dans la page** (une fois, jamais
+plus), fabriquer, cliquer sur le bouton de la boutique. Trois.
+
+#### Le fait extérieur qui décide de la forme des deux boutons
+
+Les deux boutiques n'importent **pas** de la même façon, et je l'ai vérifié
+plutôt que de le supposer :
+
+| | Ce qu'elle accepte | Donc le bouton |
+|---|---|---|
+| **LEGO Pick a Brick** | un **fichier** CSV `elementId,quantity` | télécharge le fichier |
+| **BrickLink** | un **collage** — son formulaire ne prend pas de pièce jointe | met le XML dans le presse-papier |
+
+Faire deux boutons identiques aurait été plus propre à écrire et faux à
+l'usage : sur BrickLink, un fichier téléchargé ne sert à rien.
+
+Le presse-papier direct n'existe que sur une **origine sûre**. `127.0.0.1` en
+est une par définition ; une adresse de réseau local (`--adresse 0.0.0.0`) n'en
+est pas une. D'où la zone de texte de secours, déjà sélectionnée, et un test
+qui accepte les deux issues — parce que les deux sont des succès.
+
+#### Ce qu'on garde sur le disque, et pourquoi ce n'est pas le catalogue
+
+« Une fois » ne veut rien dire si le fichier repart au redémarrage. Mais écrire
+un `elements.csv` complet (des mégaoctets, des centaines de milliers de lignes)
+pour en relire trente références serait absurde.
+
+Ce qui est écrit est donc ce qu'on a **retenu** : les entrées gardées, avec
+leurs couleurs désignées par leur **nom**. Deux conséquences, et la seconde ne
+m'était pas venue tout de suite — le fichier gardé est **auto-suffisant** : il
+se relit par le même lecteur que n'importe quel catalogue, et le second fichier
+(`colors.csv`) n'est plus nécessaire au redémarrage suivant.
+
+#### Le défaut que je venais d'introduire dans mon propre garde-fou
+
+Un test disait depuis longtemps : *aucune adresse absolue dans la page*. Mes
+trois liens de commande le faisaient échouer.
+
+La tentation était d'assouplir le test. Ce qu'il protégeait est pourtant réel —
+la page ne doit charger **aucune ressource** extérieure. Mais un **lien qu'un
+humain clique** n'est pas une ressource : il ne part que s'il le décide. Le
+test disait « aucune adresse » là où il voulait dire « aucune ressource ».
+
+Il dit maintenant les deux choses séparément : aucun `src=`, `<link>`,
+`@import` ni `url(http)` — et la liste **exhaustive** des trois destinations
+autorisées, qu'une quatrième ajoutée distraitement ferait échouer. Plus strict
+qu'avant, pas moins.
+
+Et comme deux des trois liens sont **fabriqués par le script**, ils n'existent
+pas dans le HTML servi : leur `target` et leur `rel=noopener` se vérifient dans
+le vrai navigateur, seul endroit d'où on peut les regarder.
+
+#### Deux défauts trouvés en relisant, dont un que je m'apprêtais à écrire
+
+**Un verrou qui ne tenait pas ce qu'il annonçait.** J'avais mis les deux
+catalogues sous verrou au moment du remplacement, en écrivant en commentaire
+qu'une fabrication verrait « les anciens ou les nouveaux, jamais un mélange ».
+C'était faux : `fabriquer` les lisait **hors** du verrou, un à un. Une
+fabrication tombant pile entre les deux lectures aurait employé le nouveau
+catalogue d'elements avec l'ancienne table de couleurs. Le commentaire
+promettait ce que le code ne faisait pas — la pire des deux situations, parce
+qu'il décourage de vérifier. Corrigé en prenant les deux ensemble.
+
+**Une bombe de décompression.** Accepter un `.csv.gz` déposé dans la page était
+le bon choix : demander de décompresser d'abord, c'est perdre la moitié des
+gens. Mais `gzip.decompress` alloue tout ce que le fichier contient avant qu'on
+puisse dire non. Un `.gz` de 200 Ko en produit 200 Mo. On lit maintenant par
+morceaux avec un plafond, et le test construit vraiment la bombe.
+
+#### Ce qu'un test a attrapé dans la documentation
+
+Le contrôle des options documentées ne lisait que `demo_lego_art.py`. Il a
+signalé `--memoire` et `--sans-m` comme inexistantes. Deux vrais défauts d'un
+coup : il ne regardait pas le lanceur de l'atelier, et j'avais écrit
+`--sans-mémoire` **avec un accent** dans le README quand l'option s'écrit
+`--sans-memoire`. Une option documentée qui n'existe pas envoie l'utilisateur
+dans le mur ; le contrôle lit maintenant les deux façades.
+
+#### Une décision revue, dite ici parce qu'elle contredit § 5.56
+
+`Atelier()` sans dossier n'écrit **rien** hors de ce qu'on lui demande. Donner
+un dossier, c'est demander qu'on s'en souvienne. Une bibliothèque n'a pas à
+toucher au dossier personnel de qui l'importe parce que c'est pratique pour
+l'application — et c'est le lanceur, pas le module, qui décide.
+
+#### Et un ajout minuscule qui change l'usage
+
+`liste_de_course.csv` — la liste **lisible**, celle qu'on ouvre pour chercher
+une pièce à la main — gagne une colonne `element_id` dès qu'un catalogue est
+chargé. Le fichier d'envoi ne porte que deux colonnes muettes ; celui-ci est
+celui qu'on lit.
+
+Les deux sortent de la **même fonction**, `element_pour`. Deux implémentations
+divergeraient un jour, et le désaccord passerait inaperçu : personne ne compare
+un CSV à deux colonnes avec une liste de courses. Un test le fait.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

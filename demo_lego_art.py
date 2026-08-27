@@ -173,12 +173,17 @@ def main() -> int:
 
     elements = None
     if options.elements:
-        noms = (bfk.pickabrick.read_color_names(
-            options.elements_couleurs.read_text())
+        # `decompresser` : Rebrickable publie ses catalogues en .csv.gz, et
+        # demander de decompresser avant de s'en servir est une etape de trop.
+        noms = (bfk.pickabrick.read_color_names(bfk.pickabrick.decompresser(
+            options.elements_couleurs.read_bytes()))
             if options.elements_couleurs else None)
         elements = bfk.pickabrick.read_elements(
-            options.elements.read_text(), noms)
-        print(f"  elements : {len(elements)} references importees"
+            bfk.pickabrick.decompresser(options.elements.read_bytes()), noms,
+            pieces=bfk.pickabrick.PIECES_UTILES)
+        print(f"  elements : {len(elements)} references retenues"
+              + (f", {elements.lignes_ecartees} hors des pieces employees ici"
+                 if elements.lignes_ecartees else "")
               + (f", {elements.lignes_ignorees} ligne(s) illisible(s)"
                  if elements.lignes_ignorees else ""))
 

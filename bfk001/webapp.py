@@ -24,17 +24,21 @@ from __future__ import annotations
 import base64
 import io
 import json
+import pathlib
 import secrets
 import threading
 import zipfile
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote
 from typing import Dict, Mapping, Optional, Tuple
 
+from . import bricklink, pickabrick
 from .palette import Palette
 from .pipeline import ModeleRefuse, Reglages, palette_utilisable, run
 
-__all__ = ["PAGE", "Atelier", "servir", "creer_serveur", "TAILLE_MAXIMALE"]
+__all__ = ["PAGE", "Atelier", "servir", "creer_serveur", "TAILLE_MAXIMALE",
+           "DOSSIER_DEFAUT", "CATALOGUES"]
 
 TAILLE_MAXIMALE = 64 * 1024 * 1024
 """Corps de requete accepte, en octets. Une photo de telephone en base64 pese
@@ -45,6 +49,18 @@ RESULTATS_GARDES = 8
 """Nombre de resultats gardes en memoire pour le telechargement. Au-dela, le
 plus ancien est oublie : un atelier ouvert une journee ne doit pas accumuler
 des dizaines de mosaiques de plusieurs mega-octets."""
+
+
+DOSSIER_DEFAUT = pathlib.Path.home() / ".brickforge"
+"""Ou l'atelier garde les catalogues de commande, d'une session a l'autre.
+
+« Donnez-le une fois » ne veut rien dire si le fichier repart a chaque
+redemarrage. Ce qui est ecrit la n'est pas le catalogue brut mais ce qu'on en a
+RETENU — quelques centaines de lignes verifiees, relisibles par le meme lecteur
+que le fichier d'origine. Rien d'autre n'est ecrit hors du dossier de sortie.
+"""
+
+CATALOGUES = ("elements", "elements_couleurs", "bricklink")
 
 
 PAGE = r"""<!doctype html>
@@ -115,6 +131,32 @@ PAGE = r"""<!doctype html>
   #etat.erreur { color:var(--vif); }
   details { margin-top:14px; }
   summary { cursor:pointer; font-size:13px; color:var(--doux); }
+  .commande { display:grid; gap:12px;
+              grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
+              margin:4px 0 16px; }
+  .boutique { border:1px solid var(--trait); border-radius:8px; padding:13px 14px; }
+  .boutique h3 { margin:0 0 2px; font-size:14px; }
+  .boutique p { margin:0 0 10px; color:var(--doux); font-size:12.5px; }
+  .boutique a.action, .boutique button.action {
+    display:block; width:100%; margin:0 0 7px; padding:9px 10px; border:0;
+    border-radius:7px; background:var(--encre); color:var(--papier);
+    font:inherit; font-size:13px; font-weight:600; text-align:center;
+    text-decoration:none; cursor:pointer; }
+  .boutique a.suite { display:inline-block; font-size:12.5px;
+                      color:var(--doux); }
+  .boutique .manque { color:var(--vif); font-size:12.5px; margin:6px 0 0; }
+  .boutique.vide { border-style:dashed; }
+  #catalogues p { margin:6px 0 0; font-size:12.5px; color:var(--doux); }
+  #catalogues .etat { color:var(--ok); font-weight:600; }
+  #catalogues input[type=file] { font-size:12px; margin-top:3px; width:100%; }
+  #catalogues button { margin-top:10px; }
+  #catalogues button.mineur { background:transparent; color:var(--doux);
+                              border:1px solid var(--trait); font-weight:500;
+                              padding:7px; font-size:12.5px; }
+  #xml { width:100%; height:80px; margin-top:6px; font-size:11px;
+         font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         border:1px solid var(--trait); border-radius:6px; padding:6px;
+         background:var(--papier); color:var(--encre); }
 </style>
 
 <header>
@@ -204,7 +246,7 @@ PAGE = r"""<!doctype html>
       </select>
     </label>
 
-    <details>
+    <details id="fins">
       <summary>Reglages fins</summary>
       <label>Tramage
         <select id="tramage">
@@ -240,6 +282,37 @@ PAGE = r"""<!doctype html>
       </label>
     </details>
 
+    <details id="catalogues">
+      <summary>Catalogues de commande</summary>
+      <p id="etat_catalogues">Chargement...</p>
+      <p>A donner <strong>une seule fois</strong> : ils sont gardes sur cette
+         machine et servent a toutes les oeuvres suivantes. Sans eux, la liste
+         de courses reste un simple CSV a recopier a la main.</p>
+
+      <label style="margin-top:12px">Catalogue d'elements LEGO
+        <span class="aide">Le numero d'une piece <em>dans une couleur</em>.
+          <a href="https://rebrickable.com/downloads/" target="_blank"
+             rel="noopener noreferrer">elements.csv chez Rebrickable</a> —
+          le .gz se depose tel quel.</span>
+      </label>
+      <input type="file" id="cat_elements" accept=".csv,.tsv,.txt,.gz,.zip">
+
+      <label>Couleurs de ce catalogue
+        <span class="aide">Necessaire seulement si le catalogue designe ses
+          couleurs par un numero : chez Rebrickable, colors.csv.</span>
+      </label>
+      <input type="file" id="cat_couleurs" accept=".csv,.tsv,.txt,.gz,.zip">
+
+      <label>Couleurs BrickLink
+        <span class="aide">L'export de couleurs BrickLink, ou une table a deux
+          colonnes. Pour la liste de souhaits BrickLink.</span>
+      </label>
+      <input type="file" id="cat_bricklink" accept=".csv,.tsv,.txt,.gz,.zip">
+
+      <button type="button" id="poser_catalogues">Enregistrer les catalogues</button>
+      <button type="button" class="mineur" id="oublier_catalogues">Tout oublier</button>
+    </details>
+
     <button type="submit" id="lancer" disabled>Fabriquer la mosaique</button>
     <div id="etat"></div>
   </form>
@@ -249,6 +322,8 @@ PAGE = r"""<!doctype html>
       <div id="onglets"></div>
       <img id="rendu" alt="Apercu de la mosaique">
       <div class="chiffres" id="chiffres"></div>
+      <h2 style="font-size:15px;margin:18px 0 8px">Commander</h2>
+      <div class="commande" id="commander"></div>
       <a id="telecharger" download><button type="button" class="secondaire">
         Telecharger le dossier complet (ZIP)</button></a>
       <details open style="margin-top:16px">
@@ -334,6 +409,239 @@ PAGE = r"""<!doctype html>
     return nom;
   }
 
+  // ---------------------------------------------------------------- //
+  // Les catalogues de commande : donnes une fois, gardes ensuite.
+  // ---------------------------------------------------------------- //
+  var catalogues = { elements: null, bricklink: null };
+  var etatCat = document.getElementById('etat_catalogues');
+
+  function direCatalogues(etat) {
+    catalogues = etat;
+    etatCat.textContent = '';
+    var lignes = [];
+    if (etat.elements) {
+      lignes.push('Elements LEGO : ' + etat.elements.references
+                  + ' references — ' + etat.elements.note);
+    }
+    if (etat.bricklink) {
+      lignes.push('BrickLink : ' + etat.bricklink.couleurs
+                  + ' couleurs — ' + etat.bricklink.note);
+    }
+    if (!lignes.length) {
+      etatCat.textContent = 'Aucun catalogue : la liste de courses sortira en '
+        + 'CSV, sans commande prete a envoyer.';
+      return;
+    }
+    lignes.forEach(function (texte) {
+      var n = document.createElement('span');
+      n.className = 'etat';
+      n.textContent = texte;
+      etatCat.appendChild(n);
+      etatCat.appendChild(document.createElement('br'));
+    });
+    if (etat.dossier) {
+      var d = document.createElement('span');
+      d.textContent = 'Gardes dans ' + etat.dossier + ' sur cette machine.';
+      etatCat.appendChild(d);
+    }
+    // Un resultat deja affiche a ete fabrique SANS ces catalogues : sa carte
+    // « Commander » est perimee, et rien ne le dirait autrement.
+    if (document.getElementById('resultat').style.display === 'block') {
+      etat_dit('Catalogues enregistres — refabriquez la mosaique pour en '
+               + 'obtenir la commande.');
+    }
+  }
+
+  function etat_dit(texte) {
+    etat.className = '';
+    etat.textContent = texte;
+  }
+
+  fetch('/catalogues').then(function (r) { return r.json(); })
+    .then(direCatalogues).catch(function () {
+      etatCat.textContent = 'Etat des catalogues indisponible.';
+    });
+
+  function lireOuRien(id, suite) {
+    var f = document.getElementById(id).files[0];
+    if (!f) { suite(null); return; }
+    lire(f, suite);
+  }
+
+  document.getElementById('poser_catalogues')
+    .addEventListener('click', function () {
+      var bouton = this;
+      bouton.disabled = true;
+      etatCat.textContent = 'Lecture...';
+      lireOuRien('cat_elements', function (a) {
+        lireOuRien('cat_couleurs', function (b) {
+          lireOuRien('cat_bricklink', function (c) {
+            fetch('/catalogues', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                elements: a, elements_couleurs: b, bricklink: c
+              })
+            }).then(function (r) {
+              return r.json().then(function (corps) {
+                if (!r.ok) throw new Error(corps.erreur || ('erreur ' + r.status));
+                return corps;
+              });
+            }).then(direCatalogues).catch(function (raison) {
+              etatCat.textContent = String(raison.message || raison);
+            }).finally(function () { bouton.disabled = false; });
+          });
+        });
+      });
+    });
+
+  document.getElementById('oublier_catalogues')
+    .addEventListener('click', function () {
+      fetch('/catalogues', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oublier: true })
+      }).then(function (r) { return r.json(); }).then(direCatalogues);
+    });
+
+  // ---------------------------------------------------------------- //
+  // La carte « Commander »
+  // ---------------------------------------------------------------- //
+  var PICK_A_BRICK = 'https://www.lego.com/pick-and-build/pick-a-brick';
+  var BRICKLINK_IMPORT = 'https://www.bricklink.com/v2/wanted/upload.page';
+
+  function boite(titre, sous) {
+    var d = document.createElement('div');
+    d.className = 'boutique';
+    var h = document.createElement('h3'); h.textContent = titre;
+    var p = document.createElement('p'); p.textContent = sous;
+    d.appendChild(h); d.appendChild(p);
+    return d;
+  }
+
+  function bouton(texte, action) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'action'; b.textContent = texte;
+    b.addEventListener('click', action);
+    return b;
+  }
+
+  function lienFichier(jeton, nom, texte) {
+    var a = document.createElement('a');
+    a.className = 'action';
+    a.href = '/fichier/' + encodeURIComponent(jeton) + '/'
+             + nom.split('/').map(encodeURIComponent).join('/');
+    a.setAttribute('download', nom.replace(/\//g, '_'));
+    a.textContent = texte;
+    return a;
+  }
+
+  function lienDehors(url, texte) {
+    var a = document.createElement('a');
+    a.className = 'suite'; a.href = url;
+    a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.textContent = texte;
+    return a;
+  }
+
+  function note(parent, texte, classe) {
+    var p = document.createElement('p');
+    if (classe) p.className = classe;
+    else { p.style.margin = '6px 0 0'; p.style.fontSize = '12.5px';
+           p.style.color = 'var(--doux)'; }
+    p.textContent = texte;
+    parent.appendChild(p);
+    return p;
+  }
+
+  function copierLeXml(jeton, retour) {
+    fetch('/fichier/' + encodeURIComponent(jeton) + '/commande_bricklink.xml')
+      .then(function (r) { return r.text(); })
+      .then(function (texte) {
+        // BrickLink veut un COLLAGE, pas un fichier : son formulaire d'import
+        // ne prend pas de piece jointe. Le presse-papier direct n'existe que
+        // sur une origine sure — 127.0.0.1 en est une, pas une adresse de
+        // reseau local. D'ou la zone de texte en secours, deja selectionnee.
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(texte).then(function () {
+            retour('XML copie — collez-le dans la page BrickLink.');
+          }).catch(function () { secours(texte, retour); });
+        } else { secours(texte, retour); }
+      }).catch(function () { retour('Fichier indisponible : refabriquez.'); });
+  }
+
+  function secours(texte, retour) {
+    var zone = document.getElementById('xml');
+    zone.hidden = false;
+    zone.value = texte;
+    zone.focus(); zone.select();
+    var copie = false;
+    try { copie = document.execCommand('copy'); } catch (e) { copie = false; }
+    retour(copie ? 'XML copie — collez-le dans la page BrickLink.'
+                 : 'XML selectionne ci-dessous : Ctrl-C pour le copier.');
+  }
+
+  function commander(jeton, m, fichiers) {
+    var zone = document.getElementById('commander');
+    zone.textContent = '';
+    var eu = false;
+
+    if (m.commande_lego_lots) {
+      var d = boite('LEGO Pick a Brick',
+        m.commande_lego_lots + ' references, ' + m.commande_lego_pieces
+        + ' pieces');
+      fichiers.filter(function (n) {
+        return /^commande_lego(_\d+)?\.csv$/.test(n);
+      }).forEach(function (n) {
+        d.appendChild(lienFichier(jeton, n, 'Telecharger ' + n));
+      });
+      d.appendChild(lienDehors(PICK_A_BRICK,
+        'Ouvrir Pick a Brick, puis le bouton « Upload list » →'));
+      if (m.commande_lego_envois > 1) {
+        note(d, 'Plus de 400 references : ' + m.commande_lego_envois
+                + ' envois separes, la limite de Pick a Brick.');
+      }
+      if (m.commande_lego_manquants) {
+        note(d, m.commande_lego_manquants + ' lot(s) sans element id — a '
+                + 'chercher a la main.', 'manque');
+        d.appendChild(lienFichier(jeton, 'pieces_sans_element.csv',
+                                  'Telecharger la liste des manquants'));
+      }
+      note(d, 'La disponibilite reelle n\'est pas connue ici : Pick a Brick la '
+              + 'dira a l\'envoi.');
+      zone.appendChild(d); eu = true;
+    }
+
+    if (m.commande_bricklink_lots) {
+      var b = boite('BrickLink',
+        m.commande_bricklink_lots + ' lots, liste de souhaits complete');
+      var dit = null;
+      b.appendChild(bouton('Copier le XML pour BrickLink', function () {
+        copierLeXml(jeton, function (texte) { dit.textContent = texte; });
+      }));
+      b.appendChild(lienDehors(BRICKLINK_IMPORT,
+        'Ouvrir la page d\'import BrickLink →'));
+      dit = note(b, 'BrickLink importe par copier-coller, pas par fichier : '
+                    + 'le bouton met le XML dans le presse-papier.');
+      var aire = document.createElement('textarea');
+      aire.id = 'xml'; aire.readOnly = true; aire.hidden = true;
+      b.appendChild(aire);
+      zone.appendChild(b); eu = true;
+    }
+
+    if (!eu) {
+      var v = boite('Aucune commande prete',
+        'La liste de courses est la, mais en CSV a recopier.');
+      v.className = 'boutique vide';
+      note(v, 'Ouvrez « Catalogues de commande » a gauche et deposez-y le '
+              + 'catalogue d\'elements : le numero d\'une piece dans une '
+              + 'couleur est attribue par LEGO, il ne se calcule pas.');
+      v.appendChild(lienDehors('https://rebrickable.com/downloads/',
+        'Ou telecharger elements.csv et colors.csv →'));
+      zone.appendChild(v);
+      document.getElementById('catalogues').open = true;
+    }
+  }
+
   document.getElementById('formulaire').addEventListener('submit', function (e) {
     e.preventDefault();
     if (!photo) return;
@@ -415,6 +723,8 @@ PAGE = r"""<!doctype html>
         journal.appendChild(n);
       });
 
+      commander(reponse.jeton, reponse.mesures, reponse.fichiers);
+
       document.getElementById('telecharger').href =
         '/telecharger/' + reponse.jeton + '.zip';
       document.getElementById('resultat').style.display = 'block';
@@ -443,7 +753,9 @@ class Atelier:
                  palette_complete: Optional[Palette] = None,
                  note_palette: Optional[Tuple[str, str]] = None,
                  table_bricklink: Optional[Mapping[int, int]] = None,
-                 table_elements=None):
+                 table_elements=None,
+                 dossier: Optional[pathlib.Path] = None,
+                 memoire: Optional[bool] = None):
         if palette is None:
             complete, note_palette = palette_utilisable()
             palette_complete = complete
@@ -453,11 +765,24 @@ class Atelier:
         self.palette_complete = palette_complete or palette
         self.note_palette = note_palette
         # Les catalogues de commande sont une propriete de l'INSTALLATION, pas
-        # de l'oeuvre : on les donne une fois au lanceur et chaque fabrication
-        # en profite. Les demander a l'utilisateur a chaque photo alourdirait la
-        # page sans rien apporter — c'est toujours le meme fichier.
+        # de l'oeuvre : on les donne une fois et chaque fabrication en profite.
+        # Les redemander a chaque photo alourdirait la page sans rien apporter.
+        #
+        # Mais « une fois » ne veut rien dire si le fichier repart au
+        # redemarrage : ils sont donc RELUS du dossier au demarrage, et une
+        # nouvelle depuis la page y est ecrite. Le lanceur garde ses options,
+        # qui l'emportent sur ce qui est en memoire.
+        # Donner un dossier, c'est demander qu'on s'en souvienne ; n'en donner
+        # aucun, c'est un atelier qui n'ecrit RIEN hors de ce qu'on lui demande.
+        # Une bibliotheque n'a pas a toucher au dossier personnel de qui
+        # l'importe parce que c'est pratique pour l'application.
+        self.dossier = pathlib.Path(dossier) if dossier else DOSSIER_DEFAUT
+        self.memoire = bool(dossier) if memoire is None else bool(memoire)
         self.table_bricklink = table_bricklink
         self.table_elements = table_elements
+        self._notes: Dict[str, str] = {}
+        if self.memoire:
+            self._relire()
         self._resultats: "OrderedDict[str, Dict[str, bytes]]" = OrderedDict()
         self._verrou = threading.Lock()
 
@@ -473,13 +798,20 @@ class Atelier:
         carte = _decoder(requete.get("carte_profondeur"), "carte de profondeur")
         reglages = _reglages(requete.get("reglages") or {})
 
+        # Les deux catalogues sont pris ENSEMBLE : sans cela, une fabrication
+        # qui tombe pile pendant un remplacement pourrait employer le nouveau
+        # catalogue d'elements avec l'ancienne table de couleurs.
+        with self._verrou:
+            table_bricklink = self.table_bricklink
+            table_elements = self.table_elements
+
         resultat = run(
             photo, reglages,
             palette=self.palette,
             palette_complete=self.palette_complete,
             carte_profondeur=carte,
-            table_bricklink=self.table_bricklink,
-            table_elements=self.table_elements,
+            table_bricklink=table_bricklink,
+            table_elements=table_elements,
             note_palette=self.note_palette,
         )
 
@@ -502,6 +834,163 @@ class Atelier:
             "apercus": apercus,
             "fichiers": sorted(resultat.fichiers),
         }
+
+    # ---------------------------------------------------------------- #
+    # Les catalogues de commande
+    # ---------------------------------------------------------------- #
+
+    def etat_catalogues(self) -> dict:
+        """Ce que la page doit savoir pour dire ou en est la commande."""
+        etat = {
+            "dossier": str(self.dossier) if self.memoire else None,
+            "elements": None,
+            "bricklink": None,
+        }
+        if self.table_elements:
+            etat["elements"] = {
+                "references": len(self.table_elements),
+                "cle": self.table_elements.cle,
+                "note": self._notes.get("elements", ""),
+            }
+        if self.table_bricklink:
+            etat["bricklink"] = {
+                "couleurs": len(self.table_bricklink),
+                "note": self._notes.get("bricklink", ""),
+            }
+        return etat
+
+    def definir_catalogues(self, requete: dict) -> dict:
+        """Lit les catalogues deposes dans la page. Leve ValueError.
+
+        Tout ou rien : si la lecture echoue, l'etat precedent est intact. Un
+        catalogue a moitie remplace serait pire que pas de catalogue du tout —
+        on croirait pouvoir commander.
+        """
+        brut = {}
+        for nom in CATALOGUES:
+            octets = _decoder(requete.get(nom), nom)
+            if octets is not None:
+                brut[nom] = pickabrick.decompresser(octets)
+        if not brut:
+            raise ValueError("aucun catalogue depose")
+
+        if "elements_couleurs" in brut and "elements" not in brut:
+            raise ValueError(
+                "la table de couleurs accompagne un catalogue d'elements : "
+                "deposez les deux ensemble"
+            )
+
+        table_elements, note_elements = self.table_elements, None
+        if "elements" in brut:
+            noms = (pickabrick.read_color_names(brut["elements_couleurs"])
+                    if "elements_couleurs" in brut else None)
+            table_elements = pickabrick.read_elements(
+                brut["elements"], noms, pieces=pickabrick.PIECES_UTILES)
+            # La note ne repete pas le nombre, qui est deja rendu a part :
+            # elle ne porte que ce que le nombre ne dit pas.
+            ecartees = table_elements.lignes_ecartees
+            note_elements = (
+                f"{ecartees} ligne{'s' if ecartees > 1 else ''} "
+                f"ecartee{'s' if ecartees > 1 else ''}, hors des pieces "
+                "employees ici" if ecartees else "catalogue lu en entier"
+            )
+
+        table_bricklink, note_bricklink = self.table_bricklink, None
+        if "bricklink" in brut:
+            table_bricklink, orphelines = bricklink.read_color_map(
+                brut["bricklink"], self.palette_complete)
+            note_bricklink = (
+                f"{len(orphelines)} couleur"
+                f"{'s' if len(orphelines) > 1 else ''} sans equivalent"
+                if orphelines else "toute la palette est couverte"
+            )
+
+        # Rien n'est pose avant que TOUT ait ete lu sans erreur. Sous verrou :
+        # le serveur est multi-fil, et une fabrication en cours doit voir les
+        # anciens catalogues ou les nouveaux, jamais un melange des deux.
+        with self._verrou:
+            self.table_elements = table_elements
+            self.table_bricklink = table_bricklink
+            if note_elements:
+                self._notes["elements"] = note_elements
+            if note_bricklink:
+                self._notes["bricklink"] = note_bricklink
+        if self.memoire:
+            self._ecrire()
+        return self.etat_catalogues()
+
+    def oublier_catalogues(self) -> dict:
+        """Efface ce qui est retenu, memoire et disque."""
+        with self._verrou:
+            self.table_elements = None
+            self.table_bricklink = None
+            self._notes.clear()
+        if self.memoire:
+            for nom in ("elements.tsv", "bricklink.csv"):
+                try:
+                    (self.dossier / nom).unlink()
+                except OSError:
+                    pass
+        return self.etat_catalogues()
+
+    def _ecrire(self) -> None:
+        """Ecrit ce qu'on a RETENU, pas le catalogue d'origine.
+
+        Deux raisons, et la seconde compte plus que la premiere. La taille :
+        un catalogue complet fait des megaoctets dont on garde trente
+        references. Et la forme : ce qu'on ecrit designe ses couleurs par leur
+        NOM ou par leur identifiant LEGO, jamais par un numero de systeme — le
+        second fichier n'est donc plus necessaire au redemarrage, et le fichier
+        garde se relit par le meme lecteur que n'importe quel autre catalogue.
+        """
+        try:
+            self.dossier.mkdir(parents=True, exist_ok=True)
+            if self.table_elements:
+                colonne = ("lego_color_id" if self.table_elements.cle == "lego"
+                           else "color_name")
+                lignes = [f"element_id\tdesign_id\t{colonne}"]
+                for (piece, couleur), element in sorted(
+                        self.table_elements.entrees.items()):
+                    lignes.append(f"{element}\t{piece}\t{couleur}")
+                (self.dossier / "elements.tsv").write_text(
+                    "\n".join(lignes) + "\n", encoding="utf-8")
+            if self.table_bricklink:
+                lignes = [f"{ldraw},{bl}" for ldraw, bl
+                          in sorted(self.table_bricklink.items())]
+                (self.dossier / "bricklink.csv").write_text(
+                    "\n".join(lignes) + "\n", encoding="utf-8")
+        except OSError:
+            # Ne pas pouvoir ecrire n'empeche pas de travailler : la session en
+            # cours garde ses catalogues, seule la prochaine les redemandera.
+            self.memoire = False
+
+    def _relire(self) -> None:
+        """Reprend ce qui avait ete retenu. Un fichier abime est ignore."""
+        chemin = self.dossier / "elements.tsv"
+        if self.table_elements is None and chemin.is_file():
+            try:
+                self.table_elements = pickabrick.read_elements(
+                    chemin.read_text(encoding="utf-8"))
+                self._notes["elements"] = "retenues d'une session precedente"
+            except (OSError, ValueError):
+                pass
+        chemin = self.dossier / "bricklink.csv"
+        if self.table_bricklink is None and chemin.is_file():
+            try:
+                self.table_bricklink, _ = bricklink.read_color_map(
+                    chemin.read_text(encoding="utf-8"))
+                self._notes["bricklink"] = "retenues d'une session precedente"
+            except (OSError, ValueError):
+                pass
+
+    def fichier(self, jeton: str, nom: str) -> bytes:
+        """Un seul fichier d'un resultat. Leve KeyError.
+
+        Le nom est cherche dans le dictionnaire du resultat, jamais employe
+        comme chemin : il ne peut designer que ce qui a ete fabrique.
+        """
+        with self._verrou:
+            return self._resultats[jeton][nom]
 
     def archive(self, jeton: str) -> bytes:
         """Le dossier complet, en ZIP. Leve KeyError si le jeton a expire."""
@@ -572,6 +1061,24 @@ def _reglages(brut: dict) -> Reglages:
         raise ValueError(str(raison)) from None
 
 
+_TYPES = {
+    ".csv": "text/csv; charset=utf-8",
+    ".xml": "application/xml; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".json": "application/json; charset=utf-8",
+    ".ldr": "text/plain; charset=utf-8",
+}
+
+
+def _type_mime(nom: str) -> str:
+    for extension, type_mime in _TYPES.items():
+        if nom.endswith(extension):
+            return type_mime
+    return "application/octet-stream"
+
+
 class _Gestionnaire(BaseHTTPRequestHandler):
     """Le transport, et rien d'autre. Toute la logique est dans `Atelier`."""
 
@@ -613,6 +1120,25 @@ class _Gestionnaire(BaseHTTPRequestHandler):
         if chemin in ("/", "/index.html"):
             self._repondre(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
             return
+        if chemin == "/catalogues":
+            self._repondre(200, "application/json; charset=utf-8",
+                           json.dumps(self.atelier.etat_catalogues())
+                           .encode("utf-8"))
+            return
+        if chemin.startswith("/fichier/"):
+            reste = unquote(chemin[len("/fichier/"):])
+            jeton, _, nom = reste.partition("/")
+            try:
+                contenu = self.atelier.fichier(jeton, nom)
+            except KeyError:
+                self._erreur(404, "fichier inconnu ou resultat expire")
+                return
+            self._repondre(
+                200, _type_mime(nom), contenu,
+                (("Content-Disposition",
+                  'attachment; filename="%s"' % nom.replace("/", "_")),),
+            )
+            return
         if chemin.startswith("/telecharger/") and chemin.endswith(".zip"):
             jeton = chemin[len("/telecharger/"):-len(".zip")]
             try:
@@ -631,7 +1157,8 @@ class _Gestionnaire(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
     def do_POST(self):
-        if self.path.split("?", 1)[0] != "/fabriquer":
+        chemin = self.path.split("?", 1)[0]
+        if chemin not in ("/fabriquer", "/catalogues"):
             self._erreur(404, "page inconnue")
             return
         try:
@@ -654,6 +1181,18 @@ class _Gestionnaire(BaseHTTPRequestHandler):
             return
         if not isinstance(requete, dict):
             self._erreur(400, "objet JSON attendu")
+            return
+        if chemin == "/catalogues":
+            try:
+                if requete.get("oublier"):
+                    reponse = self.atelier.oublier_catalogues()
+                else:
+                    reponse = self.atelier.definir_catalogues(requete)
+            except ValueError as raison:
+                self._erreur(400, str(raison))
+                return
+            self._repondre(200, "application/json; charset=utf-8",
+                           json.dumps(reponse).encode("utf-8"))
             return
         try:
             reponse = self.atelier.fabriquer(requete)

@@ -16,6 +16,19 @@ REGISTRE = RACINE / "docs" / "ZONES_DOMBRE.md"
 LISEZMOI = RACINE / "README.md"
 DEMO = RACINE / "demo_lego_art.py"
 CHAINE = RACINE / "bfk001" / "pipeline.py"
+LANCEUR = RACINE / "app_lego_art.py"
+
+ENTREES = frozenset({
+    # Fichiers que l'utilisateur FOURNIT. Le controle ci-dessous verifie que
+    # tout nom de fichier cite dans le README est produit par la chaine ; ces
+    # noms-la vont dans l'autre sens, et la liste est explicite pour qu'elle ne
+    # s'allonge pas sans qu'on s'en apercoive.
+    "photo.jpg",       # la photo de depart
+    "couleurs.csv",    # la table ou l'export de couleurs BrickLink
+    "elements.csv",    # le catalogue d'element ids
+    "colors.csv",      # les couleurs de ce catalogue
+    "catalogue.csv",   # le meme, sous son nom generique
+})
 
 
 class TestRegistre(unittest.TestCase):
@@ -63,6 +76,7 @@ class TestPromessesDeLaCommande(unittest.TestCase):
         # plus rien tout en restant vert.
         self.chaine = CHAINE.read_text(encoding="utf-8")
         self.lisezmoi = LISEZMOI.read_text(encoding="utf-8")
+        self.lanceur = LANCEUR.read_text(encoding="utf-8")
 
     def test_les_fichiers_annonces_sont_produits(self):
         # Le README a liste des sorties qui n'existaient plus, et l'inverse.
@@ -71,12 +85,15 @@ class TestPromessesDeLaCommande(unittest.TestCase):
         produits = set(re.findall(r'"([a-z_]+\.(?:png|csv|txt|pdf|json|ldr|xml))"',
                                   self.demo + self.chaine))
         self.assertTrue(produits, "la commande ne produit rien ?")
-        jamais = sorted(annonces - produits - {"photo.jpg", "couleurs.csv"})
+        jamais = sorted(annonces - produits - ENTREES)
         self.assertEqual(jamais, [], f"annonces mais jamais produits : {jamais}")
 
     def test_les_options_documentees_existent(self):
+        # Les deux facades, pas une seule : `--memoire` n'existe que dans le
+        # lanceur de l'atelier, et une option documentee qui n'existe nulle
+        # part envoie l'utilisateur dans le mur.
         options = set(re.findall(r"`(--[a-z-]+)", self.lisezmoi))
-        declarees = set(re.findall(r'"(--[a-z-]+)"', self.demo))
+        declarees = set(re.findall(r'"(--[a-z-]+)"', self.demo + self.lanceur))
         self.assertTrue(declarees)
         fantomes = sorted(options - declarees)
         self.assertEqual(fantomes, [], f"options documentees, absentes : {fantomes}")

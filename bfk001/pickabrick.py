@@ -48,6 +48,9 @@ qui dira ce qui est vendable aujourd'hui.
 
 from __future__ import annotations
 
+import gzip
+import io
+import zipfile
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -58,9 +61,10 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from .bricklink import _decouper, _normaliser
 from .catalog import BomLine
 
-__all__ = ["TableElements", "ELEMENTS_PAR_ENVOI", "read_elements",
-           "read_color_names", "elements_for_bom", "dumps_upload",
-           "missing_report", "ElementsIllisibles"]
+__all__ = ["TableElements", "ELEMENTS_PAR_ENVOI", "PIECES_UTILES",
+           "read_elements", "read_color_names", "elements_for_bom",
+           "dumps_upload", "element_pour", "missing_report", "decompresser", "TAILLE_DECOMPRESSEE_MAXIMALE",
+           "ElementsIllisibles"]
 
 
 ELEMENTS_PAR_ENVOI = 400
@@ -75,6 +79,85 @@ que de laisser l'upload echouer sans expliquer pourquoi.
 
 class ElementsIllisibles(ValueError):
     """Le catalogue d'elements ne se laisse pas lire, et on dit pourquoi."""
+
+
+TAILLE_DECOMPRESSEE_MAXIMALE = 128 * 1024 * 1024
+"""Plafond de ce qu'un fichier compresse a le droit de devenir.
+
+Un `.gz` de quelques kilo-octets peut en produire des giga-octets. Le plus gros
+catalogue qui nous concerne fait moins du quart de ce plafond ; au-dela, ce
+n'est plus un catalogue.
+"""
+
+
+def decompresser(octets: bytes) -> str:
+    """Octets d'un fichier -> texte, qu'il soit compresse ou non.
+
+    Ce n'est pas de la complaisance. Rebrickable publie ses catalogues en
+    `.csv.gz` et en `.zip` ; demander a quelqu'un de decompresser un fichier
+    avant de le deposer, c'est une etape ou l'on perd la moitie des gens. La
+    forme est reconnue a ses octets d'en-tete, jamais a l'extension du nom —
+    un navigateur qui decompresse en route donne un `.gz` qui n'en est plus un.
+    """
+    if octets[:2] == b"\x1f\x8b":
+        with gzip.GzipFile(fileobj=io.BytesIO(octets)) as flux:
+            octets = _lire_borne(flux)
+    elif octets[:4] == b"PK\x03\x04":
+        with zipfile.ZipFile(io.BytesIO(octets)) as archive:
+            noms = [n for n in archive.namelist() if not n.endswith("/")]
+            if len(noms) != 1:
+                raise ElementsIllisibles(
+                    f"cette archive contient {len(noms)} fichiers ; deposez "
+                    "celui qui vous interesse plutot que l'archive entiere"
+                )
+            with archive.open(noms[0]) as flux:
+                octets = _lire_borne(flux)
+    for encodage in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return octets.decode(encodage)
+        except UnicodeDecodeError:
+            continue
+    raise ElementsIllisibles("fichier illisible : ce n'est pas du texte")
+
+
+def _lire_borne(flux) -> bytes:
+    """Decompresse en refusant de laisser un petit fichier devenir enorme.
+
+    `gzip.decompress` sur un fichier hostile alloue tout ce qu'il contient
+    avant qu'on puisse dire non. On lit donc par morceaux, et on s'arrete au
+    plafond — la taille annoncee dans un en-tete ne se croit pas, elle se
+    verifie en lisant.
+    """
+    morceaux, total = [], 0
+    while True:
+        morceau = flux.read(1 << 20)
+        if not morceau:
+            return b"".join(morceaux)
+        total += len(morceau)
+        if total > TAILLE_DECOMPRESSEE_MAXIMALE:
+            raise ElementsIllisibles(
+                "ce fichier compresse depasse "
+                f"{TAILLE_DECOMPRESSEE_MAXIMALE // (1024 * 1024)} Mo une fois "
+                "ouvert : ce n'est pas un catalogue d'elements"
+            )
+        morceaux.append(morceau)
+
+
+def _pieces_utiles() -> frozenset:
+    """Les references que ce depot sait employer, et leurs deux ecritures.
+
+    Un catalogue d'elements complet compte des centaines de milliers de lignes
+    dont on n'emploiera jamais que quelques centaines. Les garder toutes coute
+    de la memoire pour rien ; les filtrer a la lecture ne change aucun
+    resultat, puisque ce qui est ecarte ne pouvait apparaitre dans aucune
+    nomenclature.
+    """
+    from .catalog import CATALOG
+    references = set()
+    for design in CATALOG:
+        for variante in _variantes(design):
+            references.add(variante)
+    return frozenset(references)
 
 
 # --------------------------------------------------------------------------
@@ -140,6 +223,10 @@ class TableElements:
     cle: str
     lignes_lues: int = 0
     lignes_ignorees: int = 0
+    lignes_ecartees: int = 0
+    """Lignes valides mais portant une piece que ce depot n'emploie pas. Elles
+    ne sont pas un probleme — elles ne doivent simplement pas se compter comme
+    des lignes illisibles, sans quoi un catalogue complet aurait l'air casse."""
 
     def __len__(self) -> int:
         return len(self.entrees)
@@ -182,7 +269,8 @@ def read_color_names(text: str) -> Dict[str, str]:
 
 
 def read_elements(text: str,
-                  color_names: Optional[Mapping[str, str]] = None
+                  color_names: Optional[Mapping[str, str]] = None,
+                  pieces: Optional[Iterable[str]] = None
                   ) -> TableElements:
     """Lit un catalogue d'elements, quelle qu'en soit la provenance.
 
@@ -196,9 +284,17 @@ def read_elements(text: str,
     * un identifiant nu (`color id`) : REFUSE seul, accepte avec `color_names`,
       qui dit de quel systeme viennent ces numeros.
 
+    `pieces` restreint la lecture aux references utiles. Un catalogue complet
+    compte des centaines de milliers de lignes dont ce depot n'emploiera jamais
+    que quelques centaines ; les ecarter a la lecture ne change aucun resultat
+    et divise la memoire par mille. Les lignes ainsi ecartees sont comptees a
+    part de celles qu'on ne sait pas lire — ce ne sont pas les memes.
+
     Les lignes qu'on ne sait pas lire sont comptees, pas ignorees en silence :
     un catalogue a moitie lu doit se voir.
     """
+    retenues = None if pieces is None else frozenset(
+        _piece_normalisee(p) for p in pieces)
     lignes = [l for l in text.splitlines() if l.strip()]
     if not lignes:
         raise ElementsIllisibles("catalogue d'elements vide")
@@ -242,7 +338,7 @@ def read_elements(text: str,
             )
 
     entrees: Dict[Tuple[str, str], str] = {}
-    lues = ignorees = 0
+    lues = ignorees = ecartees = 0
     dernier = max(col_element, col_piece, col_couleur)
     for ligne in lignes[1:]:
         champs = _decouper(ligne)
@@ -252,6 +348,9 @@ def read_elements(text: str,
         element = champs[col_element].strip()
         piece = champs[col_piece].strip()
         couleur = champs[col_couleur].strip()
+        if retenues is not None and _piece_normalisee(piece) not in retenues:
+            ecartees += 1
+            continue
         if not element or not piece or not couleur:
             ignorees += 1
             continue
@@ -278,9 +377,10 @@ def read_elements(text: str,
     if not entrees:
         raise ElementsIllisibles(
             "aucun element exploitable dans ce catalogue "
-            f"({ignorees} ligne(s) illisible(s))"
+            f"({ignorees} ligne(s) illisible(s), {ecartees} hors des pieces "
+            "employees ici)"
         )
-    return TableElements(entrees, cle, lues, ignorees)
+    return TableElements(entrees, cle, lues, ignorees, ecartees)
 
 
 def _piece_normalisee(reference: str) -> str:
@@ -328,30 +428,39 @@ def elements_for_bom(bom: Iterable[BomLine], table: TableElements, palette
     replis = 0
     for ligne in sorted(bom, key=lambda l: (-l.quantity, l.design_id,
                                             l.color_id)):
-        couleur = par_code.get(ligne.color_id)
-        cles: Tuple[str, ...] = ()
-        if couleur is not None:
-            if table.cle == "lego":
-                if couleur.lego_id is not None:
-                    cles = (str(couleur.lego_id),)
-            else:
-                cles = (_normaliser(couleur.name),)
-        element = None
-        replie = False
-        for rang, reference in enumerate(_variantes(ligne.design_id)):
-            for cle in cles:
-                element = table.entrees.get((reference, cle))
-                if element is not None:
-                    replie = rang > 0
-                    break
-            if element is not None:
-                break
+        element, replie = element_pour(ligne, table, par_code.get(ligne.color_id))
         if element is None:
             manquants.append(ligne)
         else:
             trouves.append((element, ligne.quantity))
             replis += 1 if replie else 0
     return trouves, manquants, replis
+
+
+def element_pour(ligne: BomLine, table: TableElements, couleur
+                 ) -> Tuple[Optional[str], bool]:
+    """L'element id d'UN lot, et s'il a fallu tronquer la reference.
+
+    Existe pour qu'il n'y ait qu'UNE facon de repondre a cette question. Le
+    fichier d'envoi n'a besoin que du couple (element, quantite) et perd de
+    quelle ligne il vient ; la liste lisible, elle, veut annoter chaque ligne.
+    Deux implementations divergeraient un jour, et le desaccord passerait
+    inapercu — les deux fichiers sortent du meme calcul, ils doivent sortir de
+    la meme fonction.
+    """
+    cles: Tuple[str, ...] = ()
+    if couleur is not None:
+        if table.cle == "lego":
+            if couleur.lego_id is not None:
+                cles = (str(couleur.lego_id),)
+        else:
+            cles = (_normaliser(couleur.name),)
+    for rang, reference in enumerate(_variantes(ligne.design_id)):
+        for cle in cles:
+            element = table.entrees.get((reference, cle))
+            if element is not None:
+                return element, rang > 0
+    return None, False
 
 
 def dumps_upload(lots: Sequence[Tuple[str, int]],
@@ -400,3 +509,11 @@ def missing_report(manquants: Sequence[BomLine], palette) -> str:
             f'{lego},{ligne.quantity}'
         )
     return "\n".join(lignes) + "\n"
+
+
+PIECES_UTILES = _pieces_utiles()
+"""Calcule une fois, a la fin du module : `_variantes` doit exister d'abord.
+
+C'est la valeur a passer en `pieces` a `read_elements` quand on lit un
+catalogue complet — trente references au lieu de cent mille lignes.
+"""

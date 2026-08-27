@@ -561,13 +561,34 @@ def run(
 
     nomenclature = bill_of_materials(a_controler.instances,
                                      a_controler.placed_parts)
-    lignes = ["design_id,nom,code_couleur,couleur,quantite"]
+
+    # L'element id, quand on le connait, va aussi dans la liste LISIBLE. Le CSV
+    # d'envoi ne porte que deux colonnes muettes ; celui-ci est celui qu'on
+    # ouvre pour chercher une piece a la main, et c'est la qu'un numero sert.
+    par_lot = {}
+    if table_elements:
+        par_code = {c.code: c for c in palette_complete}
+        for ligne in nomenclature:
+            element, _ = pickabrick.element_pour(
+                ligne, table_elements, par_code.get(ligne.color_id))
+            if element is not None:
+                par_lot[(ligne.design_id, ligne.color_id)] = element
+
+    entete = "design_id,nom,code_couleur,couleur,quantite"
+    lignes = [entete + (",element_id" if par_lot else "")]
     for ligne in sorted(nomenclature, key=lambda l: -l.quantity):
-        lignes.append(
+        texte = (
             f'{ligne.design_id},"{ligne.name}",{ligne.color_id},'
             f'"{_nom_couleur(palette_complete, ligne.color_id)}",{ligne.quantity}'
         )
+        if par_lot:
+            texte += "," + par_lot.get((ligne.design_id, ligne.color_id), "")
+        lignes.append(texte)
     fichiers["liste_de_course.csv"] = ("\n".join(lignes) + "\n").encode("utf-8")
+
+    commande = {"commande_bricklink_lots": 0, "commande_lego_lots": 0,
+                "commande_lego_pieces": 0, "commande_lego_envois": 0,
+                "commande_lego_manquants": 0}
 
     if table_bricklink:
         try:
@@ -592,6 +613,7 @@ def run(
                 "couleur(s) a renseigner puis a repasser en --bricklink",
             ))
         else:
+            commande["commande_bricklink_lots"] = len(nomenclature)
             journal.append((
                 "info",
                 f"  commande BrickLink : {len(nomenclature)} lots, "
@@ -613,6 +635,9 @@ def run(
             ))
         else:
             envois = pickabrick.dumps_upload(trouves)
+            commande["commande_lego_lots"] = len(trouves)
+            commande["commande_lego_pieces"] = sum(q for _, q in trouves)
+            commande["commande_lego_envois"] = len(envois)
             for rang, envoi in enumerate(envois, start=1):
                 nom = ("commande_lego.csv" if len(envois) == 1
                        else f"commande_lego_{rang}.csv")
@@ -636,6 +661,7 @@ def run(
             # Un lot introuvable est un lot ABSENT du fichier, pas un lot faux :
             # on le constate a l'upload, la liste a la main. C'est pourquoi on
             # livre quand meme, contrairement a la commande BrickLink.
+            commande["commande_lego_manquants"] = len(absents)
             fichiers["pieces_sans_element.csv"] = pickabrick.missing_report(
                 absents, palette_complete).encode("utf-8")
             journal.append((
@@ -741,6 +767,7 @@ def run(
             "image_largeur_mm": ldu_to_mm(reglages.studs * 20),
             "image_hauteur_mm": ldu_to_mm(hauteur * 20),
             "cadre": reglages.cadre,
+            **commande,
             "cadre_pieces": porteur.frame_count,
         },
     )

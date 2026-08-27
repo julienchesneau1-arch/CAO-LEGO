@@ -12,6 +12,7 @@ ne pouvait les voir.
 
 import base64
 import json
+import pathlib
 import threading
 import unittest
 import urllib.error
@@ -218,15 +219,54 @@ class TestTrajetHttp(unittest.TestCase):
         with urllib.request.urlopen(requete, timeout=180) as reponse:
             return reponse.status, json.loads(reponse.read().decode("utf-8"))
 
-    def test_la_page_se_sert_et_ne_reclame_aucune_ressource_externe(self):
+    # Les seules adresses exterieures que la page a le droit de porter, et
+    # UNIQUEMENT comme liens qu'un humain clique. Toute autre doit faire
+    # echouer le test : c'est ainsi qu'on remarque une quatrieme ajoutee
+    # distraitement.
+    DESTINATIONS = (
+        "https://www.lego.com/pick-and-build/pick-a-brick",
+        "https://www.bricklink.com/v2/wanted/upload.page",
+        "https://rebrickable.com/downloads/",
+    )
+
+    def test_la_page_se_sert_et_ne_charge_aucune_ressource_externe(self):
+        import re
+
         with urllib.request.urlopen(self.base + "/", timeout=30) as reponse:
             page = reponse.read().decode("utf-8")
             politique = reponse.headers["Content-Security-Policy"]
         self.assertIn("<title>", page)
         self.assertIn("default-src 'none'", politique)
-        # Aucune adresse absolue : la page doit fonctionner hors ligne.
-        for motif in ("http://", "https://", "//cdn"):
-            self.assertNotIn(motif, page.replace("http://127.0.0.1", ""))
+
+        # Une RESSOURCE est chargee sans que personne ne le demande : c'est
+        # cela qu'on interdit. Un LIEN qu'un humain clique pour aller commander
+        # n'est pas une ressource — il ne part que s'il le decide.
+        for motif in ('src="http', "src='http", '@import', "url(http",
+                      '<link', "//cdn"):
+            self.assertNotIn(motif, page.replace("http://127.0.0.1", ""),
+                             f"ressource externe : {motif}")
+
+        adresses = set(re.findall(r"https?://[^\s\"'<>)]+", page))
+        adresses = {a for a in adresses if not a.startswith("http://127.0.0.1")}
+        self.assertEqual(adresses, set(self.DESTINATIONS),
+                         "adresse exterieure non prevue dans la page")
+
+    def test_tout_lien_exterieur_ecrit_dans_la_page_s_ouvre_en_dehors(self):
+        # `target=_blank` sans `rel=noopener` donnerait a la page ouverte une
+        # poignee sur celle-ci. Ligne facile a oublier.
+        #
+        # Ce test ne voit que les liens ECRITS dans le HTML. Ceux que le script
+        # fabrique sont verifies dans le vrai navigateur
+        # (`test_bfk001_page.py`), seul endroit d'ou on peut les regarder.
+        import re
+
+        with urllib.request.urlopen(self.base + "/", timeout=30) as reponse:
+            page = reponse.read().decode("utf-8")
+        liens = re.findall(r"<a\s[^>]*href=\"https?://[^>]*>", page)
+        self.assertTrue(liens, "aucun lien exterieur ecrit dans la page")
+        for lien in liens:
+            self.assertIn('target="_blank"', lien)
+            self.assertIn("noopener", lien)
 
     def test_deposer_une_photo_rend_une_mosaique_telechargeable(self):
         code, reponse = self.poster({
@@ -281,6 +321,197 @@ class TestTrajetHttp(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestCatalogues(unittest.TestCase):
+    """Donner un catalogue une fois, et ne plus y penser.
+
+    Les numeros employes ici sont FACTICES et ne quittent pas /tmp : ce qu'on
+    verifie est le trajet — depot, lecture, memoire, commande — pas la valeur
+    des numeros, qui vient du catalogue de l'utilisateur.
+    """
+
+    ELEMENTS = ("element_id,part_num,color_id,design_id\n"
+                "700001,3070b,71,3070\n"
+                "700002,41539,71,41539\n"
+                "700003,91405,71,91405\n"
+                "700004,3024,71,3024\n"
+                "999999,99999,71,99999\n")
+    COULEURS = "id,name,rgb\n71,Light Bluish Gray,A0A5A9\n0,Black,05131D\n"
+
+    def atelier(self, dossier=None):
+        return Atelier(dossier=dossier)
+
+    def uri(self, texte, octets=None):
+        brut = octets if octets is not None else texte.encode("utf-8")
+        return "data:text/csv;base64," + base64.b64encode(brut).decode()
+
+    def test_sans_dossier_rien_n_est_ecrit_hors_de_la_memoire_vive(self):
+        # Une bibliotheque n'ecrit pas dans le dossier personnel de qui
+        # l'importe parce que c'est pratique pour l'application.
+        atelier = Atelier()
+        self.assertFalse(atelier.memoire)
+        self.assertIsNone(atelier.etat_catalogues()["dossier"])
+
+    def test_un_catalogue_depose_sert_a_la_fabrication_suivante(self):
+        import tempfile
+        atelier = self.atelier(tempfile.mkdtemp())
+        etat = atelier.definir_catalogues({
+            "elements": self.uri(self.ELEMENTS),
+            "elements_couleurs": self.uri(self.COULEURS),
+        })
+        self.assertEqual(etat["elements"]["references"], 4)
+        reponse = atelier.fabriquer({
+            "photo": base64.b64encode(photo(48, 48)).decode(),
+            "reglages": {"studs": 16, "hauteur": 16, "cadre": 0},
+        })
+        self.assertIn("commande_lego.csv", reponse["fichiers"])
+        self.assertGreater(reponse["mesures"]["commande_lego_lots"], 0)
+
+    def test_ce_qui_est_retenu_survit_au_redemarrage(self):
+        import tempfile
+        dossier = pathlib.Path(tempfile.mkdtemp())
+        premier = self.atelier(dossier)
+        premier.definir_catalogues({
+            "elements": self.uri(self.ELEMENTS),
+            "elements_couleurs": self.uri(self.COULEURS),
+        })
+        avant = dict(premier.table_elements.entrees)
+
+        second = self.atelier(dossier)
+        self.assertIsNotNone(second.table_elements)
+        self.assertEqual(dict(second.table_elements.entrees), avant)
+        # Et ce qui est ecrit n'est pas le catalogue d'origine : il tient en
+        # quelques lignes, et il se relit SANS la table de couleurs.
+        garde = (dossier / "elements.tsv").read_text()
+        self.assertLess(len(garde), len(self.ELEMENTS) * 2)
+        self.assertNotIn("999999", garde)
+
+    def test_un_catalogue_compresse_se_depose_tel_quel(self):
+        import gzip
+        import tempfile
+        atelier = self.atelier(tempfile.mkdtemp())
+        etat = atelier.definir_catalogues({
+            "elements": self.uri(None, gzip.compress(self.ELEMENTS.encode())),
+            "elements_couleurs": self.uri(None,
+                                          gzip.compress(self.COULEURS.encode())),
+        })
+        self.assertEqual(etat["elements"]["references"], 4)
+
+    def test_une_lecture_qui_echoue_laisse_l_etat_precedent_intact(self):
+        # Un catalogue a moitie remplace serait pire que pas de catalogue : on
+        # croirait pouvoir commander.
+        import tempfile
+        atelier = self.atelier(tempfile.mkdtemp())
+        atelier.definir_catalogues({
+            "elements": self.uri(self.ELEMENTS),
+            "elements_couleurs": self.uri(self.COULEURS),
+        })
+        avant = dict(atelier.table_elements.entrees)
+        with self.assertRaises(ValueError):
+            atelier.definir_catalogues({
+                "elements": self.uri("rien du tout\n"),
+                "elements_couleurs": self.uri(self.COULEURS),
+            })
+        self.assertEqual(dict(atelier.table_elements.entrees), avant)
+
+    def test_la_table_de_couleurs_seule_est_refusee(self):
+        atelier = Atelier()
+        with self.assertRaises(ValueError) as saisi:
+            atelier.definir_catalogues({
+                "elements_couleurs": self.uri(self.COULEURS)})
+        self.assertIn("ensemble", str(saisi.exception))
+
+    def test_oublier_efface_la_memoire_et_le_disque(self):
+        import tempfile
+        dossier = pathlib.Path(tempfile.mkdtemp())
+        atelier = self.atelier(dossier)
+        atelier.definir_catalogues({
+            "elements": self.uri(self.ELEMENTS),
+            "elements_couleurs": self.uri(self.COULEURS),
+        })
+        self.assertTrue((dossier / "elements.tsv").exists())
+        etat = atelier.oublier_catalogues()
+        self.assertIsNone(etat["elements"])
+        self.assertFalse((dossier / "elements.tsv").exists())
+        self.assertIsNone(self.atelier(dossier).table_elements)
+
+
+class TestTrajetHttpCommande(unittest.TestCase):
+    """Deposer un catalogue et repartir avec le CSV, en HTTP reel."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        cls.dossier = pathlib.Path(tempfile.mkdtemp())
+        cls.atelier = Atelier(dossier=cls.dossier)
+        cls.serveur = creer_serveur("127.0.0.1", 0, cls.atelier)
+        cls.fil = threading.Thread(target=cls.serveur.serve_forever, daemon=True)
+        cls.fil.start()
+        cls.base = f"http://127.0.0.1:{cls.serveur.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.serveur.shutdown()
+        cls.serveur.server_close()
+
+    def poster(self, chemin, corps):
+        requete = urllib.request.Request(
+            self.base + chemin, data=json.dumps(corps).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(requete, timeout=180) as reponse:
+            return reponse.status, json.loads(reponse.read().decode("utf-8"))
+
+    def test_le_trajet_complet_depuis_le_reseau(self):
+        with urllib.request.urlopen(self.base + "/catalogues", timeout=30) as r:
+            self.assertIsNone(json.loads(r.read())["elements"])
+
+        code, etat = self.poster("/catalogues", {
+            "elements": "data:text/csv;base64," + base64.b64encode(
+                TestCatalogues.ELEMENTS.encode()).decode(),
+            "elements_couleurs": "data:text/csv;base64," + base64.b64encode(
+                TestCatalogues.COULEURS.encode()).decode(),
+        })
+        self.assertEqual(code, 200)
+        self.assertEqual(etat["elements"]["references"], 4)
+
+        code, reponse = self.poster("/fabriquer", {
+            "photo": base64.b64encode(photo(48, 48)).decode(),
+            "reglages": {"studs": 16, "hauteur": 16, "cadre": 0},
+        })
+        self.assertIn("commande_lego.csv", reponse["fichiers"])
+
+        url = (f"{self.base}/fichier/{reponse['jeton']}/commande_lego.csv")
+        with urllib.request.urlopen(url, timeout=30) as fichier:
+            self.assertTrue(
+                fichier.headers["Content-Type"].startswith("text/csv"))
+            self.assertIn("commande_lego.csv",
+                          fichier.headers["Content-Disposition"])
+            lignes = fichier.read().decode().splitlines()
+        self.assertEqual(lignes[0], "elementId,quantity")
+        self.assertGreater(len(lignes), 1)
+
+    def test_un_fichier_qui_n_a_pas_ete_fabrique_repond_404(self):
+        code, reponse = self.poster("/fabriquer", {
+            "photo": base64.b64encode(photo(48, 48)).decode(),
+            "reglages": {"studs": 16, "hauteur": 16, "cadre": 0},
+        })
+        jeton = reponse["jeton"]
+        # Le nom n'est jamais employe comme chemin : il est cherche dans le
+        # dictionnaire du resultat, et rien d'autre n'existe.
+        for nom in ("../../etc/passwd", "secret.txt", "..%2f..%2fetc%2fpasswd"):
+            with self.assertRaises(urllib.error.HTTPError, msg=nom) as saisi:
+                urllib.request.urlopen(
+                    f"{self.base}/fichier/{jeton}/{nom}", timeout=30)
+            self.assertEqual(saisi.exception.code, 404)
+
+    def test_un_catalogue_illisible_repond_400_et_le_dit(self):
+        with self.assertRaises(urllib.error.HTTPError) as saisi:
+            self.poster("/catalogues", {
+                "elements": "data:text/csv;base64," + base64.b64encode(
+                    b"ni queue ni tete\n").decode()})
+        self.assertEqual(saisi.exception.code, 400)
+        self.assertTrue(json.loads(saisi.exception.read())["erreur"])
 
 
 class TestDecoupeEnSections(unittest.TestCase):
