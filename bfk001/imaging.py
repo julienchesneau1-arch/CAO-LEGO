@@ -11,7 +11,9 @@ export. Le reste leve une erreur explicite plutot que de deviner.
 from __future__ import annotations
 
 import struct
+import weakref
 import zlib
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -21,6 +23,7 @@ __all__ = [
     "read_ppm",
     "write_png",
     "resample_box",
+    "MEMO_REDUCTIONS",
     "resample_median",
     "DEPTH_SAMPLE_BUDGET",
     "crop",
@@ -438,6 +441,40 @@ _TABLE_LUMIERE = tuple(
 """sRGB -> lumiere lineaire, en clair, pour qui doit moyenner pixel a pixel."""
 
 
+_MEMO_REDUCTION: "OrderedDict[Tuple[int, ...], Tuple[object, Image]]" = \
+    OrderedDict()
+MEMO_REDUCTIONS = 4
+"""Nombre de reductions gardees. Petit a dessein.
+
+L'entree n'est retenue que par une reference FAIBLE : garder une photo de
+douze megapixels en vie entre deux fabrications couterait cent megaoctets pour
+rien. Une reference forte etait mon premier reflexe, et c'etait une fuite.
+"""
+
+
+def _memo(image: Image, width: int, height: int):
+    """Cache d'identite pour `resample_box`. Rend le meme objet, bit pour bit.
+
+    Reduire une photo de telephone au format d'une mosaique lit douze millions
+    de pixels. La chaine le demandait HUIT fois sur la meme image : deux fois
+    pour quantifier, quatre fois pour mesurer la fidelite, une pour le
+    debruitage, une pour l'apercu de la source. Sept dixiemes du travail
+    d'image etaient une repetition exacte.
+
+    La cle est l'IDENTITE de l'image, pas son contenu : hacher trente-six
+    mega-octets couterait ce qu'on cherche a economiser. Or un identifiant se
+    RECYCLE des que l'objet meurt — et le cache ne retient l'entree que par une
+    reference faible, pour ne pas garder une photo entiere en vie entre deux
+    fabrications. La verification `garde() is image` n'est donc pas une
+    ceinture de plus : c'est elle qui rend le procede correct. Sans elle, une
+    nouvelle image nee a l'adresse d'une ancienne recevrait la reduction de
+    l'ancienne, et la mosaique sortirait fausse sans une ligne d'erreur.
+
+    Ce n'est pas une approximation : c'est le meme calcul, rendu une fois.
+    """
+    return (id(image), image.width, image.height, width, height)
+
+
 def resample_box(image: Image, width: int, height: int) -> Image:
     """Reechantillonnage par moyenne de bloc, EN LUMIERE LINEAIRE.
 
@@ -459,6 +496,12 @@ def resample_box(image: Image, width: int, height: int) -> Image:
     """
     if width <= 0 or height <= 0:
         raise ValueError("dimensions de sortie invalides")
+
+    cle = _memo(image, width, height)
+    garde = _MEMO_REDUCTION.get(cle)
+    if garde is not None and garde[0]() is image:
+        _MEMO_REDUCTION.move_to_end(cle)
+        return garde[1]
 
     source = image.data
     source_width = image.width
@@ -484,7 +527,12 @@ def resample_box(image: Image, width: int, height: int) -> Image:
             for canal in range(3):
                 output[cursor + canal] = _REENCODAGE[totaux[canal] // count]
             cursor += 3
-    return Image(width, height, bytes(output))
+    reduite = Image(width, height, bytes(output))
+    # Reference FAIBLE sur l'entree : le cache accelere, il ne retient pas.
+    _MEMO_REDUCTION[cle] = (weakref.ref(image), reduite)
+    while len(_MEMO_REDUCTION) > MEMO_REDUCTIONS:
+        _MEMO_REDUCTION.popitem(last=False)
+    return reduite
 
 
 DEPTH_SAMPLE_BUDGET = 16

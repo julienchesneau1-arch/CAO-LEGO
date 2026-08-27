@@ -40,6 +40,11 @@ def photo(largeur=96, hauteur=96):
     return bfk.write_png(bfk.Image(largeur, hauteur, bytes(pixels)))
 
 
+def photo_image(largeur=96, hauteur=96):
+    """La meme scene, non encodee : ce que le cache de reduction manipule."""
+    return bfk.read_png(photo(largeur, hauteur))
+
+
 def carte_de_profondeur(largeur=96, hauteur=96):
     pixels = bytearray()
     for y in range(hauteur):
@@ -629,3 +634,119 @@ class TestDecoupeEnSections(unittest.TestCase):
         self.assertIn("section_1_1/apercu.png", reponse["apercus"])
         with zipfile.ZipFile(BytesIO(atelier.archive(reponse["jeton"]))) as zf:
             self.assertIn("section_2_2/notice.pdf", zf.namelist())
+
+
+class TestMemoDeReduction(unittest.TestCase):
+    """Le cache de reechantillonnage : plus vite, et EXACTEMENT pareil.
+
+    Reduire une photo de telephone au format d'une mosaique lit douze millions
+    de pixels. La chaine le demandait HUIT fois sur la meme image — deux pour
+    quantifier, quatre pour mesurer la fidelite, une pour le debruitage, une
+    pour l'apercu de la source. Sept dixiemes du travail d'image etaient une
+    repetition exacte : 27 s pour une photo de 12 Mpx, contre 4,4 s ensuite.
+
+    Une optimisation qui change la sortie n'est pas une optimisation, c'est un
+    bug. Ces tests comparent les OCTETS livres, cache actif contre cache
+    neutralise, et pas seulement le nombre de pieces.
+    """
+
+    def empreintes(self, photo, **reglages):
+        import hashlib
+        from bfk001.pipeline import Reglages, run
+
+        resultat = run(photo, Reglages(titre="essai", **reglages))
+        return {nom: hashlib.sha256(contenu).hexdigest()
+                for nom, contenu in resultat.fichiers.items()}
+
+    def test_le_cache_ne_change_pas_un_octet_de_ce_qui_est_livre(self):
+        from bfk001 import imaging
+
+        cas = (
+            ("petite", photo(96, 96), dict(studs=24, hauteur=24)),
+            ("relief", photo(240, 240), dict(studs=24, hauteur=24, relief=2)),
+            ("tramage auto", photo(300, 200), dict(studs=32, hauteur=24)),
+            ("sans cadre", photo(200, 200), dict(studs=16, hauteur=16, cadre=0)),
+        )
+        garde = imaging.MEMO_REDUCTIONS
+        try:
+            for etiquette, image, reglages in cas:
+                imaging.MEMO_REDUCTIONS = garde
+                imaging._MEMO_REDUCTION.clear()
+                avec = self.empreintes(image, **reglages)
+
+                imaging.MEMO_REDUCTIONS = 0   # chaque appel recalcule
+                imaging._MEMO_REDUCTION.clear()
+                sans = self.empreintes(image, **reglages)
+
+                self.assertEqual(avec, sans, f"{etiquette} : le cache change "
+                                 "la sortie, ce n'est plus une optimisation")
+        finally:
+            imaging.MEMO_REDUCTIONS = garde
+            imaging._MEMO_REDUCTION.clear()
+
+    def test_deux_images_distinctes_ne_partagent_jamais_une_reduction(self):
+        # Le cache est indexe par IDENTITE. S'il rendait la reduction d'une
+        # autre image, la mosaique sortirait simplement fausse — sans erreur,
+        # sans trace. C'est le seul mode de panne qui compte ici.
+        from bfk001.imaging import Image, resample_box
+
+        claire = Image.from_pixels(64, 64, [(240, 240, 240)] * 4096)
+        sombre = Image.from_pixels(64, 64, [(10, 10, 10)] * 4096)
+        a = resample_box(claire, 8, 8)
+        b = resample_box(sombre, 8, 8)
+        self.assertNotEqual(a.data, b.data)
+        self.assertEqual(resample_box(claire, 8, 8).data, a.data)
+
+    def test_le_cache_ne_retient_pas_la_photo_en_memoire(self):
+        # Une reference forte etait mon premier reflexe, et c'etait une fuite :
+        # cent megaoctets gardes en vie entre deux fabrications, pour rien.
+        import gc
+        import weakref
+        from bfk001 import imaging
+        from bfk001.imaging import resample_box
+
+        imaging._MEMO_REDUCTION.clear()
+        source = photo_image(200, 150)
+        resample_box(source, 40, 30)
+        suivi = weakref.ref(source)
+        del source
+        gc.collect()
+        self.assertIsNone(suivi(), "le cache garde la photo en vie")
+
+    def test_une_entree_morte_ne_sert_jamais_a_une_autre_image(self):
+        # Un identifiant se recycle des que l'objet meurt. Sans la
+        # verification d'identite, une nouvelle image nee a l'adresse d'une
+        # ancienne recevrait la reduction de l'ancienne — et la mosaique
+        # sortirait fausse, sans une ligne d'erreur.
+        import gc
+        from bfk001 import imaging
+        from bfk001.imaging import Image, resample_box
+
+        imaging._MEMO_REDUCTION.clear()
+        for _ in range(40):
+            claire = Image.from_pixels(40, 40, [(250, 250, 250)] * 1600)
+            self.assertEqual(resample_box(claire, 4, 4).data,
+                             bytes([250]) * (4 * 4 * 3))
+            del claire
+            gc.collect()
+            sombre = Image.from_pixels(40, 40, [(4, 4, 4)] * 1600)
+            self.assertEqual(resample_box(sombre, 4, 4).data,
+                             bytes([4]) * (4 * 4 * 3))
+            del sombre
+            gc.collect()
+
+    def test_le_cache_rend_le_meme_objet_et_reste_borne(self):
+        from bfk001 import imaging
+        from bfk001.imaging import Image, resample_box
+
+        imaging._MEMO_REDUCTION.clear()
+        source = photo_image(120, 90)
+        self.assertIs(resample_box(source, 30, 22), resample_box(source, 30, 22))
+
+        # Au-dela du plafond, les plus anciennes tombent : ce ne sont pas les
+        # sorties qui pesent mais les ENTREES, gardees pour que l'identite
+        # reste valide.
+        for i in range(imaging.MEMO_REDUCTIONS + 3):
+            resample_box(photo_image(60 + i, 50 + i), 10, 10)
+        self.assertLessEqual(len(imaging._MEMO_REDUCTION),
+                             imaging.MEMO_REDUCTIONS)

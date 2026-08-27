@@ -539,3 +539,132 @@ class TestDessinDesPieces(unittest.TestCase):
         for _, (x, y, w, h) in images:
             self.assertGreater(w, 0)
             self.assertGreater(h, 0)
+
+
+class TestMiseEnPage(unittest.TestCase):
+    """Rien ne doit sortir de la page. Personne ne relit un PDF de dix pages.
+
+    Ce controle existe parce qu'il a trouve un vrai defaut : la page du cadre
+    ecrivait trois phrases d'un seul tenant, dont une debordait la marge droite
+    de 109 points — soit 69 points AU-DELA du bord du papier. La phrase etait
+    coupee a l'impression, sur la derniere page de toute notice avec cadre,
+    c'est-a-dire par defaut. Aucun test ne regardait la geometrie des pages.
+
+    Il ne verifie pas une page choisie : il verifie une PROPRIETE sur toutes
+    les pages de huit fascicules aux reglages differents.
+    """
+
+    CONFIGURATIONS = (
+        ("cadre par defaut", dict(studs=24, hauteur=24)),
+        ("sans cadre", dict(studs=24, hauteur=24, cadre=0)),
+        ("cadre epais", dict(studs=24, hauteur=24, cadre=8)),
+        ("relief", dict(studs=24, hauteur=24, relief=3)),
+        ("tuiles rondes", dict(studs=16, hauteur=16, references="art")),
+        ("format allonge", dict(studs=32, hauteur=8)),
+        ("minuscule", dict(studs=2, hauteur=2)),
+        ("bandes larges", dict(studs=24, hauteur=24, lignes_par_page=8)),
+    )
+
+    _CACHE: dict = {}
+
+    def pages_de(self, **reglages):
+        """Les pages telles que `build_booklet` les a construites.
+
+        Memorisees par configuration : trois controles portent sur les memes
+        huit fascicules, et les rebatir chaque fois triplait le cout de ce
+        fichier pour rien.
+
+        On intercepte `write_pdf` plutot que de relire le PDF : ce qu'on veut
+        verifier est la GEOMETRIE decidee, et la relire depuis les octets
+        n'ajouterait qu'un decodeur a se tromper.
+        """
+        from bfk001 import booklet
+        from bfk001.imaging import Image, write_png
+        from bfk001.pipeline import Reglages, run
+
+        pixels = [(int(30 + 200 * x / 96), int(60 + 150 * y / 96),
+                   int(200 - 120 * y / 96))
+                  for y in range(96) for x in range(96)]
+        photo = write_png(Image.from_pixels(96, 96, pixels))
+
+        cle = tuple(sorted(reglages.items()))
+        if cle in self._CACHE:
+            return self._CACHE[cle]
+
+        capturees = []
+        vrai = booklet.write_pdf
+
+        def espion(pages, *args, **kwargs):
+            capturees.append(list(pages))
+            return vrai(pages, *args, **kwargs)
+
+        booklet.write_pdf = espion
+        try:
+            run(photo, Reglages(titre="essai", **reglages))
+        finally:
+            booklet.write_pdf = vrai
+        self.assertTrue(capturees)
+        self._CACHE[cle] = capturees[0]
+        return capturees[0]
+
+    def test_rien_ne_sort_de_la_page(self):
+        from bfk001 import booklet as B
+
+        for etiquette, reglages in self.CONFIGURATIONS:
+            pages = self.pages_de(**reglages)
+            self.assertTrue(pages, etiquette)
+            for numero, page in enumerate(pages, start=1):
+                ou = f"{etiquette}, page {numero}"
+                for x, y, largeur, hauteur, _rvb in page.rects:
+                    self.assertGreaterEqual(x, -0.01, ou)
+                    self.assertGreaterEqual(y, -0.01, ou)
+                    self.assertLessEqual(x + largeur, B.A4_WIDTH + 0.01, ou)
+                    self.assertLessEqual(y + hauteur, B.A4_HEIGHT + 0.01, ou)
+                for _image, (x, y, largeur, hauteur) in page.images:
+                    self.assertGreaterEqual(x, -0.01, ou)
+                    self.assertGreaterEqual(y, -0.01, ou)
+                    self.assertLessEqual(x + largeur, B.A4_WIDTH + 0.01, ou)
+                    self.assertLessEqual(y + hauteur, B.A4_HEIGHT + 0.01, ou)
+
+    def test_aucune_ligne_ne_deborde_les_marges(self):
+        from bfk001 import booklet as B
+
+        for etiquette, reglages in self.CONFIGURATIONS:
+            for numero, page in enumerate(self.pages_de(**reglages), start=1):
+                for x, y, corps, texte, _gras in page.texts:
+                    fin = x + len(texte) * corps * B.LARGEUR_CARACTERE
+                    self.assertLessEqual(
+                        fin, B.A4_WIDTH - B.MARGE + 0.5,
+                        f"{etiquette}, page {numero} : « {texte[:50]} » depasse "
+                        f"de {fin - (B.A4_WIDTH - B.MARGE):.0f} pt")
+                    self.assertGreaterEqual(x, B.MARGE - 0.5, etiquette)
+                    self.assertGreater(y, 20.0, f"{etiquette} : « {texte[:40]} »")
+                    self.assertLess(y, B.A4_HEIGHT, etiquette)
+
+    def test_deux_images_d_une_meme_page_ne_se_recouvrent_pas(self):
+        # Le reperage et la vue de l'etape cohabitent : s'ils se chevauchaient,
+        # l'un masquerait l'autre sans qu'aucun test ne s'en apercoive.
+        for etiquette, reglages in self.CONFIGURATIONS:
+            for numero, page in enumerate(self.pages_de(**reglages), start=1):
+                cadres = [cadre for _image, cadre in page.images]
+                for i, a in enumerate(cadres):
+                    for b in cadres[i + 1:]:
+                        recouvre = (a[0] < b[0] + b[2] and b[0] < a[0] + a[2]
+                                    and a[1] < b[1] + b[3] and b[1] < a[1] + a[3])
+                        self.assertFalse(
+                            recouvre, f"{etiquette}, page {numero} : deux "
+                            "images se chevauchent")
+
+    def test_le_replieur_de_prose_coupe_aux_espaces(self):
+        from bfk001.booklet import _replier
+
+        phrase = "Les briques d'une assise sur l'autre ne tombent pas au meme " \
+                 "endroit : c'est ce croisement qui fait un mur."
+        lignes = _replier(phrase, 10.5, 515.0)
+        self.assertGreater(len(lignes), 1, "une phrase longue doit se replier")
+        self.assertEqual(" ".join(lignes), " ".join(phrase.split()),
+                         "replier ne perd ni n'ajoute un mot")
+        for ligne in lignes:
+            self.assertLessEqual(len(ligne) * 10.5 * 0.55, 515.0 + 0.01)
+        # Un mot plus long que la ligne sort seul plutot que de disparaitre.
+        self.assertEqual(_replier("a" * 300, 9.0, 100.0), ["a" * 300])

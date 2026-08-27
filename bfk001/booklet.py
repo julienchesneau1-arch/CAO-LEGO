@@ -837,6 +837,34 @@ def _couper(texte: str, corps: float, largeur: float) -> List[str]:
     return lignes
 
 
+def _replier(texte: str, corps: float, largeur: float) -> List[str]:
+    """Replie une PHRASE sur la largeur utile, en coupant aux espaces.
+
+    `_couper` ne coupe qu'aux separateurs « · » : il est fait pour une liste de
+    references, pas pour de la prose. Son absence d'equivalent est exactement
+    ce qui a laisse passer le defaut : la page du cadre ecrivait trois phrases
+    d'un seul tenant, dont une debordait de 109 points — soit 69 points AU-DELA
+    du bord du papier. La ligne etait coupee a l'impression, sur la derniere
+    page de toute notice avec cadre, c'est-a-dire par defaut.
+
+    Meme estimation de largeur que partout ailleurs, donc meme prudence : on
+    coupe un peu tot plutot qu'un peu tard.
+    """
+    par_ligne = max(8, int(largeur / (corps * LARGEUR_CARACTERE)))
+    lignes: List[str] = []
+    courante = ""
+    for mot in texte.split():
+        candidat = mot if not courante else courante + " " + mot
+        if len(candidat) <= par_ligne or not courante:
+            courante = candidat
+        else:
+            lignes.append(courante)
+            courante = mot
+    if courante:
+        lignes.append(courante)
+    return lignes
+
+
 PIED_Y = 30.0  # au-dessus des 10 mm qu'une imprimante de bureau ne rend pas
 
 
@@ -1117,24 +1145,37 @@ def _page_cadre(mosaic: Mosaic, briques: Sequence[str],
         (mosaic.placed_parts[mosaic.tile_id(t.row, t.column)].aabb.max.z
          for t in mosaic.tiles), default=pied)
     lisere_mm = ldu_to_mm(max(0, sommet_cadre - sommet_tuiles))
+    utile = A4_WIDTH - 2 * MARGE
     textes: List[TextLine] = [
         (MARGE, A4_HEIGHT - 58, CORPS_TITRE, "Le cadre", True),
-        (MARGE, A4_HEIGHT - 78, CORPS_SOUS_TITRE,
-         f"{assises} assise(s) de briques tout autour. Il depasse la surface "
-         f"de {lisere_mm:.1f} mm — c'est cette ombre qui fait le tableau.",
-         False),
-        (MARGE, A4_HEIGHT - 92, CORPS_LIGNE,
-         "Les briques d'une assise sur l'autre ne tombent pas au meme endroit : "
-         "c'est ce croisement qui fait un mur et non un empilement.", False),
     ]
+    # Repliees, pas ecrites d'un trait : la premiere debordait de 109 points,
+    # soit bien au-dela du bord du papier.
+    haut = A4_HEIGHT - 78
+    for ligne in _replier(
+            f"{assises} assise(s) de briques tout autour. Il depasse la surface "
+            f"de {lisere_mm:.1f} mm — c'est cette ombre qui fait le tableau.",
+            CORPS_SOUS_TITRE, utile):
+        textes.append((MARGE, haut, CORPS_SOUS_TITRE, ligne, False))
+        haut -= CORPS_SOUS_TITRE + 2.0
+    haut -= 3.0
+    for ligne in _replier(
+            "Les briques d'une assise sur l'autre ne tombent pas au meme "
+            "endroit : c'est ce croisement qui fait un mur et non un "
+            "empilement.", CORPS_LIGNE, utile):
+        textes.append((MARGE, haut, CORPS_LIGNE, ligne, False))
+        haut -= CORPS_LIGNE + 1.8
     y = 128.0
     textes.append((MARGE, y, CORPS_TEXTE, f"{len(briques)} pieces :", True))
     for morceau in _couper(detail, CORPS_TEXTE, A4_WIDTH - 2 * MARGE):
         y -= INTERLIGNE + 1.0
         textes.append((MARGE, y, CORPS_TEXTE, morceau, False))
-    textes.append((MARGE, y - INTERLIGNE - 4.0, CORPS_LIGNE,
-                   "En clair : l'oeuvre terminee. Le cadre se pose tout autour, "
-                   "sans jamais la recouvrir.", False))
+    y -= INTERLIGNE + 4.0
+    for ligne in _replier(
+            "En clair : l'oeuvre terminee. Le cadre se pose tout autour, sans "
+            "jamais la recouvrir.", CORPS_LIGNE, utile):
+        textes.append((MARGE, y, CORPS_LIGNE, ligne, False))
+        y -= CORPS_LIGNE + 1.8
     return PdfPage(tuple(textes), (), ((vue, cadre),))
 
 

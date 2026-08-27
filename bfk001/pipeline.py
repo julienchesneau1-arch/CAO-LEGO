@@ -68,6 +68,54 @@ class ModeleRefuse(Exception):
         self.violations = tuple(violations)
 
 
+TENONS_MAXIMUM = 250_000
+"""Surface au-dela de laquelle la chaine refuse plutot que de manquer de memoire.
+
+500 x 500 tenons, soit quatre metres de cote : personne ne construit cela d'une
+piece, et au-dela le calcul se termine par un MemoryError apres plusieurs
+minutes. Mesure : 128 x 128 tenons donnent 5 657 pieces en 17 s ; le cout suit
+le nombre de pieces, donc la surface.
+
+Ce n'est pas une limite de qualite mais une limite de machine, et elle est dite
+comme telle : une oeuvre plus grande se fait en plusieurs, cote a cote.
+"""
+
+TENONS_LENTS = 40_000
+"""Surface au-dela de laquelle on previent que ce sera long.
+
+200 x 200 tenons. En dessous, la fabrication tient dans le temps d'attente
+normal d'une page web ; au-dessus, il faut le dire avant, pas apres.
+"""
+
+CADRE_MAXIMUM = 8
+"""Epaisseur de cadre au-dela de laquelle ce n'est plus un cadre.
+
+Les sets LEGO Art n'en ont pas ; deux tenons suffisent a lire un bord et a
+ceinturer les sections. A huit, le cadre pese deja plus que l'oeuvre. Au-dela,
+la fabrication part en heures de calcul pour un resultat que personne ne veut :
+un cadre de 500 tenons autour d'une mosaique de 16 est une faute de frappe, pas
+une intention.
+"""
+
+TITRE_MAXIMUM = 200
+"""Longueur de titre au-dela de laquelle ce n'est plus un titre.
+
+Il sert de nom sur la couverture de la notice et dans la liste de souhaits
+BrickLink. Deux cents caracteres depassent deja tout nom de fichier ; au-dela
+c'est un corps de texte, et il casserait la mise en page plutot que de la
+remplir.
+"""
+
+
+RELIEF_MAXIMUM = 12
+"""Etages de plates au-dela desquels le relief cesse d'etre un relief.
+
+Douze etages font 38 mm de saillie sur une oeuvre de 8 mm de pas : les colonnes
+sont plus hautes que larges et le montage devient fragile. La borne dit ou
+s'arrete ce que cette chaine sait promettre.
+"""
+
+
 @dataclass(frozen=True)
 class Reglages:
     """Tout ce qu'un utilisateur peut choisir. Les defauts sont ceux mesures."""
@@ -111,8 +159,24 @@ class Reglages:
             raise ValueError("une mosaique fait au moins un tenon de cote")
         if self.hauteur is not None and self.hauteur < 1:
             raise ValueError("une mosaique fait au moins un tenon de haut")
+        # Le plafond n'est pas un caprice : au-dela, la fabrication se termine
+        # par une erreur de MEMOIRE apres plusieurs minutes de calcul. Refuser
+        # tout de suite, en disant pourquoi, vaut mieux que partir dans le mur.
+        surface = self.studs * (self.hauteur or self.studs)
+        if surface > TENONS_MAXIMUM:
+            raise ValueError(
+                f"{self.studs} x {self.hauteur or self.studs} fait "
+                f"{surface} tenons, au-dela des {TENONS_MAXIMUM} que cette "
+                "chaine tient en memoire. Une oeuvre plus grande se fait en "
+                "plusieurs, cote a cote."
+            )
         if self.relief < 0:
             raise ValueError("un nombre d'etages est positif")
+        if self.relief > RELIEF_MAXIMUM:
+            raise ValueError(
+                f"{self.relief} etages : au-dela de {RELIEF_MAXIMUM}, le "
+                "relief ne se lit plus, il se casse. Un etage fait 3,2 mm."
+            )
         if self.references not in JEUX_DE_TUILES:
             raise ValueError(f"references vaut {' ou '.join(JEUX_DE_TUILES)}")
         if self.tramage not in TRAMAGES:
@@ -123,8 +187,23 @@ class Reglages:
             raise ValueError("un cote de section est positif")
         if self.cadre < 0:
             raise ValueError("une epaisseur de cadre est positive")
+        # Un cadre plus large que l'oeuvre n'est plus un cadre : c'est un mur
+        # de briques avec une vignette au milieu, et il coute des heures a
+        # batir. La borne se lit dans les deux sens — elle protege l'atelier
+        # d'une requete absurde et l'utilisateur d'une faute de frappe.
+        if self.cadre > CADRE_MAXIMUM:
+            raise ValueError(
+                f"un cadre de {self.cadre} tenons n'entoure plus rien : "
+                f"{CADRE_MAXIMUM} tenons au maximum"
+            )
         if self.debruitage < 0:
             raise ValueError("une tolerance de debruitage est positive")
+        if len(self.titre) > TITRE_MAXIMUM:
+            raise ValueError(
+                f"un titre de {len(self.titre)} caracteres ne tient ni sur la "
+                f"couverture de la notice ni dans un nom de fichier : "
+                f"{TITRE_MAXIMUM} au maximum"
+            )
 
 
 @dataclass(frozen=True)
@@ -289,6 +368,14 @@ def run(
                 f"proportions de la photo conservees "
                 f"(--hauteur {reglages.studs} pour un carre, la photo sera rognee)",
             ))
+    if reglages.studs * hauteur > TENONS_LENTS:
+        journal.append((
+            "alerte",
+            f"  ATTENTION — {reglages.studs} x {hauteur} tenons : la "
+            "fabrication et le controle des invariants prendront plusieurs "
+            "minutes.\n            C'est dit avant, pas apres.",
+        ))
+
     cadrage = reglages.cadrage
     if cadrage != "auto":
         cadrage = float(cadrage)

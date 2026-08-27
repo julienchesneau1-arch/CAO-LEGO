@@ -2400,6 +2400,104 @@ et en 390 px de large avant de conclure.
 
 ---
 
+### 5.60 Passe de contrôle : sept défauts, dont trois que j'avais écrits moi-même
+
+« Vois ce qui peut buguer. » J'ai maltraité la chaîne plutôt que de la relire.
+
+#### Ce qui ne casse pas
+
+Vingt-trois entrées dégénérées — photo de 1 pixel, bande de 3 pixels de large,
+mosaïque de 1 tenon, image unie, damier au pixel, palette d'une seule couleur,
+cadrage aux deux extrêmes, quatre jeux de tuiles — **aucun plantage**. Refus
+propres là où il en faut. Six fabrications simultanées : jetons distincts,
+résultats identiques, plafond de cache respecté. Les nombres concordent entre
+tous les fichiers livrés (nomenclature = pièces = lignes du `.ldr` = pièces du
+`.json`) sur trois configurations. Pointe mémoire sur 12 Mpx : 154 Mo.
+
+#### Quatre entrées qui partaient dans le mur
+
+| Entrée | Avant | Maintenant |
+|---|---|---|
+| `cadre = 500` | **plus de 2 minutes**, aucune réponse | refus immédiat |
+| `studs = 100 000` | erreur de mémoire après une longue attente | refus immédiat |
+| `relief = 99` | accepté | refus immédiat |
+| titre de 100 000 caractères | accepté, part dans le PDF | refus immédiat |
+
+Le premier est le pire : depuis la page, un `500` tapé à la place de `2`
+bloquait le serveur sans rien dire. Les bornes ne sont pas des limites de goût,
+et elles se disent comme telles — « un cadre de 500 tenons n'entoure plus
+rien », « une œuvre plus grande se fait en plusieurs, côte à côte ».
+
+#### Le défaut qui était dans chaque notice livrée
+
+Je n'ai pas de rasteriseur PDF ici, et le visualiseur de Chromium ne rend rien
+en mode headless. J'ai donc vérifié la mise en page **numériquement** : chaque
+aplat, chaque image, chaque ligne de texte, contre les bords de la page et les
+marges. C'est plus rigoureux que de regarder.
+
+Résultat : sur **sept configurations sur huit**, la page du cadre écrivait une
+phrase qui débordait la marge droite de **109 points** — soit 69 points *au-delà
+du bord du papier*. La phrase était coupée à l'impression, sur la dernière page
+de toute notice avec cadre, c'est-à-dire **par défaut**, depuis que j'ai ajouté
+le cadre (§ 5.52).
+
+La cause est instructive : il existait `_couper`, qui découpe une liste de
+références sur ses séparateurs « · », et **rien** pour replier une phrase. Sans
+outil, j'avais écrit les trois phrases d'un seul tenant. Le manque d'un
+replieur de prose *est* le défaut ; `_replier` existe maintenant, et un test
+vérifie la propriété — rien ne sort de la page, aucune ligne ne dépasse les
+marges, deux images d'une même page ne se recouvrent pas — sur huit fascicules
+aux réglages différents.
+
+#### Sept dixièmes du travail d'image étaient une répétition exacte
+
+Une photo de téléphone en 48 tenons prenait **27 secondes**, contre 3,4 s pour
+la même mosaïque depuis une petite image. Le profil désignait `resample_box`.
+
+En instrumentant plutôt qu'en supposant : la chaîne réduisait la **même** image
+de 9 Mpx **huit fois** — deux pour quantifier, quatre pour mesurer la fidélité,
+une pour le débruitage, une pour l'aperçu de la source que je venais d'ajouter.
+
+La tentation était de réduire une fois en deux étapes. **C'eût été faux** : une
+moyenne de boîte en deux temps n'égale la moyenne en un temps que si les
+découpages tombent juste, et 4000 ne se divise pas en 192 groupes égaux. La
+sortie aurait changé, un peu, silencieusement.
+
+Ce qui est exact, c'est de ne pas refaire deux fois le même calcul. Un cache
+indexé par l'**identité** de l'image (hacher 36 Mo coûterait ce qu'on
+économise) : **27 s → 4,5 s**, et un test compare les empreintes SHA-256 de
+tous les fichiers livrés, cache actif contre cache neutralisé, sur quatre
+configurations. Une optimisation qui change la sortie n'est pas une
+optimisation.
+
+| Photo | Mosaïque | Avant | Après |
+|---|---|---|---|
+| 12 Mpx | 48 tenons | 27,1 s | **4,5 s** |
+| 0,5 Mpx | 48 tenons | 3,8 s | 3,8 s |
+
+La résolution de la photo ne compte presque plus : c'est la taille de la
+mosaïque qui décide, ce qui est le bon comportement.
+
+#### Et le défaut de ma propre correction
+
+Mon premier cache gardait une référence **forte** sur l'image d'entrée, pour
+que son identifiant ne puisse pas être recyclé. Raisonnement juste, conséquence
+mauvaise : jusqu'à cent mégaoctets retenus entre deux fabrications, pour rien.
+
+Une référence **faible** supprime la fuite — et déplace la charge de la preuve.
+Un identifiant se recycle dès que l'objet meurt ; une nouvelle image née à
+l'adresse d'une ancienne recevrait alors la réduction de l'ancienne, et la
+mosaïque sortirait fausse **sans une ligne d'erreur**. La vérification
+`garde() is image` n'est donc plus une ceinture de plus : c'est elle qui rend
+le procédé correct. Un test crée et détruit quarante images alternées pour
+forcer le recyclage.
+
+C'est le troisième défaut de cette passe que j'avais écrit moi-même — après la
+phrase qui débordait et le cache qui fuyait. Les quatre autres étaient des
+entrées non bornées.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

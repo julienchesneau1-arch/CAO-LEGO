@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **428 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **437 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -78,6 +78,17 @@ passage ce que le cadrage a coupé, qui n'était visible nulle part.
 Aucun fichier n'est chargé de l'extérieur : la frise de tenons, les boutons qui
 s'enfoncent comme une brique et les tenons qui se posent pendant la fabrication
 sont du CSS. La page reste utilisable hors ligne.
+
+**Ce que ça coûte.** Une photo de téléphone de 12 Mpx en 48 tenons : **4,5 s**.
+La même en 96 tenons : 14 s ; en 128 tenons : 27 s. La résolution de la photo
+n'y change presque rien (0,5 Mpx → 3,8 s), parce que la réduction au format de
+la mosaïque n'est faite **qu'une fois** : elle l'était huit fois, ce qui coûtait
+27 s au lieu de 4,5 (§ 5.60).
+
+Au-delà de 250 000 tenons, de 8 tenons de cadre ou de 12 étages de relief, la
+chaîne **refuse tout de suite** en disant pourquoi. Ce ne sont pas des limites
+de goût : sans elles, un cadre de 500 tenons tapé par erreur partait en plus de
+deux minutes de calcul, et 100 000 tenons finissaient par une erreur de mémoire.
 
 Il n'y a **pas deux chaînes**. L'interface appelle `bfk001/pipeline.py`,
 exactement comme `demo_lego_art.py` : deux façades, un seul calcul, aucune
