@@ -445,8 +445,11 @@ class TestFascicule(unittest.TestCase):
                 mosaique, [list(range(lignes))], bk._mise_en_page(mosaique))
             self.assertEqual(len(pages), 1, f"{lignes} lignes")
             self.assertEqual(ou, [0])
-            self.assertEqual(len(pages[0].images), 2,
-                             "la bande et le reperage")
+            # La bande, le reperage, et un dessin par reference de l'encart.
+            self.assertGreaterEqual(len(pages[0].images), 2)
+            self.assertEqual(pages[0].images[-1][0].width,
+                             bk.render_locator(mosaique, 0, lignes - 1).width,
+                             "le reperage vient en dernier")
 
     def test_plusieurs_etapes_par_page_quand_elles_tiennent(self):
         # Une notice LEGO met deux a quatre etapes numerotees par page. Une
@@ -473,3 +476,66 @@ class TestFascicule(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestDessinDesPieces(unittest.TestCase):
+    """Les pieces dessinees en perspective, comme dans une notice LEGO."""
+
+    ROUGE = (200, 60, 40)
+
+    def test_une_brique_est_plus_haute_qu_une_tuile_de_meme_emprise(self):
+        brique = bk.render_piece("3010", self.ROUGE, 8.0)   # Brick 1 x 4
+        tuile = bk.render_piece("2431", self.ROUGE, 8.0)    # Tile 1 x 4
+        self.assertEqual(brique.width, tuile.width)
+        self.assertGreater(brique.height, tuile.height,
+                           "24 LDU de corps contre 8 : ca doit se voir")
+
+    def test_les_tenons_se_voient_et_une_tuile_n_en_a_pas(self):
+        # `has_studs` vient du catalogue : une tuile n'a pas de tenons parce
+        # que le catalogue le dit, pas parce que son nom commence par « Tile ».
+        plate = bk.render_piece("3024", self.ROUGE, 12.0)   # Plate 1 x 1
+        tuile = bk.render_piece("3070b", self.ROUGE, 12.0)  # Tile 1 x 1
+        self.assertGreater(plate.height, tuile.height)
+        self.assertNotEqual(plate.data, tuile.data)
+
+    def test_les_trois_faces_ont_trois_eclairements(self):
+        # Sans cet ecart, un cube isometrique se lit comme un hexagone plat.
+        image = bk.render_piece("3001", self.ROUGE, 14.0)   # Brick 2 x 4
+        teintes = {image.pixel(x, y)
+                   for y in range(image.height) for x in range(image.width)}
+        rouges = sorted({t[0] for t in teintes if t[0] > t[1] > t[2] - 1})
+        self.assertGreaterEqual(len(rouges), 3, "trois faces, trois valeurs")
+
+    def test_une_piece_ronde_ne_se_dessine_pas_comme_une_carree(self):
+        ronde = bk.render_piece("98138", self.ROUGE, 14.0)
+        carree = bk.render_piece("3070b", self.ROUGE, 14.0)
+        self.assertNotEqual(ronde.data, carree.data)
+
+    def test_la_couleur_demandee_est_celle_du_dessus(self):
+        image = bk.render_piece("3070b", self.ROUGE, 16.0)
+        teintes = [image.pixel(x, y)
+                   for y in range(image.height) for x in range(image.width)]
+        self.assertIn(self.ROUGE, teintes,
+                      "la face du dessus porte la couleur telle quelle")
+
+    def test_aucune_piece_du_catalogue_ne_deborde_de_sa_case(self):
+        # La borne de largeur seule laissait passer les grandes plates
+        # carrees : en isometrie une 8x8 est aussi haute que large.
+        from bfk001.catalog import CATALOG
+        for design in sorted(CATALOG):
+            _, largeur, hauteur = bk._dessin_de_piece(
+                design, self.ROUGE, 86.0, (255, 255, 255), hauteur_max=19.0)
+            self.assertLessEqual(largeur, 88.0, design)
+            self.assertLessEqual(hauteur, 21.0, design)
+
+    def test_l_encart_dessine_une_piece_par_reference(self):
+        mosaique, _ = petite_mosaique(cote=16, graine=3)
+        mise = bk._mise_en_page(mosaique)
+        rects, textes, images, hauteur = bk._encart_pieces(
+            mosaique, [0, 1], mise.codes, 40.0, 800.0, 515.0)
+        attendues, _ = bk.pieces_of_band(mosaique, [0, 1])
+        self.assertEqual(len(images), len(attendues))
+        self.assertGreater(hauteur, 20.0)
+        for _, (x, y, w, h) in images:
+            self.assertGreater(w, 0)
+            self.assertGreater(h, 0)

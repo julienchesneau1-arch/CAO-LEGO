@@ -37,8 +37,8 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .catalog import CATALOG, BomLine
 from .graph import InstructionGraph
-from .imaging import Image
-from .lego import BRICK_HEIGHT_LDU, ldu_to_mm
+from .imaging import Image, resample_box
+from .lego import BRICK_HEIGHT_LDU, STUD_PITCH_LDU, ldu_to_mm
 from .mosaic import Mosaic
 from .palette import LegoColor, Palette
 
@@ -269,6 +269,162 @@ class _Canvas:
 
     def image(self) -> Image:
         return Image(self.width, self.height, bytes(self.data))
+
+
+# --------------------------------------------------------------------------
+# Dessin des pieces en perspective
+# --------------------------------------------------------------------------
+
+ISO_COS = 0.8660254037844387   # cos 30 degres
+ISO_SIN = 0.5                  # sin 30 degres
+SUPERECHANTILLON = 4
+"""Facteur de sur-echantillonnage avant reduction.
+
+Un dessin de vingt points de haut trace directement est un escalier : les
+aretes d'une piece isometrique sont toutes obliques. On trace quatre fois plus
+grand puis on reduit avec `resample_box`, qui moyenne en lumiere lineaire —
+c'est-a-dire exactement l'anticrenelage qu'il faut, sans une ligne de plus.
+"""
+
+FACE_DESSUS = 1.0
+FACE_DROITE = 0.74
+FACE_GAUCHE = 0.55
+"""Eclairement des trois faces visibles. Ce sont les rapports qu'emploient les
+notices LEGO : un dessus franc, un cote en demi-teinte, un cote dans l'ombre.
+Sans cet ecart, un cube isometrique se lit comme un hexagone plat."""
+
+
+def _teindre(rgb: Tuple[int, int, int], facteur: float) -> Tuple[int, int, int]:
+    return tuple(max(0, min(255, round(canal * facteur))) for canal in rgb)
+
+
+def _polygone(toile: "_Canvas", points, rgb) -> None:
+    """Remplit un polygone convexe par balayage de lignes.
+
+    Convexe suffit : toutes les faces d'une piece en projection isometrique
+    sont des parallelogrammes, et un stud est un disque.
+    """
+    if len(points) < 3:
+        return
+    haut = max(0, int(min(y for _, y in points)))
+    bas = min(toile.height - 1, int(max(y for _, y in points)) + 1)
+    for y in range(haut, bas + 1):
+        centre = y + 0.5
+        bornes = []
+        for index in range(len(points)):
+            x0, y0 = points[index]
+            x1, y1 = points[(index + 1) % len(points)]
+            if y0 == y1:
+                continue
+            if min(y0, y1) <= centre < max(y0, y1):
+                bornes.append(x0 + (centre - y0) * (x1 - x0) / (y1 - y0))
+        if len(bornes) < 2:
+            continue
+        gauche, droite = min(bornes), max(bornes)
+        x_debut = max(0, int(gauche + 0.5))
+        x_fin = min(toile.width, int(droite + 0.5))
+        if x_fin > x_debut:
+            toile.fill(x_debut, y, x_fin - x_debut, 1, rgb)
+
+
+def _disque(toile: "_Canvas", cx: float, cy: float, rx: float, ry: float,
+            rgb) -> None:
+    """Ellipse pleine. Un cercle du plan des tenons se projette ainsi."""
+    if rx <= 0 or ry <= 0:
+        return
+    for y in range(max(0, int(cy - ry)), min(toile.height, int(cy + ry) + 1)):
+        dy = (y + 0.5 - cy) / ry
+        if abs(dy) > 1.0:
+            continue
+        demi = rx * (1.0 - dy * dy) ** 0.5
+        x0 = max(0, int(cx - demi + 0.5))
+        x1 = min(toile.width, int(cx + demi + 0.5))
+        if x1 > x0:
+            toile.fill(x0, y, x1 - x0, 1, rgb)
+
+
+def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0,
+                 fond: Tuple[int, int, int] = (255, 255, 255)) -> Image:
+    """La piece en perspective, avec ses tenons. Comme dans une notice LEGO.
+
+    Projection isometrique : +x part vers la droite en descendant, +y vers la
+    gauche en descendant, +z monte. Trois faces sont visibles et recoivent
+    trois eclairements — sans cet ecart un cube se lit comme un hexagone.
+
+    Tout vient du catalogue et rien n'est recopie : l'emprise, la hauteur du
+    corps, et `has_studs`. Une tuile n'a pas de tenons parce que le catalogue
+    le dit, pas parce que son nom commence par « Tile ».
+
+    `echelle` est en points par tenon, sur le dessin FINAL.
+    """
+    piece = CATALOG[design_id]
+    largeur, profondeur = piece.studs_x, piece.studs_y
+    hauteur = piece.body_height_ldu / STUD_PITCH_LDU
+    ronde = "Round" in piece.name
+
+    e = echelle * SUPERECHANTILLON
+    marge = max(1.0, e * 0.12)
+    largeur_px = int((largeur + profondeur) * ISO_COS * e + 2 * marge)
+    stud_h = 0.2 if piece.has_studs else 0.0
+    hauteur_px = int(
+        (largeur + profondeur) * ISO_SIN * e + (hauteur + stud_h) * e + 2 * marge
+    )
+    toile = _Canvas(max(1, largeur_px), max(1, hauteur_px), fond)
+    origine_x = marge + profondeur * ISO_COS * e
+    origine_y = marge + (hauteur + stud_h) * e
+
+    def projeter(x, y, z):
+        return (origine_x + (x - y) * ISO_COS * e,
+                origine_y + (x + y) * ISO_SIN * e - z * e)
+
+    if ronde:
+        # Un cylindre : deux disques et le fut entre eux.
+        rayon = min(largeur, profondeur) / 2.0 * 0.92
+        cx, cy_bas = projeter(largeur / 2, profondeur / 2, 0)
+        _, cy_haut = projeter(largeur / 2, profondeur / 2, hauteur)
+        rx, ry = rayon * ISO_COS * e * 1.4142, rayon * ISO_SIN * e * 1.4142
+        _polygone(toile, [(cx - rx, cy_haut), (cx + rx, cy_haut),
+                          (cx + rx, cy_bas), (cx - rx, cy_bas)],
+                  _teindre(rgb, FACE_DROITE))
+        _disque(toile, cx, cy_bas, rx, ry, _teindre(rgb, FACE_DROITE))
+        _disque(toile, cx, cy_haut, rx, ry, rgb)
+        return resample_box(toile.image(),
+                            max(1, largeur_px // SUPERECHANTILLON),
+                            max(1, hauteur_px // SUPERECHANTILLON))
+
+    dessus = [projeter(0, 0, hauteur), projeter(largeur, 0, hauteur),
+              projeter(largeur, profondeur, hauteur),
+              projeter(0, profondeur, hauteur)]
+    droite = [projeter(largeur, 0, hauteur), projeter(largeur, profondeur, hauteur),
+              projeter(largeur, profondeur, 0), projeter(largeur, 0, 0)]
+    gauche = [projeter(0, profondeur, hauteur),
+              projeter(largeur, profondeur, hauteur),
+              projeter(largeur, profondeur, 0), projeter(0, profondeur, 0)]
+    _polygone(toile, gauche, _teindre(rgb, FACE_GAUCHE))
+    _polygone(toile, droite, _teindre(rgb, FACE_DROITE))
+    _polygone(toile, dessus, rgb)
+
+    if piece.has_studs:
+        rayon = 0.3
+        rx = rayon * ISO_COS * e * 1.4142
+        ry = rayon * ISO_SIN * e * 1.4142
+        # De l'arriere vers l'avant : un tenon proche doit couvrir le lointain.
+        centres = sorted(
+            ((i + 0.5, j + 0.5) for i in range(largeur) for j in range(profondeur)),
+            key=lambda c: c[0] + c[1],
+        )
+        for cx_stud, cy_stud in centres:
+            x_bas, y_bas = projeter(cx_stud, cy_stud, hauteur)
+            _, y_haut = projeter(cx_stud, cy_stud, hauteur + 0.2)
+            _polygone(toile, [(x_bas - rx, y_haut), (x_bas + rx, y_haut),
+                              (x_bas + rx, y_bas), (x_bas - rx, y_bas)],
+                      _teindre(rgb, FACE_DROITE))
+            _disque(toile, x_bas, y_bas, rx, ry, _teindre(rgb, FACE_DROITE))
+            _disque(toile, x_bas, y_haut, rx, ry, _teindre(rgb, 1.06))
+
+    return resample_box(toile.image(),
+                        max(1, largeur_px // SUPERECHANTILLON),
+                        max(1, hauteur_px // SUPERECHANTILLON))
 
 
 def _echelle_auto(studs: int, cible: int = 640) -> int:
@@ -799,8 +955,14 @@ def _pages_liste(
     palette: Optional[Palette],
     codes: Mapping[int, str],
 ) -> List[PdfPage]:
-    """Liste de course : reference, pastille, couleur, quantite."""
-    par_page = 34
+    """Liste de course : la piece DESSINEE, sa reference, sa couleur, sa quantite.
+
+    C'est la « parts list » d'une notice LEGO. Une pastille de couleur ne dit
+    ni la forme ni la taille ; devant un bac de vrac, c'est la forme qu'on
+    cherche. La piece est donc dessinee en perspective, comme dans l'encart des
+    etapes — le meme dessin, pour n'avoir qu'un langage a apprendre.
+    """
+    par_page = 26
     # Groupe par reference, et dans chaque reference le plus gros lot d'abord :
     # c'est l'ordre dans lequel on remplit un panier, pas l'ordre alphabetique.
     ordonnee = sorted(bom, key=lambda ligne: (ligne.design_id, -ligne.quantity))
@@ -813,14 +975,15 @@ def _pages_liste(
              "A commander avant de commencer. Les quantites sont exactes, "
              "prevoyez quelques tuiles de rab.", False),
             (MARGE, A4_HEIGHT - 106, CORPS_TEXTE, "Qte", True),
-            (MARGE + 34, A4_HEIGHT - 106, CORPS_TEXTE, "Reference", True),
-            (MARGE + 92, A4_HEIGHT - 106, CORPS_TEXTE, "Piece", True),
-            (MARGE + 270, A4_HEIGHT - 106, CORPS_TEXTE, "Couleur", True),
+            (MARGE + 34, A4_HEIGHT - 106, CORPS_TEXTE, "Piece", True),
+            (MARGE + 132, A4_HEIGHT - 106, CORPS_TEXTE, "Reference", True),
+            (MARGE + 300, A4_HEIGHT - 106, CORPS_TEXTE, "Couleur", True),
         ]
         rects: List[RectFill] = [
             (MARGE, A4_HEIGHT - 112, A4_WIDTH - 2 * MARGE, 0.7, (0, 0, 0))
         ]
-        y = A4_HEIGHT - 128
+        images = []
+        y = A4_HEIGHT - 132
         for ligne in tranche:
             couleur = None
             if palette is not None:
@@ -828,20 +991,26 @@ def _pages_liste(
                     couleur = palette.by_code(ligne.color_id)
                 except KeyError:
                     couleur = None
-            textes.append((MARGE, y, CORPS_TEXTE, str(ligne.quantity), True))
-            textes.append((MARGE + 34, y, CORPS_TEXTE, ligne.design_id, False))
-            textes.append((MARGE + 92, y, CORPS_TEXTE, ligne.name, False))
+            textes.append((MARGE, y, CORPS_TEXTE, f"{ligne.quantity}x", True))
+            if ligne.design_id in CATALOG:
+                rvb = couleur.rgb if couleur is not None else (150, 150, 150)
+                dessin, dl, dh = _dessin_de_piece(
+                    ligne.design_id, rvb, 86.0, (255, 255, 255),
+                    echelle_max=5.5, hauteur_max=19.0)
+                images.append((dessin, (MARGE + 34, y - 3.0, dl, dh)))
+            textes.append((MARGE + 132, y, CORPS_TEXTE,
+                           f"{ligne.design_id}  {ligne.name}", False))
             if couleur is not None:
-                rects.append((MARGE + 270, y - 1.5, 9.0, 9.0, couleur.rgb))
+                rects.append((MARGE + 300, y - 1.5, 9.0, 9.0, couleur.rgb))
                 code = codes.get(ligne.color_id)
                 if code:
-                    textes.append((MARGE + 284, y, CORPS_TEXTE, code, True))
-                textes.append((MARGE + 302, y, CORPS_TEXTE, couleur.name, False))
+                    textes.append((MARGE + 314, y, CORPS_TEXTE, code, True))
+                textes.append((MARGE + 332, y, CORPS_TEXTE, couleur.name, False))
             else:
-                textes.append((MARGE + 270, y, CORPS_TEXTE,
+                textes.append((MARGE + 300, y, CORPS_TEXTE,
                                f"code {ligne.color_id}", False))
-            y -= 15.0
-        pages.append(PdfPage(tuple(textes), tuple(rects)))
+            y -= 22.0
+        pages.append(PdfPage(tuple(textes), tuple(rects), tuple(images)))
     return pages
 
 
@@ -1041,14 +1210,52 @@ cinquante tenons de large, l'encart et la couleur suffisent.
 """
 
 
+def _dessin_de_piece(design_id: str, rgb, largeur_max: float, fond,
+                     echelle_max: float = 6.5, hauteur_max: float = 20.0):
+    """(image, largeur, hauteur) d'une piece dessinee, bornee dans les DEUX sens.
+
+    Une plate 8x8 dessinee a la meme echelle qu'une tuile 1x1 ferait quatre-
+    vingts points de large et chasserait tout le reste. On borne donc la
+    largeur ; le rapport entre pieces se perd un peu, la page se lit.
+
+    Et la hauteur, faute de quoi les grandes plates carrees debordaient sur les
+    lignes voisines de la liste de course : en projection isometrique une piece
+    8x8 est aussi haute que large, alors qu'une 1x8 est plate. Borner la seule
+    largeur laissait donc passer exactement les pieces les plus encombrantes.
+    """
+    piece = CATALOG[design_id]
+    etendue_x = (piece.studs_x + piece.studs_y) * ISO_COS
+    etendue_y = ((piece.studs_x + piece.studs_y) * ISO_SIN
+                 + piece.body_height_ldu / STUD_PITCH_LDU
+                 + (0.2 if piece.has_studs else 0.0))
+    echelle = echelle_max
+    if etendue_x:
+        echelle = min(echelle, largeur_max / etendue_x)
+    if etendue_y:
+        echelle = min(echelle, hauteur_max / etendue_y)
+    image = render_piece(design_id, rgb, max(1.2, echelle), fond)
+    return image, float(image.width), float(image.height)
+
+
+ENCART_CELLULE = 122.0
+"""Largeur d'une case de l'encart, en points. Trois par page utile."""
+ENCART_RANG = 30.0
+"""Hauteur d'un rang de l'encart : de quoi loger un dessin de piece."""
+
+
 def _encart_pieces(mosaic: Mosaic, rows: Sequence[int], codes: Mapping[int, str],
                    x: float, sommet: float, largeur: float):
-    """L'encart « ce qu'il faut sortir du sachet ». (rects, textes, hauteur)."""
+    """L'encart « ce qu'il faut sortir du sachet ».
+
+    Rend (rects, textes, images, hauteur). Les pieces y sont DESSINEES en
+    perspective, avec leurs tenons, comme dans une notice LEGO — une pastille
+    de couleur ne dit ni la forme ni la taille, et c'est precisement ce qu'on
+    doit reconnaitre dans un sachet.
+    """
     pieces, _ = pieces_of_band(mosaic, rows)
-    colonnes = max(1, int(largeur // 132))
+    colonnes = max(1, int(largeur // ENCART_CELLULE))
     lignes = (len(pieces) + colonnes - 1) // colonnes
-    pas_y = 13.0
-    hauteur = 20.0 + lignes * pas_y
+    hauteur = 20.0 + lignes * ENCART_RANG
     rects = [
         (x, sommet - hauteur, largeur, hauteur, ENCART_FOND),
         (x, sommet - hauteur, largeur, 0.8, ENCART_TRAIT),
@@ -1057,22 +1264,26 @@ def _encart_pieces(mosaic: Mosaic, rows: Sequence[int], codes: Mapping[int, str]
     textes: List[TextLine] = [
         (x + 8, sommet - 13, CORPS_TEXTE, "A sortir pour cette etape", True)
     ]
+    images = []
     pas_x = largeur / colonnes
     for index, (design, couleur, quantite) in enumerate(pieces):
         colonne, ligne = index % colonnes, index // colonnes
         cx = x + 8 + colonne * pas_x
-        cy = sommet - 24 - ligne * pas_y
-        rects.append((cx, cy - PASTILLE + 2.5, PASTILLE, PASTILLE, couleur.rgb))
-        rects.append((cx, cy - PASTILLE + 2.5, PASTILLE, PASTILLE,
-                      ENCART_TRAIT) if False else
-                     (cx, cy - PASTILLE + 2.5, 0.6, PASTILLE, ENCART_TRAIT))
+        haut = sommet - 20.0 - ligne * ENCART_RANG
+        dessin, dl, dh = _dessin_de_piece(design, couleur.rgb, 40.0, ENCART_FOND,
+                                          hauteur_max=ENCART_RANG - 8.0)
+        # Les dessins reposent sur une meme ligne de base : sans cela une
+        # tuile 1x1 flotte a mi-hauteur a cote d'une 1x4 et le rang se lit
+        # comme une suite d'accidents.
+        base = haut - ENCART_RANG + 6.0
+        images.append((dessin, (cx, base, dl, dh)))
         etiquette = codes.get(couleur.code, "?")
-        nom = CATALOG[design].name.replace(" with Groove", "")
-        textes.append((cx + PASTILLE + 4, cy - 6, CORPS_TEXTE,
-                       f"{quantite} x", True))
-        textes.append((cx + PASTILLE + 26, cy - 6, CORPS_LIGNE,
-                       f"{etiquette}  {nom}", False))
-    return rects, textes, hauteur
+        textes.append((cx + 46.0, base + 6.0, CORPS_TITRE * 0.55,
+                       f"{quantite}x", True))
+        # Colonne FIXE pour la lettre : la caler apres le nombre donnait
+        # « 5xA » pour un chiffre et un espace correct pour deux.
+        textes.append((cx + 82.0, base + 6.0, CORPS_TEXTE, etiquette, True))
+    return rects, textes, images, hauteur
 
 
 def _lettres_sur_bande(mosaic: Mosaic, rows: Sequence[int],
@@ -1112,7 +1323,7 @@ pas, pas assez pour qu'on croie a une page finie."""
 def _hauteur_etape(mosaic: Mosaic, rows: Sequence[int], mise: _Mise,
                    largeur: float):
     """Hauteur d'une etape, encart compris. Sert a savoir combien tiennent."""
-    _, _, hauteur_encart = _encart_pieces(mosaic, rows, mise.codes, 0, 0, largeur)
+    *_, hauteur_encart = _encart_pieces(mosaic, rows, mise.codes, 0, 0, largeur)
     hauteur_bande = (largeur - RESERVE_REGLETTE) * len(rows) / mosaic.studs_x
     return 22.0 + hauteur_encart + 10.0 + hauteur_bande
 
@@ -1121,7 +1332,7 @@ def _une_etape(mosaic: Mosaic, rows: Sequence[int], numero: int, total: int,
                mise: _Mise, sommet: float, largeur: float):
     """Une etape posee a partir de `sommet`. (rects, textes, images, bas)."""
     first_row, last_row = rows[0], rows[-1]
-    rects, textes, hauteur_encart = _encart_pieces(
+    rects, textes, images_encart, hauteur_encart = _encart_pieces(
         mosaic, rows, mise.codes, MARGE, sommet - 22.0, largeur
     )
     textes = [
@@ -1143,7 +1354,8 @@ def _une_etape(mosaic: Mosaic, rows: Sequence[int], numero: int, total: int,
     textes.extend(_reglette(cadre_bande, mosaic.studs_x, len(rows), 0,
                             len(rows) - 1, premiere_ligne=first_row))
     textes.extend(_lettres_sur_bande(mosaic, rows, mise.codes, cadre_bande))
-    return rects, textes, [(bande, cadre_bande)], cadre_bande[1]
+    return (rects, textes, images_encart + [(bande, cadre_bande)],
+            cadre_bande[1])
 
 
 def _pages_etapes(mosaic: Mosaic, bandes: Sequence[Sequence[int]], mise: _Mise):

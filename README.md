@@ -774,6 +774,19 @@ Le fond et le relief ne se nomment plus pareil (« Fond — couche 2 sur 2 » co
 n'oblige physiquement à le poser après, mais une notice raconte un geste, et on
 encadre un tableau une fois peint.
 
+**Les pièces sont dessinées en perspective, avec leurs tenons** — dans l'encart
+des étapes comme dans la liste de course, le même dessin pour n'avoir qu'un
+langage à apprendre. Une pastille de couleur ne dit ni la forme ni la taille, et
+devant un bac de vrac c'est la forme qu'on cherche.
+
+Le dessin est une projection isométrique tracée par `render_piece`, à quatre fois
+la taille finale puis réduite par `resample_box` — l'anticrénelage vient du
+rééchantillonnage en lumière linéaire déjà écrit pour les photos, sans une ligne
+de plus. Tout vient du catalogue : l'emprise, la hauteur du corps, et `has_studs`.
+Une tuile n'a pas de tenons parce que le catalogue le dit, pas parce que son nom
+commence par « Tile ». Les trois faces visibles reçoivent trois éclairements —
+sans cet écart, un cube isométrique se lit comme un hexagone plat.
+
 ---
 
 ## La notice PDF

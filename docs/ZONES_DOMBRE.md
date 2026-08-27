@@ -1811,6 +1811,31 @@ Trois défauts trouvés en regardant les pages, comme toujours :
 - le cadre apparaissait au milieu des couches de fond, faisant poser une bordure
   noire autour d'un carré vide. Il a désormais sa page, en dernier.
 
+#### Les pièces, dessinées
+
+Il restait ce que j'avais écrit comme la dernière différence : « les vraies
+notices dessinent chaque pièce en perspective, avec ses tenons ». `render_piece`
+le fait — projection isométrique, trois faces à trois éclairements, tenons en
+cylindres — dans l'encart des étapes **et** dans la liste de course, avec le même
+dessin, pour n'avoir qu'un langage à apprendre.
+
+Deux choix qui ont évité d'écrire du code inutile :
+
+- **L'anticrénelage est gratuit.** Les arêtes d'une pièce isométrique sont toutes
+  obliques, donc un dessin de vingt points tracé directement est un escalier. On
+  trace quatre fois plus grand et on réduit par `resample_box` — le
+  rééchantillonnage en lumière linéaire écrit pour les photos (§ 5.24) est
+  exactement l'anticrénelage qu'il faut.
+- **Rien n'est recopié.** L'emprise, la hauteur du corps et `has_studs` viennent
+  du catalogue. Une tuile n'a pas de tenons parce que le catalogue le dit.
+
+Un défaut trouvé en regardant la page, une fois de plus : les grandes plates
+débordaient sur les lignes voisines de la liste. Je ne bornais que la LARGEUR du
+dessin — or en projection isométrique une plate 8×8 est aussi haute que large,
+alors qu'une 1×8 est plate. Ne borner que la largeur laissait donc passer
+exactement les pièces les plus encombrantes. Un test balaie désormais tout le
+catalogue et vérifie les deux bornes.
+
 ---
 
 ## 6. Où en est-on de la demande produit
