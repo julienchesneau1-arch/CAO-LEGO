@@ -374,6 +374,36 @@ class TestPageDansUnNavigateur(unittest.TestCase):
         self.assertIn("refabriquez", self.page.inner_text("#etat"))
         self.assertEqual(self.incidents, [], "\n".join(self.incidents))
 
+    def test_la_notice_se_telecharge_seule_sans_passer_par_le_zip(self):
+        # Personne ne telecharge une archive pour en extraire un fichier dont
+        # il ignore le nom. La notice et la liste doivent etre a un clic.
+        self.fabriquer(studs="16", hauteur="16")
+        emporter = self.page.inner_text("#emporter")
+        self.assertIn("La notice", emporter)
+        self.assertIn("La liste de courses", emporter)
+
+        with self.page.expect_download(timeout=60000) as attente:
+            self.page.click("#emporter a[download='notice.pdf']")
+        recu = self.dossier / "notice_directe.pdf"
+        attente.value.save_as(str(recu))
+        octets = recu.read_bytes()
+        self.assertTrue(octets.startswith(b"%PDF-"))
+        self.assertGreater(len(octets), 5000)
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    def test_un_raccourci_n_est_propose_que_si_le_fichier_existe(self):
+        # `apercu_relief.png` n'est pas produit sans relief ; un raccourci vers
+        # un fichier absent rendrait un 404 au clic.
+        self.fabriquer(studs="16", hauteur="16")
+        liens = self.page.eval_on_selector_all(
+            "#emporter a", "n => n.map(a => a.getAttribute('download'))")
+        self.assertTrue(liens)
+        for nom in liens:
+            reponse = self.page.request.get(
+                self.page.eval_on_selector(
+                    f"#emporter a[download='{nom}']", "a => a.href"))
+            self.assertTrue(reponse.ok, f"{nom} rend {reponse.status}")
+
     def test_les_liens_fabriques_par_le_script_s_ouvrent_en_dehors(self):
         # Les liens vers Pick a Brick et BrickLink sont construits par le
         # script : ils n'existent pas dans le HTML servi, et seul un vrai DOM

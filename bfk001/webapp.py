@@ -267,6 +267,20 @@ PAGE = r"""<!doctype html>
                     font-size:17px; line-height:1; }
   details[open] > summary::before { transform:rotate(90deg); }
 
+  /* Les deux fichiers qu'on veut vraiment : la notice, et la liste. Ils
+     etaient au fond d'un ZIP qu'il fallait telecharger en entier puis ouvrir
+     pour trouver le bon nom. */
+  .emporter { display:grid; gap:10px; margin:4px 0 16px;
+              grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); }
+  .emporter a { display:block; padding:13px 14px; border-radius:12px;
+                border:1px solid var(--trait); background:var(--creux);
+                color:var(--encre); text-decoration:none;
+                box-shadow:0 3px 0 var(--trait);
+                transition:transform .06s, box-shadow .06s; }
+  .emporter a:active { transform:translateY(2px); box-shadow:0 1px 0 var(--trait); }
+  .emporter b { display:block; font-size:14.5px; }
+  .emporter span { color:var(--doux); font-size:12.5px; }
+
   .commande { display:grid; gap:12px; margin:4px 0 18px;
               grid-template-columns:repeat(auto-fit,minmax(276px,1fr)); }
   .boutique { border:1px solid var(--trait); border-radius:14px;
@@ -496,6 +510,8 @@ PAGE = r"""<!doctype html>
       <div class="chiffres" id="chiffres"></div>
       <h2>Commander</h2>
       <div class="commande" id="commander"></div>
+      <h2>Emporter</h2>
+      <div class="emporter" id="emporter"></div>
       <a id="telecharger" download><button type="button" class="brique verte">
         Telecharger le dossier complet (ZIP)</button></a>
       <details open>
@@ -824,6 +840,34 @@ PAGE = r"""<!doctype html>
                  : 'XML selectionne ci-dessous : Ctrl-C pour le copier.');
   }
 
+  // Ce qu'on emporte vraiment. Le ZIP reste, mais il ne doit plus etre le
+  // SEUL chemin vers la notice : personne ne telecharge une archive pour en
+  // extraire un fichier dont il ignore le nom.
+  var EMPORTABLES = [
+    ['notice.pdf', 'La notice', function (m) {
+      return m.pages + ' pages, ' + m.etapes + ' etapes'; }],
+    ['liste_de_course.csv', 'La liste de courses', function (m) {
+      return m.lots + ' references, ' + m.pieces + ' pieces'; }],
+    ['modele.ldr', 'Le modele 3D', function () {
+      return 'LDraw — Studio, LeoCAD, LDView'; }]
+  ];
+
+  function emporter(jeton, m, fichiers) {
+    var zone = document.getElementById('emporter');
+    zone.textContent = '';
+    EMPORTABLES.forEach(function (item) {
+      if (fichiers.indexOf(item[0]) < 0) return;
+      var a = document.createElement('a');
+      a.href = '/fichier/' + encodeURIComponent(jeton) + '/'
+               + encodeURIComponent(item[0]);
+      a.setAttribute('download', item[0]);
+      var b = document.createElement('b'); b.textContent = item[1];
+      var s = document.createElement('span'); s.textContent = item[2](m);
+      a.appendChild(b); a.appendChild(s);
+      zone.appendChild(a);
+    });
+  }
+
   function commander(jeton, m, fichiers) {
     var zone_ = document.getElementById('commander');
     zone_.textContent = '';
@@ -973,6 +1017,7 @@ PAGE = r"""<!doctype html>
         journal.appendChild(n);
       });
 
+      emporter(reponse.jeton, reponse.mesures, reponse.fichiers);
       commander(reponse.jeton, reponse.mesures, reponse.fichiers);
 
       document.getElementById('telecharger').href =

@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **437 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **439 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -67,6 +67,11 @@ format se choisit sur des pastilles (32 / 48 / 64 / 96 tenons, avec les cm), la
 couleur du cadre sur des pastilles de couleur, et tout le reste — tramage,
 sections, nettoyage, seuils — se replie sous « Réglages fins », **après** le
 bouton : l'action principale ne se cherche pas derrière deux sections repliées.
+
+**Ce qu'on emporte.** La notice, la liste de courses et le modèle 3D se
+téléchargent **chacun d'un clic**, sous les chiffres. Le ZIP reste, mais il
+n'est plus le seul chemin : personne ne télécharge une archive pour en extraire
+un fichier dont il ignore le nom.
 
 **Le comparateur.** Sur l'aperçu, une poignée qu'on tire révèle la photo sous
 l'œuvre. Ce n'est pas la photo brute : c'est
