@@ -2804,6 +2804,47 @@ bugs. C'est le motif de la journée, et il valait d'être écrit.
 
 ---
 
+### 5.65 La notice tenait dans ses marges — mais disait-elle vrai ?
+
+§ 5.60 avait vérifié la **géométrie** des pages : rien ne déborde, rien ne se
+recouvre. Une notice peut tenir dans ses marges et raconter n'importe quoi.
+Son contenu n'avait jamais été contrôlé.
+
+Quatre propriétés, celles dont dépend la seule promesse qui compte — *si on la
+suit, on obtient le modèle* :
+
+| Propriété | Ce qu'un défaut coûterait |
+|---|---|
+| chaque pièce posée une fois et une seule | une pièce oubliée : le modèle ne tient pas ; en double : on en achète une de trop |
+| chaque rangée couverte par une bande, une fois | une bande entière n'est montrée nulle part |
+| une lettre par couleur, unique | sans lettre la notice imprime « ? » ; partagée, on pose la mauvaise sans le voir |
+| l'encart de chaque bande = son contenu | on sort du sachet ce qu'il ne faut pas |
+
+**Résultat : rien à corriger.** Sur sept configurations — relief, sections,
+sans cadre, tuiles larges, tuiles rondes, palette bridée — le plan couvre
+exactement les pièces du modèle, les bandes exactement les rangées, chaque
+couleur a sa lettre, et la somme de tous les encarts fait toutes les tuiles.
+
+#### Mon instrument était faux, encore une fois
+
+Le premier passage a signalé « bande 0 : encart annonce 77 de trop, 77 de
+moins » sur les trois configurations. Égalité parfaite entre le trop et le
+moins : c'est la signature d'une erreur de **clé**, pas d'un défaut.
+
+`pieces_of_band` rend `(design, LegoColor, quantité)` — le deuxième élément est
+un objet couleur, pas un code. Je comparais des clés de natures différentes.
+Aucun défaut du code, un défaut de ma mesure.
+
+C'est la deuxième fois dans ce projet qu'un contrôle hâtif accuse à tort — la
+première était le faux rapport sur `nearest` (§ 5.x), où je passais du Lab à
+une fonction qui attend du RVB. Le réflexe qui sauve est le même : **une
+symétrie trop parfaite dans un écart dénonce l'instrument, pas le sujet.**
+
+Les quatre contrôles sont maintenant des tests permanents. C'était la dernière
+surface livrée que rien ne gardait.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

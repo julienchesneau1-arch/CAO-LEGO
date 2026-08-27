@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **458 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **462 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 

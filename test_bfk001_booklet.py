@@ -668,3 +668,124 @@ class TestMiseEnPage(unittest.TestCase):
             self.assertLessEqual(len(ligne) * 10.5 * 0.55, 515.0 + 0.01)
         # Un mot plus long que la ligne sort seul plutot que de disparaitre.
         self.assertEqual(_replier("a" * 300, 9.0, 100.0), ["a" * 300])
+
+
+class TestLaNoticeDitVrai(unittest.TestCase):
+    """La mise en page etait verifiee, son CONTENU ne l'etait pas.
+
+    Une notice peut tenir dans ses marges et raconter n'importe quoi. Ces
+    controles portent sur la seule promesse qui compte : si on la suit, on
+    obtient le modele — chaque piece une fois, la bonne, au bon endroit.
+    """
+
+    CONFIGURATIONS = (
+        ("48 tenons", dict(studs=48, hauteur=48)),
+        ("relief", dict(studs=32, hauteur=32, relief=3)),
+        ("sans cadre", dict(studs=24, hauteur=24, cadre=0)),
+        ("tuiles larges", dict(studs=16, hauteur=16, references="large")),
+        ("tuiles rondes", dict(studs=16, hauteur=16, references="art")),
+        ("en sections", dict(studs=32, hauteur=32, sections=16)),
+        ("palette bridee", dict(studs=24, hauteur=24, couleurs="6")),
+    )
+
+    _CACHE: dict = {}
+
+    def fabriquer(self, **reglages):
+        """Le plan et les bandes REELLEMENT employes par la chaine."""
+        from bfk001 import booklet, instructions, pipeline
+        from bfk001.imaging import Image, write_png
+        from bfk001.pipeline import Reglages, run
+
+        cle = tuple(sorted(reglages.items()))
+        if cle in self._CACHE:
+            return self._CACHE[cle]
+
+        photo = write_png(Image.from_pixels(160, 160, [
+            (int(30 + 200 * x / 160), int(70 + 150 * y / 160), (x * y) % 251)
+            for y in range(160) for x in range(160)]))
+
+        vus = {}
+        vrai_plan = instructions.plan_build
+        vraies_bandes = booklet._decouper_bandes
+
+        def espion_plan(placed, graph, instances, par_etape):
+            plan = vrai_plan(placed, graph, instances, par_etape)
+            vus.setdefault("plan", (plan, placed))
+            return plan
+
+        def espion_bandes(mosaique, lignes, mise):
+            bandes = vraies_bandes(mosaique, lignes, mise)
+            vus.setdefault("bandes", (mosaique, bandes, mise))
+            return bandes
+
+        pipeline.instructions.plan_build = espion_plan
+        booklet._decouper_bandes = espion_bandes
+        try:
+            run(photo, Reglages(titre="essai", **reglages))
+        finally:
+            pipeline.instructions.plan_build = vrai_plan
+            booklet._decouper_bandes = vraies_bandes
+        self._CACHE[cle] = vus
+        return vus
+
+    def test_suivre_toutes_les_etapes_pose_exactement_le_modele(self):
+        """Une piece oubliee, et le modele ne tient pas. Une piece en double,
+        et on en achete une de trop puis on cherche ou la mettre."""
+        for etiquette, reglages in self.CONFIGURATIONS:
+            plan, placees = self.fabriquer(**reglages)["plan"]
+            posees = [p for etape in plan.steps for p in etape.part_ids]
+            self.assertEqual(len(posees), len(set(posees)),
+                             f"{etiquette} : une piece posee deux fois")
+            self.assertEqual(set(posees), set(placees),
+                             f"{etiquette} : le plan et le modele different")
+
+    def test_les_bandes_couvrent_chaque_rangee_une_fois(self):
+        # Une rangee absente, et une bande entiere de l'oeuvre n'est montree
+        # nulle part. Une rangee en double, et on la pose deux fois.
+        for etiquette, reglages in self.CONFIGURATIONS:
+            mosaique, bandes, _ = self.fabriquer(**reglages)["bandes"]
+            rangs = [r for bande in bandes for r in bande]
+            self.assertEqual(len(rangs), len(set(rangs)),
+                             f"{etiquette} : rangee citee deux fois")
+            self.assertEqual(set(rangs), set(range(mosaique.studs_y)),
+                             f"{etiquette} : rangees manquantes")
+
+    def test_chaque_couleur_employee_a_sa_lettre_et_elle_est_unique(self):
+        """Sans lettre, la notice imprime « ? ». Deux couleurs qui partagent
+        une lettre, et on pose la mauvaise sans jamais s'en apercevoir."""
+        for etiquette, reglages in self.CONFIGURATIONS:
+            mosaique, _, mise = self.fabriquer(**reglages)["bandes"]
+            employees = {pose.color.code for pose in mosaique.tiles}
+            self.assertFalse(employees - set(mise.codes),
+                             f"{etiquette} : couleur sans lettre")
+            lettres = [mise.codes[code] for code in employees]
+            self.assertEqual(len(lettres), len(set(lettres)),
+                             f"{etiquette} : deux couleurs, une lettre")
+
+    def test_l_encart_de_chaque_bande_annonce_ce_qu_elle_contient(self):
+        """« Ce qu'il faut sortir du sachet » doit etre exact a la piece.
+
+        Les pieces se lisent dans les tuiles REELLEMENT posees : depuis la
+        fusion, quatre tenons rouges peuvent etre une seule 1x4, et faire
+        prendre quatre 1x1 serait une consigne fausse.
+        """
+        import collections
+
+        from bfk001.booklet import pieces_of_band
+
+        for etiquette, reglages in self.CONFIGURATIONS:
+            mosaique, bandes, _ = self.fabriquer(**reglages)["bandes"]
+            total = 0
+            for numero, bande in enumerate(bandes):
+                annonce = collections.Counter()
+                for design, couleur, quantite in pieces_of_band(mosaique, bande)[0]:
+                    annonce[(design, couleur.code)] += quantite
+                attendu = collections.Counter()
+                for pose in mosaique.tiles:
+                    if bande[0] <= pose.row <= bande[-1]:
+                        attendu[(pose.design_id, pose.color.code)] += 1
+                self.assertEqual(annonce, attendu,
+                                 f"{etiquette}, bande {numero}")
+                total += sum(annonce.values())
+            # Et la somme de tous les encarts, c'est toute l'oeuvre.
+            self.assertEqual(total, len(mosaique.tiles), etiquette)
