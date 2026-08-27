@@ -23,6 +23,7 @@ import sys
 import webbrowser
 
 from bfk001 import bricklink, pickabrick
+from bfk001.palette import PaletteRefusee, installer_palette
 from bfk001.pipeline import palette_utilisable
 from bfk001.webapp import DOSSIER_DEFAUT, Atelier, creer_serveur
 
@@ -56,8 +57,20 @@ def main() -> int:
         "--sans-memoire", action="store_true",
         help="ne rien garder : les catalogues seront a redonner a chaque "
              "demarrage.")
+    analyseur.add_argument(
+        "--installer-palette", action="store_true",
+        help="telecharge la palette officielle LDraw et l'installe une "
+             "fois pour toutes, puis demarre.")
     analyseur.add_argument("--sans-navigateur", action="store_true")
     options = analyseur.parse_args()
+
+    if options.installer_palette:
+        try:
+            chemin, installee = installer_palette()
+            print(f"palette : {len(installee)} couleurs installees dans {chemin}")
+        except PaletteRefusee as raison:
+            print(raison, file=sys.stderr)
+            return 3
 
     complete, note = palette_utilisable(
         [str(options.ldconfig)] if options.ldconfig else None

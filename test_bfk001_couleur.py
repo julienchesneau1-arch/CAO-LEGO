@@ -378,7 +378,106 @@ class TestSelectionDeSousPalette(unittest.TestCase):
 
 class TestPaletteOfficielle(unittest.TestCase):
     def test_recherche_ne_rend_que_des_fichiers_lisibles(self):
-        self.assertIsNone(bfk.find_ldconfig(["/n/existe/pas/LDConfig.ldr"]))
+        """Un chemin qui n'existe pas est ignore, pas rendu.
+
+        Ce test verifiait autrefois que `find_ldconfig` rend None — ce qui
+        n'est vrai que sur une machine ou LDraw n'est installe nulle part. Il
+        testait le POSTE, pas le code, et il est tombe le jour ou la palette
+        officielle a ete installee ici. Un test qui depend de ce que le
+        developpeur a sur son disque ne prouve rien.
+
+        On isole donc les emplacements systeme et les variables
+        d'environnement, et on verifie les deux sens.
+        """
+        import os
+
+        from bfk001 import palette as module
+
+        emplacements = module.LDCONFIG_EMPLACEMENTS
+        variables = {nom: os.environ.pop(nom)
+                     for nom in ("LDRAWDIR", "LDRAW_DIR", "LDRAWPATH")
+                     if nom in os.environ}
+        module.LDCONFIG_EMPLACEMENTS = ()
+        try:
+            self.assertIsNone(module.find_ldconfig(["/n/existe/pas/LDConfig.ldr"]))
+            self.assertIsNone(module.find_ldconfig())
+            # Et un fichier qui EXISTE doit etre rendu : sans cela, le test
+            # passerait aussi sur une fonction qui rend toujours None.
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".ldr", delete=False) as f:
+                f.write(b"0 !COLOUR Blue CODE 1 VALUE #0055BF EDGE #333333\n")
+                present = f.name
+            self.assertEqual(module.find_ldconfig([present]), present)
+            os.unlink(present)
+        finally:
+            module.LDCONFIG_EMPLACEMENTS = emplacements
+            os.environ.update(variables)
+
+    def test_l_installation_verifie_ce_qu_elle_telecharge(self):
+        """Rien ne s'installe qui ne soit une vraie palette.
+
+        Un proxy d'entreprise qui rend une page de connexion, un miroir devenu
+        404 renvoye en HTML, un fichier tronque : tous produisent quelque chose
+        qui n'est pas une palette. L'installer silencieusement ferait sortir
+        toute la mosaique a cote, sans une ligne d'erreur.
+        """
+        import pathlib as _p
+        import tempfile
+
+        from bfk001.palette import PaletteRefusee, installer_palette
+
+        vraie = "\n".join(
+            ["0 LDraw.org Configuration File"]
+            + [f"0 !COLOUR Teinte{i} CODE {i} VALUE #{i:02X}{i:02X}{i:02X} "
+               f"EDGE #333333" for i in range(1, 150)]
+        ).encode()
+
+        dossier = _p.Path(tempfile.mkdtemp())
+        chemin, palette = installer_palette(
+            str(dossier / "LDConfig.ldr"), ["http://exemple/ok"],
+            ouvrir=lambda url: vraie)
+        self.assertEqual(len(palette), 149)
+        self.assertTrue(_p.Path(chemin).is_file())
+
+        for etiquette, charge in (
+                ("page de connexion", b"<html>Connexion requise</html>"),
+                ("fichier tronque", b"\n".join(vraie.split(b"\n")[:20])),
+                ("vide", b""),
+        ):
+            cible = _p.Path(tempfile.mkdtemp()) / "LDConfig.ldr"
+            with self.assertRaises(PaletteRefusee, msg=etiquette):
+                installer_palette(str(cible), ["http://exemple/x"],
+                                  ouvrir=lambda url, c=charge: c)
+            self.assertFalse(cible.exists(), f"{etiquette} : un fichier a ete ecrit")
+
+    def test_l_installation_essaie_les_sources_dans_l_ordre(self):
+        # Un reseau qui bloque ldraw.org ne doit pas priver de palette : les
+        # sources sont essayees l'une apres l'autre, et on dit laquelle on tente.
+        import pathlib as _p
+        import tempfile
+
+        from bfk001.palette import installer_palette
+
+        vraie = "\n".join(
+            ["0 LDraw.org Configuration File"]
+            + [f"0 !COLOUR T{i} CODE {i} VALUE #{i:02X}0000 EDGE #333333"
+               for i in range(1, 150)]
+        ).encode()
+        dites, essayees = [], []
+
+        def ouvrir(url):
+            essayees.append(url)
+            if "bloque" in url:
+                raise OSError("injoignable")
+            return vraie
+
+        cible = _p.Path(tempfile.mkdtemp()) / "LDConfig.ldr"
+        installer_palette(str(cible), ["http://bloque/a", "http://bloque/b",
+                                       "http://bon/c"],
+                          ouvrir=ouvrir, dire=dites.append)
+        self.assertEqual(len(essayees), 3)
+        self.assertEqual(len(dites), 3)
+        self.assertIn("bon/c", dites[-1])
 
     def test_repli_annonce_ce_qu_il_est(self):
         # Une palette silencieusement degradee est pire qu'une palette absente.

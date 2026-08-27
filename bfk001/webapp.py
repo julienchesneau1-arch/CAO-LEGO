@@ -34,6 +34,7 @@ from urllib.parse import unquote
 from typing import Dict, Mapping, Optional, Tuple
 
 from . import bricklink, pickabrick
+from . import palette as palette_module
 from .palette import Palette
 from .pipeline import ModeleRefuse, Reglages, palette_utilisable, run
 
@@ -301,6 +302,8 @@ PAGE = r"""<!doctype html>
   .boutique.vide { border-style:dashed; background:transparent; }
 
   #catalogues p { margin:7px 0 0; font-size:12.5px; color:var(--doux); }
+  #etat_palette { border-left:3px solid var(--vif); padding-left:10px; }
+  #etat_palette .etat { color:var(--ok); }
   #catalogues .etat { color:var(--ok); font-weight:650; }
   #catalogues input[type=file] { font-size:12px; margin-top:4px; width:100%; }
   #catalogues button.brique { margin-top:14px; padding:11px; font-size:14px; }
@@ -464,7 +467,10 @@ PAGE = r"""<!doctype html>
     </details>
 
     <details id="catalogues">
-      <summary>Catalogues de commande</summary>
+      <summary>Palette et catalogues</summary>
+      <p id="etat_palette">Chargement...</p>
+      <button type="button" class="brique" id="poser_palette" hidden>
+        Installer la palette officielle LEGO</button>
       <p id="etat_catalogues">Chargement...</p>
       <p>A donner <strong>une seule fois</strong> : ils sont gardes sur cette
          machine et servent a toutes les oeuvres suivantes. Sans eux, la liste
@@ -679,8 +685,52 @@ PAGE = r"""<!doctype html>
   // Les catalogues de commande : donnes une fois, gardes ensuite.
   // ---------------------------------------------------------------- //
   var etatCat = document.getElementById('etat_catalogues');
+  var etatPal = document.getElementById('etat_palette');
+  var poserPal = document.getElementById('poser_palette');
+
+  function direPalette(p) {
+    if (!p) return;
+    etatPal.textContent = '';
+    var n = document.createElement('span');
+    if (p.provisoire) {
+      n.textContent = 'Palette de secours : ' + p.couleurs + ' couleurs '
+        + 'recopiees a la main. L\'officielle en compte 159, dont 80 '
+        + 'commandables en tuile — c\'est elle qui fait la difference entre '
+        + 'un rendu correct et un rendu propre.';
+      poserPal.hidden = false;
+    } else {
+      n.className = 'etat';
+      n.textContent = 'Palette officielle : ' + p.couleurs + ' couleurs, '
+        + p.commandables + ' commandables en tuile.';
+      poserPal.hidden = true;
+    }
+    etatPal.appendChild(n);
+  }
+
+  poserPal.addEventListener('click', function () {
+    var bouton = this;
+    bouton.disabled = true;
+    etatPal.textContent = 'Telechargement depuis LDraw.org...';
+    fetch('/palette', { method: 'POST' }).then(function (r) {
+      return r.json().then(function (corps) {
+        if (!r.ok) throw new Error(corps.erreur || ('erreur ' + r.status));
+        return corps;
+      });
+    }).then(function (p) {
+      direPalette(p);
+      if (document.getElementById('resultat').classList.contains('montre')) {
+        etat.className = '';
+        etat.textContent = 'Palette installee — refabriquez la mosaique pour '
+          + 'en profiter.';
+      }
+    }).catch(function (raison) {
+      etatPal.textContent = String(raison.message || raison);
+      bouton.disabled = false;
+    });
+  });
 
   function direCatalogues(etat_) {
+    direPalette(etat_.palette);
     etatCat.textContent = '';
     var lignes = [];
     if (etat_.elements) {
@@ -1135,9 +1185,36 @@ class Atelier:
     # Les catalogues de commande
     # ---------------------------------------------------------------- #
 
+    def etat_palette(self) -> dict:
+        """Combien de couleurs, et d'ou elles viennent."""
+        return {
+            "couleurs": len(self.palette_complete),
+            "commandables": len(self.palette),
+            "provisoire": self.note_palette is not None
+                          and self.note_palette[0] == "alerte",
+        }
+
+    def installer_palette(self) -> dict:
+        """Telecharge la palette officielle et l'adopte, sans redemarrer.
+
+        L'adresse n'est jamais fournie par la page : elle est fixee ici. Une
+        URL qui viendrait du reseau ferait de ce serveur un relais pour aller
+        chercher n'importe quoi a la place de qui l'heberge.
+        """
+        chemin, complete = palette_module.installer_palette()
+        with self._verrou:
+            self.palette_complete = complete
+            self.palette = complete.solids_only()
+            self.note_palette = (
+                "info",
+                f"  palette : {len(complete)} couleurs lues dans {chemin}, "
+                f"{len(self.palette)} commandables en tuile")
+        return self.etat_palette()
+
     def etat_catalogues(self) -> dict:
         """Ce que la page doit savoir pour dire ou en est la commande."""
         etat = {
+            "palette": self.etat_palette(),
             "dossier": str(self.dossier) if self.memoire else None,
             "elements": None,
             "bricklink": None,
@@ -1454,6 +1531,15 @@ class _Gestionnaire(BaseHTTPRequestHandler):
 
     def do_POST(self):
         chemin = self.path.split("?", 1)[0]
+        if chemin == "/palette":
+            try:
+                reponse = self.atelier.installer_palette()
+            except Exception as raison:
+                self._erreur(502, str(raison).splitlines()[0])
+                return
+            self._repondre(200, "application/json; charset=utf-8",
+                           json.dumps(reponse).encode("utf-8"))
+            return
         if chemin not in ("/fabriquer", "/catalogues"):
             self._erreur(404, "page inconnue")
             return

@@ -29,12 +29,36 @@ import bfk001_kernel as bfk
 from bfk001.pipeline import ModeleRefuse, Reglages, palette_utilisable, run
 
 
+def _installer() -> bool:
+    """Installe la palette officielle. Rend False si ca n'a pas marche.
+
+    Le depot n'embarque pas `LDConfig.ldr` — il appartient a LDraw.org et ne
+    porte aucune mention de licence verifiable. L'installer sur la machine de
+    qui le demande est autre chose que le redistribuer.
+    """
+    try:
+        chemin, palette = bfk.installer_palette()
+    except bfk.PaletteRefusee as raison:
+        print(raison, file=sys.stderr)
+        return False
+    solides = sum(1 for couleur in palette if couleur.is_solid)
+    print(f"palette : {len(palette)} couleurs installees dans {chemin}, "
+          f"{solides} commandables en tuile")
+    return True
+
+
 def main() -> int:
     analyseur = argparse.ArgumentParser(description=__doc__)
     analyseur.add_argument("image", type=pathlib.Path)
     analyseur.add_argument("--studs", type=int, default=48, help="cote en tenons")
     analyseur.add_argument("--sortie", type=pathlib.Path, default=pathlib.Path("resultat"))
     analyseur.add_argument("--ldconfig", type=pathlib.Path, default=None)
+    analyseur.add_argument(
+        "--installer-palette", action="store_true",
+        help="telecharge la palette officielle LDraw (159 couleurs, 80 "
+             "commandables en tuile) et l'installe une fois pour toutes. "
+             "Ce depot ne l'embarque pas : le fichier appartient a "
+             "LDraw.org. Sans elle, la palette de secours en compte 12.")
     analyseur.add_argument("--par-etape", type=int, default=24)
     analyseur.add_argument("--cadrage", default="auto",
                            help="position de la fenetre de recadrage : un nombre "
@@ -134,6 +158,9 @@ def main() -> int:
     analyseur.add_argument("--couleurs", default=None,
                            help="limiter la mosaique aux N meilleures couleurs")
     options = analyseur.parse_args()
+
+    if options.installer_palette and not _installer(): 
+        return 3
 
     reglages = Reglages(
         studs=options.studs,

@@ -750,3 +750,73 @@ class TestMemoDeReduction(unittest.TestCase):
             resample_box(photo_image(60 + i, 50 + i), 10, 10)
         self.assertLessEqual(len(imaging._MEMO_REDUCTION),
                              imaging.MEMO_REDUCTIONS)
+
+
+class TestPaletteDepuisLAtelier(unittest.TestCase):
+    """La palette officielle s'installe depuis la page, pas en ligne de commande.
+
+    Le depot n'embarque pas `LDConfig.ldr` : il appartient a LDraw.org et ne
+    porte aucune mention de licence verifiable. L'installer sur la machine de
+    qui le demande est autre chose que le redistribuer — c'est ce que fait tout
+    outil de CAO LEGO.
+    """
+
+    def ldconfig(self, couleurs=150):
+        return "\n".join(
+            ["0 LDraw.org Configuration File"]
+            + [f"0 !COLOUR T{i} CODE {i} VALUE #{i:02X}4020 EDGE #333333"
+               for i in range(1, couleurs + 1)]
+        ).encode()
+
+    def test_l_atelier_dit_quelle_palette_il_emploie(self):
+        petite = bfk.Palette([bfk.LegoColor(0, "Black", (5, 19, 29)),
+                              bfk.LegoColor(15, "White", (255, 255, 255))])
+        atelier = Atelier(palette=petite, palette_complete=petite,
+                          note_palette=("alerte", "  palette : PROVISOIRE"))
+        etat = atelier.etat_palette()
+        self.assertEqual(etat["couleurs"], 2)
+        self.assertTrue(etat["provisoire"])
+        self.assertIn("palette", atelier.etat_catalogues())
+
+    def test_installer_remplace_la_palette_sans_redemarrer(self):
+        import pathlib as _p
+        import tempfile
+
+        from bfk001 import palette as module
+
+        petite = bfk.Palette([bfk.LegoColor(0, "Black", (5, 19, 29)),
+                              bfk.LegoColor(15, "White", (255, 255, 255))])
+        atelier = Atelier(palette=petite, palette_complete=petite,
+                          note_palette=("alerte", "  palette : PROVISOIRE"))
+        cible = _p.Path(tempfile.mkdtemp()) / "LDConfig.ldr"
+        charge = self.ldconfig()
+        vraie = module.installer_palette
+
+        def fausse():
+            return vraie(str(cible), ["http://exemple/ok"],
+                         ouvrir=lambda url: charge)
+
+        module.installer_palette = fausse
+        try:
+            etat = atelier.installer_palette()
+        finally:
+            module.installer_palette = vraie
+
+        self.assertEqual(etat["couleurs"], 150)
+        self.assertFalse(etat["provisoire"])
+        # Et la fabrication suivante emploie VRAIMENT la nouvelle palette.
+        reponse = atelier.fabriquer({
+            "photo": base64.b64encode(photo(48, 48)).decode(),
+            "reglages": {"studs": 12, "hauteur": 12, "cadre": 0},
+        })
+        self.assertGreater(reponse["mesures"]["couleurs"], 2)
+
+    def test_l_adresse_ne_vient_jamais_de_la_page(self):
+        # Une URL fournie par le reseau ferait de ce serveur un relais pour
+        # aller chercher n'importe quoi a la place de qui l'heberge.
+        import inspect
+
+        from bfk001.webapp import Atelier as A
+
+        signature = inspect.signature(A.installer_palette)
+        self.assertEqual(list(signature.parameters), ["self"])

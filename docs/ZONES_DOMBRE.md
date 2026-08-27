@@ -2580,6 +2580,91 @@ continuer à le dire clairement.
 
 ---
 
+### 5.62 « Ajoute toute la bibliothèque » — et pourquoi je ne la commets toujours pas
+
+En § 5.55 j'avais refusé de commettre `LDConfig.ldr` : le fichier appartient à
+LDraw.org et ne porte **aucune mention de licence** — je viens de le revérifier
+sur le fichier lui-même, il n'y a ni `!LICENSE`, ni copyright, ni CCAL. Ce
+refus tient, et il tient même quand le propriétaire du dépôt demande le
+contraire : recopier une donnée dont on n'a pas vérifié la provenance est
+exactement ce que ce projet s'interdit partout ailleurs.
+
+Mais « je ne le commets pas » n'est une bonne réponse que si l'utilisateur a un
+autre chemin. Il n'en avait pas : `--ldconfig CHEMIN` suppose qu'on a déjà
+LDraw installé. **Le manque n'était pas le fichier, c'était l'installation.**
+
+#### Ce que ça change, mesuré
+
+Sur une photo réelle, à 48 tenons :
+
+| | ΔE par tuile | pire écart tonal | trous de palette | pièces |
+|---|---|---|---|---|
+| 12 couleurs (secours) | 9,2 | 11,6 | 4 | 2 040 |
+| **159 couleurs (80 solides)** | **6,8** | **8,2** | 2 | 2 254 |
+
+Ce n'est pas un gain de métrique : c'est la différence entre un visage qui est
+une tache rouge et un visage qui se lit.
+
+#### L'installateur, et ce qu'il refuse
+
+`installer_palette()` essaie trois sources dans l'ordre — les deux adresses
+officielles de LDraw.org, puis le miroir que LPub3D distribue avec son
+installateur — et dit laquelle il tente. Depuis ce conteneur, les deux
+premières sont bloquées par le proxy et la troisième répond : **1,2 s**, 159
+couleurs. Le mécanisme est donc vérifié de bout en bout sur le réseau réel ; la
+joignabilité des deux adresses officielles ne l'est pas, et c'est écrit dans le
+code plutôt que sous-entendu.
+
+Ce qui est téléchargé est **vérifié avant d'être écrit** : au moins 100
+couleurs dont 40 solides (LDConfig en compte 159 dont 80). Un portail captif
+d'entreprise, un 404 renvoyé en HTML, un fichier tronqué : tous produisent
+quelque chose qui n'est pas une palette, et **rien ne s'installe**. Une palette
+silencieusement fausse ferait sortir toute la mosaïque à côté, sans une ligne
+d'erreur — c'est le seul mode de panne qui compte ici. L'écriture passe par un
+fichier `.partiel` puis un remplacement atomique : une coupure ne doit pas
+laisser un demi-fichier là où on ira le lire.
+
+L'adresse n'est **jamais** fournie par la page. Une URL qui viendrait du réseau
+ferait de ce serveur un relais pour aller chercher n'importe quoi à la place de
+qui l'héberge ; un test vérifie que `Atelier.installer_palette` ne prend aucun
+paramètre.
+
+#### Deux défauts que j'ai écrits en le faisant
+
+**Une collision de noms.** Le lanceur assignait `palette = complete...` plus
+bas dans la même fonction ; Python traite alors `palette` comme locale
+**partout**, et mon `palette.installer_palette()` levait un `UnboundLocalError`
+avant même de partir. Trouvé en lançant la commande, pas en la relisant.
+
+**Une attente muette de trois minutes.** Trois sources à soixante secondes de
+délai : sur un réseau qui bloque la première, le programme paraissait mort.
+Vingt secondes suffisent à vingt-huit kilo-octets, et le programme dit
+maintenant ce qu'il tente.
+
+#### Un test qui testait la machine et non le code
+
+Installer la palette ici a fait tomber un test :
+`test_recherche_ne_rend_que_des_fichiers_lisibles` affirmait que
+`find_ldconfig` rend `None` — ce qui n'est vrai que sur un poste où LDraw n'est
+installé nulle part. Il passait par accident depuis le début.
+
+Il isole désormais les emplacements système et les variables d'environnement,
+et vérifie **les deux sens** : un chemin absent est ignoré, un fichier présent
+est rendu. Sans le second, il passerait aussi sur une fonction qui rend
+toujours `None`.
+
+Le reste de la suite passe à l'identique avec 12 ou avec 80 couleurs — donc
+rien n'y dépendait secrètement de la petite palette.
+
+#### Et une validation du correctif de la veille
+
+Le § 5.61 avait appris à la décision de tramage à juger la grille livrée. Avec
+12 couleurs elle refusait le tramage sur la photo du vélo (gain livré : 0,00) ;
+avec 80, elle l'accepte (**+3,64**). Le même critère, deux réponses opposées
+selon ce que la palette permet — c'est exactement ce qu'on lui demande.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

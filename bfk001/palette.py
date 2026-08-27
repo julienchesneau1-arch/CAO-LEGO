@@ -35,6 +35,12 @@ __all__ = [
     "dominant_colors",
     "PaletteGap",
     "gap_report",
+    "find_ldconfig",
+    "load_best_palette",
+    "installer_palette",
+    "PaletteRefusee",
+    "SOURCES_PALETTE",
+    "PALETTE_INSTALLEE",
 ]
 
 Rgb = Tuple[int, int, int]
@@ -596,7 +602,29 @@ def load_ldconfig(text: str) -> Palette:
 
 _LEGOID_LINE = re.compile(r"^0\s+//\s*LEGOID\s+(\d+)\s*-")
 
+PALETTE_INSTALLEE = "~/.brickforge/LDConfig.ldr"
+"""Ou `installer_palette` depose le fichier, et le premier endroit ou on regarde.
+
+En tete de liste a dessein : une installation DELIBEREE l'emporte sur ce qu'un
+autre logiciel a pu laisser trainer.
+"""
+
+SOURCES_PALETTE = (
+    "https://library.ldraw.org/library/official/LDConfig.ldr",
+    "https://www.ldraw.org/library/official/LDConfig.ldr",
+    "https://raw.githubusercontent.com/trevorsandy/lpub3d/master/mainApp/extras/LDConfig.ldr",
+)
+"""Ou chercher le fichier, dans l'ordre. Les deux premieres sont les adresses
+officielles de LDraw.org ; la troisieme est le miroir que LPub3D distribue avec
+son installateur, pour les reseaux qui n'atteignent pas la premiere.
+
+Aucune n'a ete verifiee depuis cette machine sauf la troisieme — le proxy de ce
+conteneur bloque ldraw.org. C'est dit ici plutot que sous-entendu : le mecanisme
+est teste, la joignabilite des deux premieres adresses ne l'est pas.
+"""
+
 LDCONFIG_EMPLACEMENTS = (
+    PALETTE_INSTALLEE,
     "~/.ldraw/LDConfig.ldr",
     "~/ldraw/LDConfig.ldr",
     "~/Library/Application Support/LDraw/LDConfig.ldr",
@@ -648,6 +676,104 @@ def find_ldconfig(extra: Optional[Sequence[str]] = None) -> Optional[str]:
         if os.path.isfile(complet) and os.access(complet, os.R_OK):
             return complet
     return None
+
+
+class PaletteRefusee(ValueError):
+    """Ce qui a ete telecharge n'est pas une palette LDraw exploitable."""
+
+
+DELAI_TELECHARGEMENT = 20.0
+"""Secondes accordees a chaque source.
+
+Trois sources a soixante secondes font trois minutes d'attente muette quand un
+reseau bloque la premiere. Vingt suffisent largement a vingt-huit kilo-octets,
+et ne donnent pas l'impression que le programme est mort.
+"""
+
+
+def installer_palette(destination: Optional[str] = None,
+                      sources: Sequence[str] = SOURCES_PALETTE,
+                      ouvrir=None, dire=None) -> Tuple[str, Palette]:
+    """Telecharge la palette officielle et l'installe. Rend (chemin, palette).
+
+    Ce depot n'embarque PAS `LDConfig.ldr` : le fichier appartient a LDraw.org
+    et ne porte aucune mention de licence qu'on puisse verifier. Le redistribuer
+    serait exactement ce que ce projet s'interdit — recopier une donnee dont on
+    n'a pas verifie la provenance. L'installer sur la machine de qui le demande
+    est autre chose : c'est ce que fait tout outil de CAO LEGO.
+
+    Ce qui est telecharge est VERIFIE avant d'etre ecrit. Un proxy d'entreprise
+    qui rend une page de connexion, un miroir devenu 404 renvoye en HTML, un
+    fichier tronque : tous produisent quelque chose qui n'est pas une palette,
+    et rien ne doit s'installer dans ce cas. Une palette silencieusement fausse
+    serait pire que pas de palette du tout — c'est toute la mosaique qui
+    sortirait d'a cote.
+
+    `ouvrir` est injectable pour que ce mecanisme se teste SANS reseau ;
+    `dire` recoit une ligne par source essayee, pour qu'une attente reseau ne
+    ressemble pas a un programme mort.
+    """
+    import os
+    import urllib.request
+
+    if ouvrir is None:                       # pragma: no cover - reseau
+        def ouvrir(url):
+            with urllib.request.urlopen(url,
+                                        timeout=DELAI_TELECHARGEMENT) as reponse:
+                return reponse.read()
+
+    chemin = os.path.expanduser(destination or PALETTE_INSTALLEE)
+    echecs = []
+    for source in sources:
+        if dire is not None:
+            dire(f"  j'essaie {source}")
+        try:
+            octets = ouvrir(source)
+        except Exception as raison:          # pragma: no cover - depend du reseau
+            echecs.append(f"{source} : {type(raison).__name__}")
+            continue
+        try:
+            palette = _verifier_palette(octets.decode("utf-8", errors="replace"))
+        except PaletteRefusee as raison:
+            echecs.append(f"{source} : {raison}")
+            continue
+        os.makedirs(os.path.dirname(chemin) or ".", exist_ok=True)
+        # Ecriture puis remplacement : une coupure en cours de telechargement ne
+        # doit pas laisser un demi-fichier a l'endroit ou on ira le lire.
+        provisoire = chemin + ".partiel"
+        with open(provisoire, "wb") as fichier:
+            fichier.write(octets)
+        os.replace(provisoire, chemin)
+        return chemin, palette
+    raise PaletteRefusee(
+        "aucune source n'a rendu une palette exploitable :\n  "
+        + "\n  ".join(echecs)
+        + "\nTelechargez LDConfig.ldr a la main et passez --ldconfig CHEMIN."
+    )
+
+
+COULEURS_MINIMALES = 100
+SOLIDES_MINIMAUX = 40
+
+
+def _verifier_palette(texte: str) -> Palette:
+    """Refuse tout ce qui n'est pas une vraie palette officielle.
+
+    Les seuils ne sont pas arbitraires : LDConfig en compte 159 dont 80 solides.
+    Un fichier qui en donne moins de 100, ou moins de 40 solides, n'est pas la
+    palette officielle — c'est une page d'erreur, un fragment, ou autre chose.
+    """
+    try:
+        palette = load_ldconfig(texte)
+    except Exception as raison:
+        raise PaletteRefusee(f"illisible ({type(raison).__name__})") from None
+    solides = sum(1 for couleur in palette if couleur.is_solid)
+    if len(palette) < COULEURS_MINIMALES or solides < SOLIDES_MINIMAUX:
+        raise PaletteRefusee(
+            f"{len(palette)} couleurs dont {solides} solides, il en faut au "
+            f"moins {COULEURS_MINIMALES} et {SOLIDES_MINIMAUX}"
+        )
+    return palette
 
 
 def load_best_palette(extra: Optional[Sequence[str]] = None) -> Tuple[Palette, str]:

@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **441 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **448 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -50,6 +50,40 @@ Sur une photo 256×256 en 48×48 tenons : 2917 pièces, 4608 liaisons, 0 violati
 
 Aucune dépendance : PNG, palette, quantification et rendu sont en bibliothèque
 standard.
+
+## La palette officielle, en un bouton
+
+```bash
+python3 demo_lego_art.py --installer-palette      # ou depuis la page
+```
+
+**La différence n'est pas un détail.** La palette de secours compte **12
+couleurs** recopiées à la main ; l'officielle en compte **159, dont 80
+commandables en tuile**. Mesuré sur une photo réelle, à 48 tenons :
+
+| | ΔE par tuile | pire écart tonal | trous de palette |
+|---|---|---|---|
+| 12 couleurs | 9,2 | 11,6 | 4 couleurs manquantes |
+| **159 couleurs** | **6,8** | **8,2** | 2 |
+
+**Le dépôt n'embarque pas `LDConfig.ldr`.** Le fichier appartient à LDraw.org
+et ne porte aucune mention de licence vérifiable : le redistribuer serait
+exactement ce que ce projet s'interdit — recopier une donnée dont on n'a pas
+vérifié la provenance. L'installer sur la machine de qui le demande est autre
+chose, et c'est ce que fait tout outil de CAO LEGO.
+
+Ce qui est téléchargé est **vérifié avant d'être écrit** : au moins 100
+couleurs dont 40 solides. Un proxy d'entreprise qui rend une page de connexion,
+un miroir devenu 404 renvoyé en HTML, un fichier tronqué — tous produisent
+quelque chose qui n'est pas une palette, et **rien ne s'installe** dans ce cas.
+Une palette silencieusement fausse ferait sortir toute la mosaïque à côté.
+
+Trois sources sont essayées dans l'ordre (les deux adresses officielles de
+LDraw.org, puis le miroir que LPub3D distribue), et le programme dit laquelle
+il tente. Une fois installée dans `~/.brickforge/`, elle est trouvée **sans
+aucun drapeau** — par la commande comme par l'atelier.
+
+---
 
 ## L'atelier, dans le navigateur
 

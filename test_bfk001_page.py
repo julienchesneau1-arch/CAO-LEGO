@@ -433,3 +433,111 @@ class TestPageDansUnNavigateur(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+@unittest.skipIf(sync_playwright is None, "playwright absent : page non verifiee")
+@unittest.skipUnless(pathlib.Path(CHROMIUM).exists(),
+                     f"navigateur absent en {CHROMIUM}")
+class TestPaletteDansLaPage(unittest.TestCase):
+    """Installer la palette officielle sans quitter la page.
+
+    Un atelier a part, avec une palette volontairement minuscule : sur une
+    machine ou la palette officielle est deja installee, le bouton est cache et
+    il n'y aurait rien a verifier.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+
+        petite = bfk.Palette([
+            bfk.LegoColor(0, "Black", (5, 19, 29)),
+            bfk.LegoColor(15, "White", (255, 255, 255)),
+            bfk.LegoColor(71, "Light_Bluish_Grey", (160, 165, 169)),
+        ])
+        cls.atelier = Atelier(palette=petite, palette_complete=petite,
+                              note_palette=("alerte", "  palette : PROVISOIRE"),
+                              dossier=pathlib.Path(tempfile.mkdtemp()))
+        cls.serveur = creer_serveur("127.0.0.1", 0, cls.atelier)
+        cls.fil = threading.Thread(target=cls.serveur.serve_forever, daemon=True)
+        cls.fil.start()
+        cls.base = f"http://127.0.0.1:{cls.serveur.server_address[1]}"
+        cls.charge = "\n".join(
+            ["0 LDraw.org Configuration File"]
+            + [f"0 !COLOUR T{i} CODE {i} VALUE #{i:02X}4020 EDGE #333333"
+               for i in range(1, 151)]
+        ).encode()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.serveur.shutdown()
+        cls.serveur.server_close()
+
+    def setUp(self):
+        import tempfile
+
+        from bfk001 import palette as module
+
+        # L'atelier est remis a la petite palette AVANT chaque test : le
+        # premier l'installe pour de bon, et sans cela le second ne trouverait
+        # plus le bouton. Un test qui depend de l'ordre n'en est pas un.
+        petite = bfk.Palette([
+            bfk.LegoColor(0, "Black", (5, 19, 29)),
+            bfk.LegoColor(15, "White", (255, 255, 255)),
+            bfk.LegoColor(71, "Light_Bluish_Grey", (160, 165, 169)),
+        ])
+        self.__class__.atelier.palette = petite
+        self.__class__.atelier.palette_complete = petite
+        self.__class__.atelier.note_palette = ("alerte", "  palette : PROVISOIRE")
+
+        self.incidents = []
+        self._playwright = sync_playwright().start()
+        self.navigateur = self._playwright.chromium.launch(
+            executable_path=CHROMIUM)
+        self.page = self.navigateur.new_page(viewport={"width": 460,
+                                                       "height": 1000})
+        self.page.on("pageerror", lambda e: self.incidents.append(str(e)))
+        # Aucun reseau dans les tests : on remplace la descente de fichier.
+        self._vrai = module.installer_palette
+        cible = pathlib.Path(tempfile.mkdtemp()) / "LDConfig.ldr"
+        charge = self.charge
+        module.installer_palette = lambda: self._vrai(
+            str(cible), ["http://exemple/ok"], ouvrir=lambda url: charge)
+
+    def tearDown(self):
+        from bfk001 import palette as module
+
+        module.installer_palette = self._vrai
+        self.navigateur.close()
+        self._playwright.stop()
+
+    def test_le_bouton_installe_la_palette_et_disparait(self):
+        self.page.goto(self.base + "/", wait_until="load")
+        self.page.click("#catalogues summary")
+        self.page.wait_for_selector("#poser_palette:not([hidden])", timeout=20000)
+        self.assertIn("secours", self.page.inner_text("#etat_palette"))
+
+        self.page.click("#poser_palette")
+        self.page.wait_for_selector("#etat_palette .etat", timeout=30000)
+        etat = self.page.inner_text("#etat_palette")
+        self.assertIn("150 couleurs", etat)
+        self.assertTrue(self.page.is_hidden("#poser_palette"),
+                        "le bouton reste apres l'installation")
+        # Et le serveur l'a vraiment adoptee, pas seulement la page.
+        self.assertEqual(len(self.__class__.atelier.palette_complete), 150)
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    def test_une_installation_qui_echoue_le_dit_et_laisse_reessayer(self):
+        from bfk001 import palette as module
+
+        module.installer_palette = lambda: (_ for _ in ()).throw(
+            module.PaletteRefusee("aucune source n'a repondu"))
+        self.page.goto(self.base + "/", wait_until="load")
+        self.page.click("#catalogues summary")
+        self.page.wait_for_selector("#poser_palette:not([hidden])", timeout=20000)
+        self.page.click("#poser_palette")
+        self.page.wait_for_timeout(900)
+        self.assertIn("aucune source", self.page.inner_text("#etat_palette"))
+        self.assertFalse(self.page.is_disabled("#poser_palette"),
+                         "apres un echec, on doit pouvoir reessayer")
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
