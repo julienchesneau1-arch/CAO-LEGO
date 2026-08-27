@@ -25,9 +25,10 @@ from .catalog import CATALOG, PartInstance, place, place_at
 from .collision import CollisionGeometry
 from .imaging import _REENCODAGE, Image, crop_to_ratio, resample_box
 from .imaging import _TABLE_LUMIERE as _LUMIERE
-from .lego import PLATE_HEIGHT_LDU, STUD_PITCH_LDU
+from .lego import BRICK_HEIGHT_LDU, PLATE_HEIGHT_LDU, STUD_PITCH_LDU
 from .rotations import ROT_Z_90
-from .palette import LegoColor, Palette, delta_e, srgb_to_lab
+from .palette import (PROVISIONAL_PALETTE, LegoColor, Palette, delta_e,
+                      srgb_to_lab)
 from .search import PlacedPart
 
 __all__ = [
@@ -47,6 +48,10 @@ __all__ = [
     "build",
     "from_image",
     "preview",
+    "frame_courses",
+    "FRAME_BRICKS",
+    "FRAME_COLOR",
+    "FRAME_THICKNESS",
     "relief_from_luminance",
     "relief_from_image",
     "relief_edge_alignment",
@@ -116,6 +121,17 @@ PANEL_DESIGN = "91405"      # Plate 16 x 16, celle des sets LEGO Art
 TILE_DESIGN = "3070b"       # Tile 1 x 1 with Groove
 SUBSTRATE_COLOR = 71        # Light Bluish Gray : invisible sous la mosaique
 
+FRAME_BRICKS = ("3010", "3004", "3005")
+"""Briques du cadre : 1x4, 1x2, 1x1. Le catalogue n'en contient pas de plus
+longues, et je n'en ajoute pas sans avoir verifie leurs cotes dans une piece
+LDraw reelle. La decoupe optimale (`_decoupe_optimale`) fait le reste."""
+
+FRAME_COLOR = 0             # Black : le cadre des sets LEGO Art
+FRAME_THICKNESS = 2
+"""Epaisseur du cadre, en tenons. Deux, comme les sets officiels : un tenon
+fait un lisere, trois mange la place sans rien ajouter."""
+
+
 RELIEF_LIGHTING = 0.22
 """Force de l'eclairage simule d'une marche de relief, par niveau d'ecart.
 Reperage visuel, pas une grandeur physique."""
@@ -150,8 +166,28 @@ class Mosaic:
     ICI et non dans la grille : depuis la fusion, « 4 rouges » designe une seule
     piece 1x4, et faire prendre quatre 1x1 serait une consigne fausse."""
 
+    frame: int = 0
+    """Epaisseur du cadre, en tenons. 0 : oeuvre sans cadre."""
+    frame_color: int = FRAME_COLOR
+    frame_courses: int = 0
+    """Assises de briques du cadre. Zero quand il n'y a pas de cadre."""
+
     def tile_id(self, row: int, column: int) -> str:
         return tile_id(row, column)
+
+    @property
+    def outer_x(self) -> int:
+        """Largeur HORS TOUT, cadre compris, en tenons."""
+        return self.studs_x + 2 * self.frame
+
+    @property
+    def outer_y(self) -> int:
+        return self.studs_y + 2 * self.frame
+
+    @property
+    def frame_count(self) -> int:
+        """Briques du cadre. Le reste des pieces est l'oeuvre et son fond."""
+        return sum(1 for nom in self.placed_parts if nom.startswith("C"))
 
     @property
     def stud_count(self) -> int:
@@ -860,6 +896,100 @@ def _poser_couche_de_relief(add, prefixe, cellules, z, color) -> int:
     return len(poses)
 
 
+def frame_courses(tile_top_ldu: int, base_z: int) -> int:
+    """Combien d'assises de briques pour que le cadre DEPASSE la mosaique.
+
+    Un cadre a fleur de la surface n'est pas un cadre, c'est une bordure. Il
+    faut qu'il porte une ombre sur l'oeuvre — c'est ce qui fait qu'un tableau
+    encadre se lit comme un tableau. Une assise sans relief donne 16 LDU de
+    lisere, soit 6,4 mm ; avec deux etages de relief la premiere assise
+    arriverait pile a fleur, et il en faut donc deux.
+    """
+    assises = 1
+    while base_z + assises * BRICK_HEIGHT_LDU <= tile_top_ldu:
+        assises += 1
+    return assises
+
+
+def _decoupe_decalee(longueur: int, disponibles, decalage: int):
+    """Decoupe d'un run, avec un DEPART decale pour croiser les joints.
+
+    Deux assises decoupees a l'identique donnent un mur dont tous les joints
+    sont alignes verticalement : il se fend le long de ces joints. Le decalage
+    d'une assise sur l'autre est ce qui fait un mur — c'est le meme appareil
+    que le fond croise, et la meme raison.
+    """
+    if decalage <= 0 or longueur <= decalage:
+        return _decoupe_optimale(longueur, disponibles)
+    return [decalage] + _decoupe_optimale(longueur - decalage, disponibles)
+
+
+def _cadre(add, studs_x: int, studs_y: int, epaisseur: int, base_z: int,
+           assises: int, color: int, bricks=FRAME_BRICKS) -> int:
+    """Cadre en briques autour de l'emprise. Rend le nombre de pieces posees.
+
+    L'emprise passee est celle du SUBSTRAT — mosaique plus cadre — et le cadre
+    occupe l'anneau exterieur d'epaisseur `epaisseur`.
+
+    Deux appareils se croisent, et aucun n'est decoratif :
+
+    - EN PLAN, les bandes horizontales courent sur toute la largeur une assise
+      sur deux, les bandes verticales l'autre. Sans cela les quatre angles
+      seraient quatre joints verticaux traversants, et le cadre s'ouvrirait aux
+      coins comme un cadre a onglet mal colle.
+    - EN ELEVATION, la decoupe de chaque run part avec un decalage d'une assise
+      sur l'autre, pour que les joints ne se superposent pas.
+    """
+    if epaisseur < 1:
+        raise ValueError("un cadre fait au moins un tenon d'epaisseur")
+    if assises < 1:
+        raise ValueError("un cadre fait au moins une assise")
+    longueurs = sorted(
+        (CATALOG[design].studs_y for design in bricks), reverse=True
+    )
+    par_longueur = {CATALOG[design].studs_y: design for design in bricks}
+    if 1 not in par_longueur:
+        raise ValueError("il faut la brique 1x1 : sans elle, un run premier "
+                         "ne pourrait pas etre couvert exactement")
+    poses = 0
+    for assise in range(assises):
+        z = base_z + assise * BRICK_HEIGHT_LDU
+        horizontales_pleines = assise % 2 == 0
+        decalage = 2 if assise % 2 else 0
+        bandes = []
+        if horizontales_pleines:
+            for y in list(range(epaisseur)) + list(
+                    range(studs_y - epaisseur, studs_y)):
+                bandes.append((0, y, studs_x, True))
+            for x in list(range(epaisseur)) + list(
+                    range(studs_x - epaisseur, studs_x)):
+                bandes.append((x, epaisseur, studs_y - 2 * epaisseur, False))
+        else:
+            for x in list(range(epaisseur)) + list(
+                    range(studs_x - epaisseur, studs_x)):
+                bandes.append((x, 0, studs_y, False))
+            for y in list(range(epaisseur)) + list(
+                    range(studs_y - epaisseur, studs_y)):
+                bandes.append((epaisseur, y, studs_x - 2 * epaisseur, True))
+        for x0, y0, longueur, couchee in bandes:
+            if longueur <= 0:
+                continue
+            curseur = 0
+            for morceau in _decoupe_decalee(longueur, longueurs, decalage):
+                design = par_longueur[morceau]
+                x = x0 + (curseur if couchee else 0)
+                y = y0 + (0 if couchee else curseur)
+                add(*place_at(
+                    f"C{assise}_{poses}", design,
+                    (x * STUD_PITCH_LDU, y * STUD_PITCH_LDU, z),
+                    orientation=ROT_Z_90 if couchee else None,
+                    color_id=color,
+                ))
+                poses += 1
+                curseur += morceau
+    return poses
+
+
 def _paver(add, prefixe, ancre_x, ancre_y, studs_x, studs_y, z, color,
            fusion: bool = True) -> int:
     """Pave l'emprise de l'oeuvre de plates sur un reseau ancre ailleurs.
@@ -901,6 +1031,8 @@ def build(
     substrate: str = "crossed",
     tiles: Sequence[str] = TILE_SET_STANDARD,
     heights: Optional[Sequence[Sequence[int]]] = None,
+    frame: int = 0,
+    frame_color: int = FRAME_COLOR,
 ) -> Mosaic:
     """Grille de couleurs -> modele complet : substrat + tuiles.
 
@@ -934,8 +1066,21 @@ def build(
     if any(len(row) != studs_x for row in grid):
         raise ValueError("grille non rectangulaire")
 
-    width = studs_x * STUD_PITCH_LDU
-    depth = studs_y * STUD_PITCH_LDU
+    if frame < 0:
+        raise ValueError("une epaisseur de cadre est positive")
+    if frame and substrate == "panels":
+        raise ValueError(
+            "le substrat 'panels' n'accepte pas de cadre : ses panneaux ne se "
+            "lient deja pas entre eux, y poser un cadre masquerait le probleme "
+            "sans le resoudre"
+        )
+    # L'emprise du SUBSTRAT porte le cadre en plus de l'oeuvre ; la mosaique,
+    # elle, garde sa taille et se decale vers l'interieur. Un cadre qui
+    # rognerait l'image ne serait pas un cadre, ce serait un recadrage.
+    emprise_x = studs_x + 2 * frame
+    emprise_y = studs_y + 2 * frame
+    width = emprise_x * STUD_PITCH_LDU
+    depth = emprise_y * STUD_PITCH_LDU
 
     parts: Dict[str, PlacedPart] = {}
     geometries: Dict[str, CollisionGeometry] = {}
@@ -964,7 +1109,7 @@ def build(
     else:
         # Couche 0 : pavage de plates 2x4, a partir de l'origine.
         couche_basse = _paver(
-            enregistrer, "S0", 0, 0, studs_x, studs_y, 0, substrate_color
+            enregistrer, "S0", 0, 0, emprise_x, emprise_y, 0, substrate_color
         )
 
         # Couche 1 : meme pavage decale d'un tenon en x et de deux en y. Chaque
@@ -973,10 +1118,10 @@ def build(
         # decalage, ou decale sur un seul axe, se scinde en bandes disjointes —
         # H5 le voit.
         couche_haute = _paver(
-            enregistrer, "S1", -1, -2, studs_x, studs_y,
+            enregistrer, "S1", -1, -2, emprise_x, emprise_y,
             PLATE_HEIGHT_LDU, substrate_color,
         )
-        _verifier_fond((couche_basse, couche_haute), studs_x, studs_y)
+        _verifier_fond((couche_basse, couche_haute), emprise_x, emprise_y)
         tile_z = 2 * PLATE_HEIGHT_LDU
 
     # Derniere couche : la mosaique. La ligne 0 de l'image est en haut, donc au
@@ -991,7 +1136,7 @@ def build(
     maximum = max((h for ligne in elevations for h in ligne), default=0)
     for niveau in range(1, maximum + 1):
         cellules = {
-            (column, studs_y - 1 - row)
+            (column + frame, studs_y - 1 - row + frame)
             for row in range(studs_y)
             for column in range(studs_x)
             if elevations[row][column] >= niveau
@@ -1003,7 +1148,7 @@ def build(
 
     poses: List[TilePlacement] = []
     for row, colors in enumerate(grid):
-        y = (studs_y - 1 - row) * STUD_PITCH_LDU
+        y = (studs_y - 1 - row + frame) * STUD_PITCH_LDU
         # La fusion ne franchit pas une marche : deux tuiles de meme couleur a
         # des altitudes differentes sont deux pieces, forcement.
         marquees = tuple(
@@ -1016,7 +1161,7 @@ def build(
             placed, geometry, instance = place_at(
                 tile_id(row, column),
                 design,
-                (column * STUD_PITCH_LDU, y,
+                ((column + frame) * STUD_PITCH_LDU, y,
                  tile_z + elevations[row][column] * PLATE_HEIGHT_LDU),
                 orientation=ROT_Z_90 if longueur > 1 else None,
                 color_id=color.code,
@@ -1030,8 +1175,18 @@ def build(
                 )
             )
 
+    assises = 0
+    if frame:
+        # Le cadre se pose APRES les tuiles : sa hauteur depend de la leur, et
+        # le relief peut la faire monter d'une assise entiere.
+        sommet = tile_z + maximum * PLATE_HEIGHT_LDU + PLATE_HEIGHT_LDU
+        assises = frame_courses(sommet, tile_z)
+        _cadre(enregistrer, emprise_x, emprise_y, frame, tile_z, assises,
+               frame_color)
+
     return Mosaic(
-        studs_x, studs_y, grid, parts, geometries, instances, tuple(poses)
+        studs_x, studs_y, grid, parts, geometries, instances, tuple(poses),
+        frame, frame_color, assises,
     )
 
 
@@ -1630,7 +1785,8 @@ def etage_field(values, levels: int = 2, invert: bool = False,
 
 
 def preview(
-    mosaic: Mosaic, scale: int = 8, seams: bool = False, relief: bool = False
+    mosaic: Mosaic, scale: int = 8, seams: bool = False, relief: bool = False,
+    frame_rgb=None,
 ) -> Image:
     """Apercu du rendu, un carre par tenon. Sert a juger a l'oeil.
 
@@ -1703,4 +1859,81 @@ def preview(
                 assombrir(colonne, y0)
                 assombrir(colonne, min(height - 1, y0 + scale - 1))
 
-    return Image(width, height, bytes(data))
+    oeuvre = Image(width, height, bytes(data))
+    if mosaic.frame:
+        oeuvre = _entourer(oeuvre, mosaic, scale, frame_rgb)
+    return oeuvre
+
+
+def _rvb_du_cadre(code: int, fourni):
+    """Couleur du cadre pour l'apercu, sans imposer une palette a `preview`.
+
+    Le modele ne porte qu'un CODE de couleur : c'est la palette qui sait le
+    traduire, et une mosaique n'en embarque pas. L'appelant qui en a une la
+    passe ; sinon on cherche dans la palette provisoire, et a defaut on rend un
+    gris tres sombre plutot que d'inventer une teinte.
+    """
+    if fourni is not None:
+        return tuple(fourni)
+    for couleur in PROVISIONAL_PALETTE:
+        if couleur.code == code:
+            return couleur.rgb
+    return (26, 26, 26)
+
+
+def _entourer(oeuvre: Image, mosaic: Mosaic, scale: int, frame_rgb) -> Image:
+    """Pose le cadre autour de l'apercu, avec l'ombre qu'il porte.
+
+    L'ombre n'est pas un ornement. Un cadre a fleur de la surface se lit comme
+    une bordure peinte ; ce qui le fait lire comme un CADRE, c'est qu'il monte
+    au-dessus de l'oeuvre et projette une ombre sur elle. Le modele monte
+    reellement — une assise de briques depasse de 6,4 mm — et l'apercu doit le
+    montrer, sinon il decrit autre chose que ce qu'on va construire.
+    """
+    rvb = bytes(_rvb_du_cadre(mosaic.frame_color, frame_rgb))
+    bord = mosaic.frame * scale
+    largeur = oeuvre.width + 2 * bord
+    hauteur = oeuvre.height + 2 * bord
+    data = bytearray(rvb * (largeur * hauteur))
+
+    # Un lisere clair en haut a gauche et sombre en bas a droite : la meme
+    # lumiere que celle du relief, pour que les deux apercus se ressemblent.
+    def teinter(x0, y0, x1, y1, facteur):
+        for y in range(max(0, y0), min(hauteur, y1)):
+            for x in range(max(0, x0), min(largeur, x1)):
+                i = (y * largeur + x) * 3
+                for canal in range(3):
+                    data[i + canal] = max(0, min(
+                        255, round(data[i + canal] * facteur) + (
+                            18 if facteur > 1 else 0)))
+
+    lisere = max(1, scale // 4)
+    teinter(0, 0, largeur, lisere, 1.35)
+    teinter(0, 0, lisere, hauteur, 1.35)
+    teinter(0, hauteur - lisere, largeur, hauteur, 0.55)
+    teinter(largeur - lisere, 0, largeur, hauteur, 0.55)
+
+    for y in range(oeuvre.height):
+        source = y * oeuvre.width * 3
+        cible = ((y + bord) * largeur + bord) * 3
+        data[cible:cible + oeuvre.width * 3] = oeuvre.data[
+            source:source + oeuvre.width * 3]
+
+    # L'ombre portee du cadre sur l'oeuvre, en haut et a gauche de l'ouverture.
+    ombre = max(1, scale // 2)
+    for profondeur in range(ombre):
+        force = 0.55 + 0.45 * (profondeur / ombre)
+        y = bord + profondeur
+        for x in range(bord, bord + oeuvre.width):
+            i = (y * largeur + x) * 3
+            for canal in range(3):
+                data[i + canal] = round(data[i + canal] * force)
+        x = bord + profondeur
+        for y2 in range(bord + profondeur, bord + oeuvre.height):
+            i = (y2 * largeur + x) * 3
+            for canal in range(3):
+                data[i + canal] = round(data[i + canal] * force)
+
+    return Image(largeur, hauteur, bytes(data))
+
+

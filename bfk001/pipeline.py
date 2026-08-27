@@ -30,6 +30,7 @@ from .depth import NoEmbeddedDepth, embedded_depth, heights_from_depth, read_dep
 from .panels import build_assembly
 from .imaging import Image, crop_to_ratio, read_png, read_ppm, resample_box, write_png
 from .lego import LEGO_TOLERANCE, ldu_to_mm
+from .mosaic import FRAME_COLOR
 from .palette import Palette, gap_report, load_best_palette
 from .serialization import dumps_model
 from .validation import (check_h2_collision, check_h3_authority_integrity,
@@ -85,6 +86,12 @@ class Reglages:
     lignes_par_page: int = 4
     par_etape: int = 24
     titre: str = "mosaique"
+    cadre: int = 2
+    """Epaisseur du cadre, en tenons. Le defaut n'est pas zero, et c'est une
+    decision de produit : un tableau se cadre. Le cadre ferme l'oeuvre sur ses
+    quatre cotes, la fait lire comme un tableau plutot que comme un carrelage,
+    et — quand l'oeuvre est decoupee — ceinture les sections. `0` le retire."""
+    cadre_couleur: int = FRAME_COLOR
     sections: int = 0
     """Cote d'une section, en tenons. 0 : l'oeuvre est d'un seul tenant.
 
@@ -107,6 +114,8 @@ class Reglages:
             raise ValueError("seuils vaut 'otsu' ou 'uniform'")
         if self.sections < 0:
             raise ValueError("un cote de section est positif")
+        if self.cadre < 0:
+            raise ValueError("une epaisseur de cadre est positive")
 
 
 @dataclass(frozen=True)
@@ -379,6 +388,7 @@ def run(
         assemblage = build_assembly(
             grille, reglages.sections,
             tiles=JEUX_DE_TUILES[reglages.references], heights=elevations,
+            frame=reglages.cadre, frame_color=reglages.cadre_couleur,
         )
         # L'oeuvre entiere reste construite : c'est elle qui porte la grille,
         # les apercus et la nomenclature globale. Les sections en sont la
@@ -389,8 +399,13 @@ def run(
             f"{reglages.sections} tenons, chacune un modele complet, "
             f"{assemblage.join_count} plates de jonction par-dessous",
         ))
+    # `mosaique` est l'oeuvre vue comme un tout : elle sert aux apercus, a la
+    # couverture et aux vues de bande. Elle porte donc TOUJOURS le cadre, meme
+    # quand l'oeuvre est decoupee — sinon la decoupe changerait l'image montree
+    # a l'utilisateur, alors qu'elle ne change rien a l'oeuvre.
     mosaique = mosaic.build(
-        grille, tiles=JEUX_DE_TUILES[reglages.references], heights=elevations
+        grille, tiles=JEUX_DE_TUILES[reglages.references], heights=elevations,
+        frame=reglages.cadre, frame_color=reglages.cadre_couleur,
     )
     # Ce qu'on LIVRE : l'assemblage quand l'oeuvre est decoupee, l'oeuvre
     # elle-meme sinon. Tout ce qui se compte — pieces, lots, etapes — se compte
@@ -430,6 +445,16 @@ def run(
                 f"seules les hauteurs {hauteurs} servent. Les etages inutilises "
                 "coutent leurs plates sans rien relever.",
             ))
+    porteur = assemblage if assemblage is not None else mosaique
+    if reglages.cadre:
+        journal.append((
+            "info",
+            f"  cadre   : {reglages.cadre} tenons, "
+            f"{porteur.frame_courses} assise(s) de briques, "
+            f"{porteur.frame_count} pieces — hors tout "
+            f"{ldu_to_mm(porteur.outer_x * 20) / 10:.0f} x "
+            f"{ldu_to_mm(porteur.outer_y * 20) / 10:.0f} cm",
+        ))
     sans_fusion = mosaique.stud_count
     economie = 100 * (1 - mosaique.tile_count / sans_fusion)
     journal.append((
@@ -472,12 +497,17 @@ def run(
         raise ModeleRefuse("modele NON livre : il ne tiendrait pas ensemble.",
                            violations)
 
+    rvb_cadre = next(
+        (c.rgb for c in palette_complete if c.code == reglages.cadre_couleur),
+        None,
+    )
     if reglages.relief:
         fichiers["apercu_relief.png"] = write_png(
-            mosaic.preview(mosaique, scale=8, relief=True))
+            mosaic.preview(mosaique, scale=8, relief=True, frame_rgb=rvb_cadre))
     fichiers["apercu_joints.png"] = write_png(
-        mosaic.preview(mosaique, scale=12, seams=True))
-    fichiers["apercu.png"] = write_png(mosaic.preview(mosaique, scale=8))
+        mosaic.preview(mosaique, scale=12, seams=True, frame_rgb=rvb_cadre))
+    fichiers["apercu.png"] = write_png(
+        mosaic.preview(mosaique, scale=8, frame_rgb=rvb_cadre))
 
     nomenclature = bill_of_materials(a_controler.instances,
                                      a_controler.placed_parts)
@@ -545,6 +575,7 @@ def run(
             )
             fichiers[f"{section.name}/apercu.png"] = write_png(
                 mosaic.preview(section.mosaic, scale=8))
+
     fichiers["modele.ldr"] = ldraw.dumps_ldr(
         a_controler.placed_parts, a_controler.instances,
         reglages.titre).encode("utf-8")
@@ -589,7 +620,11 @@ def run(
             "couleurs": len(palette),
             "relief": reglages.relief,
             "provenance_relief": provenance,
-            "largeur_mm": ldu_to_mm(reglages.studs * 20),
-            "hauteur_mm": ldu_to_mm(hauteur * 20),
+            "largeur_mm": ldu_to_mm(porteur.outer_x * 20),
+            "hauteur_mm": ldu_to_mm(porteur.outer_y * 20),
+            "image_largeur_mm": ldu_to_mm(reglages.studs * 20),
+            "image_hauteur_mm": ldu_to_mm(hauteur * 20),
+            "cadre": reglages.cadre,
+            "cadre_pieces": porteur.frame_count,
         },
     )

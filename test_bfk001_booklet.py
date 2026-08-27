@@ -90,8 +90,8 @@ class TestEcriturePdf(unittest.TestCase):
         image = bfk.Image(4, 3, bytes(range(36)))
         pdf = bk.write_pdf(
             [
-                bk.PdfPage(((40.0, 700.0, 12.0, "Page une", True),), (), image,
-                           (40.0, 400.0, 200.0, 150.0)),
+                bk.PdfPage(((40.0, 700.0, 12.0, "Page une", True),), (),
+                           ((image, (40.0, 400.0, 200.0, 150.0)),)),
                 bk.PdfPage(((40.0, 700.0, 9.0, "Page deux", False),),
                            ((40.0, 100.0, 20.0, 20.0, (10, 20, 30)),)),
             ]
@@ -107,9 +107,29 @@ class TestEcriturePdf(unittest.TestCase):
     def test_image_sans_cadre_refusee(self):
         image = bfk.Image(1, 1, b"\x00\x00\x00")
         with self.assertRaises(ValueError):
-            bk.PdfPage((), (), image, None)
+            bk.PdfPage((), (), ((image, None),))
         with self.assertRaises(ValueError):
-            bk.PdfPage((), (), None, (0.0, 0.0, 1.0, 1.0))
+            bk.PdfPage((), (), ((None, (0.0, 0.0, 1.0, 1.0)),))
+        with self.assertRaises(ValueError):
+            bk.PdfPage((), (), ((image, (0.0, 0.0, 1.0)),))
+
+    def test_plusieurs_images_sur_une_page(self):
+        # La page d'etape en porte deux : la bande et le reperage. Une seule
+        # obligeait a choisir entre montrer et situer.
+        image = bfk.Image(2, 2, bytes(12))
+        pdf = bk.write_pdf([bk.PdfPage(
+            (), (), ((image, (0.0, 0.0, 10.0, 10.0)),
+                     (image, (20.0, 20.0, 10.0, 10.0))))])
+        disseque(pdf)
+        flux = b"".join(
+            zlib.decompress(bloc.split(b"stream\n", 1)[1].rsplit(b"\nendstream", 1)[0])
+            for bloc in pdf.split(b"endobj")
+            if b"/Filter /FlateDecode" in bloc and b"/Subtype /Image" not in bloc
+        )
+        self.assertIn(b"/Im0 Do", flux)
+        self.assertIn(b"/Im1 Do", flux)
+        self.assertIn(b"/Im0", pdf)
+        self.assertIn(b"/Im1", pdf)
 
     def test_echappement_conserve_les_accents(self):
         # WinAnsiEncoding EST cp1252 : rien a translitterer, donc rien a perdre.
@@ -123,7 +143,7 @@ class TestEcriturePdf(unittest.TestCase):
         image = bfk.Image(1, 1, b"\x00\x00\x00")
         pdf = bk.write_pdf(
             [bk.PdfPage(((10.0, 10.0, 9.0, "fin de ligne ) piege (", False),),
-                        (), image, (0.0, 0.0, 10.0, 10.0))]
+                        (), ((image, (0.0, 0.0, 10.0, 10.0)),))]
         )
         disseque(pdf)
         contenus = b"".join(
@@ -373,7 +393,7 @@ class TestFascicule(unittest.TestCase):
     def test_la_legende_figure_sur_chaque_page_de_bande(self):
         mosaique, palette = petite_mosaique(cote=16, graine=6)
         mise = bk._mise_en_page(mosaique)
-        pages = bk._pages_bande(mosaique, [0, 1], 1, 1, mise)
+        pages, _ = bk._pages_etapes(mosaique, [[0, 1]], mise)
         for page in pages:
             for color in mise.couleurs:
                 self.assertIn(color.rgb, [r[4] for r in page.rects], color.name)
@@ -415,26 +435,40 @@ class TestFascicule(unittest.TestCase):
                 self.assertLessEqual(x + w, bk.A4_WIDTH - SUR, numero)
                 self.assertLessEqual(y + h, bk.A4_HEIGHT - SUR, numero)
 
-    def test_lecture_trop_longue_passe_en_page_de_suite(self):
-        # Plutot que de tronquer — c'est-a-dire de perdre des tuiles.
+    def test_une_etape_tient_toujours_sur_une_page(self):
+        # L'ancienne notice lisait chaque ligne en clair, et cette lecture
+        # pouvait deborder : il fallait des pages de suite. Une image ne
+        # deborde pas. Meme la bande la plus haute tient sur une page.
         mosaique, _ = petite_mosaique(cote=24, graine=4)
-        minimum = bk.IMAGE_MIN
-        try:
-            bk.IMAGE_MIN = 640.0  # etrangle la place laissee a la lecture
-            pages = bk._pages_bande(
-                mosaique, list(range(8)), 1, 1, bk._mise_en_page(mosaique)
-            )
-        finally:
-            bk.IMAGE_MIN = minimum
-        self.assertGreater(len(pages), 1)
-        self.assertIsNotNone(pages[0].image)
-        self.assertTrue(all(p.image is None for p in pages[1:]))
+        for lignes in (1, 4, 8, 12):
+            pages, ou = bk._pages_etapes(
+                mosaique, [list(range(lignes))], bk._mise_en_page(mosaique))
+            self.assertEqual(len(pages), 1, f"{lignes} lignes")
+            self.assertEqual(ou, [0])
+            self.assertEqual(len(pages[0].images), 2,
+                             "la bande et le reperage")
 
-    def test_bande_par_defaut_tient_sur_une_page(self):
+    def test_plusieurs_etapes_par_page_quand_elles_tiennent(self):
+        # Une notice LEGO met deux a quatre etapes numerotees par page. Une
+        # seule laissait les deux tiers de la feuille blancs.
+        mosaique, _ = petite_mosaique(cote=32, graine=6)
+        mise = bk._mise_en_page(mosaique)
+        bandes = bk._decouper_bandes(mosaique, 4, mise)
+        pages, ou = bk._pages_etapes(mosaique, bandes, mise)
+        self.assertEqual(len(ou), len(bandes))
+        self.assertLess(len(pages), len(bandes),
+                        "aucune page ne porte deux etapes")
+        # Chaque page porte au moins une bande, et l'ordre est croissant.
+        self.assertEqual(ou, sorted(ou))
+        self.assertEqual(set(ou), set(range(len(pages))))
+
+    def test_chaque_bande_est_placee_sur_exactement_une_page(self):
         mosaique, _ = petite_mosaique(cote=48, graine=12)
         mise = bk._mise_en_page(mosaique)
-        for bande in bk._decouper_bandes(mosaique, 4, mise):
-            self.assertEqual(len(bk._pages_bande(mosaique, bande, 1, 1, mise)), 1)
+        bandes = bk._decouper_bandes(mosaique, 4, mise)
+        pages, ou = bk._pages_etapes(mosaique, bandes, mise)
+        self.assertEqual(len(ou), len(bandes))
+        self.assertTrue(all(0 <= n < len(pages) for n in ou))
 
 
 if __name__ == "__main__":

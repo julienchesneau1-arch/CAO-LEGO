@@ -38,6 +38,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from .catalog import CATALOG, BomLine
 from .graph import InstructionGraph
 from .imaging import Image
+from .lego import BRICK_HEIGHT_LDU, ldu_to_mm
 from .mosaic import Mosaic
 from .palette import LegoColor, Palette
 
@@ -73,17 +74,33 @@ LARGEUR_CARACTERE = 0.55
 
 @dataclass(frozen=True)
 class PdfPage:
-    """Une page : du texte, des aplats, et au plus une image placee."""
+    """Une page : du texte, des aplats, et des images placees.
+
+    Une page en portait plusieurs le jour ou la notice a voulu ressembler a
+    une notice LEGO : la vue de l'etape, et le petit reperage de l'oeuvre
+    entiere qui dit OU l'on en est. Une seule image obligeait a choisir.
+    """
 
     texts: Tuple[TextLine, ...] = ()
     rects: Tuple[RectFill, ...] = ()
-    image: Optional[Image] = None
-    # x, y, largeur, hauteur en points, coin bas-gauche
-    image_rect: Optional[Tuple[float, float, float, float]] = None
+    # (image, (x, y, largeur, hauteur)) en points, coin bas-gauche
+    images: Tuple[Tuple[Image, Tuple[float, float, float, float]], ...] = ()
 
     def __post_init__(self) -> None:
-        if (self.image is None) != (self.image_rect is None):
-            raise ValueError("une image exige son cadre, et reciproquement")
+        for image, cadre in self.images:
+            if image is None or cadre is None:
+                raise ValueError("une image exige son cadre, et reciproquement")
+            if len(cadre) != 4:
+                raise ValueError("un cadre vaut (x, y, largeur, hauteur)")
+
+    @property
+    def image(self) -> Optional[Image]:
+        """La premiere image. Commodite de lecture pour les tests."""
+        return self.images[0][0] if self.images else None
+
+    @property
+    def image_rect(self):
+        return self.images[0][1] if self.images else None
 
 
 # --------------------------------------------------------------------------
@@ -139,20 +156,23 @@ def write_pdf(
             )
 
         ressources = [b"/Font << /F1 %d 0 R /F2 %d 0 R >>" % (romain, gras)]
-        if page.image is not None and page.image_rect is not None:
-            donnees = zlib.compress(page.image.data, 6)
-            xobjet = ajouter(
+        xobjets = []
+        for rang, (image, cadre) in enumerate(page.images):
+            donnees = zlib.compress(image.data, 6)
+            numero = ajouter(
                 b"<< /Type /XObject /Subtype /Image /Width %d /Height %d "
                 b"/ColorSpace /DeviceRGB /BitsPerComponent 8 "
                 b"/Filter /FlateDecode /Length %d >>\nstream\n"
-                % (page.image.width, page.image.height, len(donnees))
+                % (image.width, image.height, len(donnees))
                 + donnees
                 + b"\nendstream"
             )
-            x, y, largeur, hauteur = page.image_rect
-            flux.append(b"q %.2f 0 0 %.2f %.2f %.2f cm /Im Do Q"
-                        % (largeur, hauteur, x, y))
-            ressources.append(b"/XObject << /Im %d 0 R >>" % xobjet)
+            x, y, largeur, hauteur = cadre
+            flux.append(b"q %.2f 0 0 %.2f %.2f %.2f cm /Im%d Do Q"
+                        % (largeur, hauteur, x, y, rang))
+            xobjets.append(b"/Im%d %d 0 R" % (rang, numero))
+        if xobjets:
+            ressources.append(b"/XObject << %s >>" % b" ".join(xobjets))
 
         flux.append(b"0 0 0 rg")
         for x, y, corps, texte, en_gras in page.texts:
@@ -323,6 +343,106 @@ def render_progress(
     toile.fill(0, first_row * s - epaisseur, toile.width, epaisseur, (0, 0, 0))
     toile.fill(0, (last_row + 1) * s, toile.width, epaisseur, (0, 0, 0))
     return toile.image()
+
+
+def render_band(mosaic: Mosaic, rows: Sequence[int], scale: int) -> Image:
+    """La bande SEULE, en grand, avec les joints reels entre pieces.
+
+    `render_progress` montre l'oeuvre entiere pour situer ; elle est donc
+    dominee par ce qui n'est pas encore pose. Pour POSER, il faut voir la
+    bande, et la voir grande : c'est la difference entre une carte et un plan.
+
+    Les joints sont ceux des pieces reelles, pas la grille des tenons. Une
+    tuile 1x4 se lit alors comme une piece, et non comme quatre.
+    """
+    if not rows:
+        raise ValueError("bande vide")
+    if scale <= 0:
+        raise ValueError("echelle invalide")
+    premiere, derniere = rows[0], rows[-1]
+    toile = _Canvas(mosaic.studs_x * scale, len(rows) * scale)
+    for rang, row in enumerate(rows):
+        for column, color in enumerate(mosaic.grid[row]):
+            toile.fill(column * scale, rang * scale, scale, scale, color.rgb)
+
+    table = bytes(round(valeur * 0.55) for valeur in range(256))
+
+    def trait(x: int, y: int, w: int, h: int) -> None:
+        for ligne in range(max(0, y), min(toile.height, y + h)):
+            debut = (ligne * toile.width + max(0, x)) * 3
+            fin = (ligne * toile.width + min(toile.width, x + w)) * 3
+            toile.data[debut:fin] = toile.data[debut:fin].translate(table)
+
+    epaisseur = max(1, scale // 12)
+    for pose in mosaic.tiles:
+        if not premiere <= pose.row <= derniere:
+            continue
+        rang = pose.row - premiere
+        x0 = pose.column * scale
+        largeur = pose.length * scale
+        trait(x0, rang * scale, epaisseur, scale)
+        trait(x0 + largeur - epaisseur, rang * scale, epaisseur, scale)
+        trait(x0, rang * scale, largeur, epaisseur)
+        trait(x0, (rang + 1) * scale - epaisseur, largeur, epaisseur)
+    return toile.image()
+
+
+def render_locator(mosaic: Mosaic, first_row: int, last_row: int,
+                   scale: int = 2) -> Image:
+    """L'oeuvre entiere en petit, la bande en cours marquee.
+
+    Une notice LEGO montre toujours ou l'on en est. Ici l'oeuvre est plate et
+    le montage se lit en lignes : le reperage doit donc dire A QUELLE HAUTEUR
+    on pose, et rien d'autre. Deja pose en pale, bande en couleur pleine,
+    reste en gris — les memes conventions que la vue d'ensemble, pour qu'on
+    n'ait pas deux langages a apprendre.
+    """
+    if scale <= 0:
+        raise ValueError("echelle invalide")
+    toile = _Canvas(mosaic.studs_x * scale, mosaic.studs_y * scale)
+    for row, colors in enumerate(mosaic.grid):
+        for column, color in enumerate(colors):
+            if row > last_row:
+                rgb = GRIS_FUTUR if (row + column) % 2 else GRIS_FUTUR_BIS
+            elif row < first_row:
+                rgb = _paler(color.rgb, PALEUR_POSE)
+            else:
+                rgb = color.rgb
+            toile.fill(column * scale, row * scale, scale, scale, rgb)
+    epaisseur = max(1, scale)
+    toile.fill(0, max(0, first_row * scale - epaisseur), toile.width,
+               epaisseur, (0, 0, 0))
+    toile.fill(0, min(toile.height - epaisseur, (last_row + 1) * scale),
+               toile.width, epaisseur, (0, 0, 0))
+    return toile.image()
+
+
+def pieces_of_band(mosaic: Mosaic, rows: Sequence[int]):
+    """Les pieces a prendre pour cette bande : (design, couleur, quantite).
+
+    C'est l'encart de toute notice LEGO — la petite boite qui dit exactement
+    quoi sortir du sachet avant de commencer. Sans elle, on cherche les pieces
+    au fur et a mesure, et une notice qui fait chercher n'est pas une notice.
+
+    Les pieces sont lues dans les tuiles REELLEMENT posees, jamais dans la
+    grille : depuis la fusion, quatre tenons rouges peuvent etre une seule
+    piece 1x4, et faire prendre quatre 1x1 serait une consigne fausse.
+    """
+    rangs = set(rows)
+    compte: Dict[Tuple[str, int], int] = {}
+    couleurs: Dict[int, LegoColor] = {}
+    for pose in mosaic.tiles:
+        if pose.row not in rangs:
+            continue
+        cle = (pose.design_id, pose.color.code)
+        compte[cle] = compte.get(cle, 0) + 1
+        couleurs[pose.color.code] = pose.color
+    return tuple(
+        (design, couleurs[code], quantite)
+        for (design, code), quantite in sorted(
+            compte.items(), key=lambda item: (-item[1], item[0][0], item[0][1])
+        )
+    ), couleurs
 
 
 def _teinte(code: int, palette: Optional["Palette"]) -> Tuple[int, int, int]:
@@ -597,11 +717,17 @@ def _reglette(
     first_row: int,
     last_row: int,
     pas: int = 8,
+    premiere_ligne: int = 0,
 ) -> List[TextLine]:
     """Numeros de colonnes au-dessus, numeros de lignes de la bande a gauche.
 
     Ecrits en TEXTE PDF et non graves dans l'image : nets a l'impression quelle
     que soit la taille, et rien a embarquer comme fonte matricielle.
+
+    `premiere_ligne` separe la POSITION dans l'image du NUMERO affiche : la vue
+    d'une bande ne contient que ses propres lignes, mais le lecteur doit y lire
+    les numeros de l'oeuvre entiere, sinon il compte a partir de un a chaque
+    page et pose tout au meme endroit.
     """
     x0, y0, largeur, hauteur = cadre
     par_stud_x = largeur / studs_x
@@ -614,7 +740,8 @@ def _reglette(
         )
     for row in range(first_row, last_row + 1):
         centre = y0 + hauteur - (row + 0.5) * par_stud_y - CORPS_REGLETTE * 0.35
-        lignes.append((x0 - 15.0, centre, CORPS_REGLETTE, str(row + 1), True))
+        lignes.append((x0 - 15.0, centre, CORPS_REGLETTE,
+                       str(row + 1 + premiere_ligne), True))
     return lignes
 
 
@@ -629,8 +756,8 @@ def _page_couverture(
 
     from .mosaic import preview
 
-    largeur_mm = ldu_to_mm(mosaic.studs_x * STUD_PITCH_LDU)
-    hauteur_mm = ldu_to_mm(mosaic.studs_y * STUD_PITCH_LDU)
+    largeur_mm = ldu_to_mm(mosaic.outer_x * STUD_PITCH_LDU)
+    hauteur_mm = ldu_to_mm(mosaic.outer_y * STUD_PITCH_LDU)
     # L'OEUVRE FINIE, en couleurs pleines. Pas une vue d'avancement : celle-ci
     # palit tout ce qui est deja pose, et la couverture montrerait une version
     # delavee de ce qu'on est en train de promettre.
@@ -641,8 +768,12 @@ def _page_couverture(
     textes: List[TextLine] = [
         (MARGE, A4_HEIGHT - 80, CORPS_TITRE, titre, True),
         (MARGE, A4_HEIGHT - 102, CORPS_SOUS_TITRE,
-         f"{mosaic.studs_x} x {mosaic.studs_y} tenons  "
-         f"({largeur_mm / 10:.1f} x {hauteur_mm / 10:.1f} cm)", False),
+         (f"{mosaic.studs_x} x {mosaic.studs_y} tenons d'image  ·  "
+          f"{mosaic.outer_x} x {mosaic.outer_y} hors cadre  "
+          f"({largeur_mm / 10:.1f} x {hauteur_mm / 10:.1f} cm)")
+         if mosaic.frame else
+         (f"{mosaic.studs_x} x {mosaic.studs_y} tenons  "
+          f"({largeur_mm / 10:.1f} x {hauteur_mm / 10:.1f} cm)"), False),
         (MARGE, A4_HEIGHT - 118, CORPS_SOUS_TITRE,
          f"{mosaic.tile_count} tuiles  ·  {pieces} pieces au total  ·  "
          f"{len(couleurs)} couleurs", False),
@@ -660,7 +791,7 @@ def _page_couverture(
         textes.append((x + 14.0, y + 0.5, CORPS_LIGNE, codes[color.code], True))
         textes.append((x + 28.0, y + 0.5, CORPS_LIGNE, color.name, False))
         x += 130.0
-    return PdfPage(tuple(textes), tuple(rects), apercu, cadre)
+    return PdfPage(tuple(textes), tuple(rects), ((apercu, cadre),))
 
 
 def _pages_liste(
@@ -718,15 +849,37 @@ def _pages_substrat(
     mosaic: Mosaic,
     couches: Sequence[Sequence[str]],
     palette: Optional[Palette],
+    altitude_des_tuiles: int = 0,
 ) -> List[Tuple[PdfPage, Sequence[str]]]:
-    """Une page par couche de fond, avec l'empreinte des plates a poser.
+    """Une page par couche posee sous les tuiles, fond puis relief.
+
+    Fond et relief ne sont pas la meme chose et ne se nomment donc pas
+    pareil. Les appeler tous « fond » faisait lire « couche 4 sur 4 » a
+    quelqu'un qui posait en realite le deuxieme etage d'un bas-relief, et qui
+    n'avait aucune raison de comprendre pourquoi ce fond-la ne couvrait qu'un
+    quart de l'oeuvre.
 
     Rend la couche avec sa page : deduire l'index d'une page par un calcul sur
     la longueur de la liste marche tant que personne n'ajoute une page.
     """
+    fonds = [c for c in couches
+             if min(mosaic.placed_parts[p].aabb.min.z for p in c)
+             < altitude_des_tuiles]
+    reliefs = [c for c in couches if c not in fonds]
     pages: List[Tuple[PdfPage, Sequence[str]]] = []
     deja: List[str] = []
     for rang, couche in enumerate(couches, start=1):
+        est_relief = couche in reliefs
+        if est_relief:
+            numero, total = reliefs.index(couche) + 1, len(reliefs)
+            titre = f"Relief — etage {numero} sur {total}"
+            consigne = ("Ces plates surelevent les tuiles qu'elles portent. "
+                        "Elles ne couvrent qu'une partie de l'oeuvre.")
+        else:
+            numero, total = fonds.index(couche) + 1, len(fonds)
+            titre = f"Fond — couche {numero} sur {total}"
+            consigne = ("Poser toutes les plates de cette couche avant de "
+                        "passer a la suivante.")
         vue = render_layer(mosaic, list(couche), list(deja), palette=palette)
         cadre = _cadre_image(vue, A4_HEIGHT - 130.0, 150.0)
         references: Dict[str, int] = {}
@@ -741,13 +894,12 @@ def _pages_substrat(
             for d, n in sorted(references.items(), key=lambda kv: (-kv[1], kv[0]))
         )
         textes: List[TextLine] = [
-            (MARGE, A4_HEIGHT - 60, CORPS_TITRE * 0.75,
-             f"Fond — couche {rang} sur {len(couches)}", True),
-            (MARGE, A4_HEIGHT - 82, CORPS_LIGNE,
-             "Poser toutes les plates de cette couche avant de passer a la "
-             "suivante.", False),
+            (MARGE, A4_HEIGHT - 60, CORPS_TITRE * 0.75, titre, True),
+            (MARGE, A4_HEIGHT - 82, CORPS_LIGNE, consigne, False),
             (MARGE, A4_HEIGHT - 93, CORPS_LIGNE,
-             "Le decalage entre les couches est ce qui fait tenir le fond.",
+             "Le decalage entre les couches est ce qui fait tenir le fond."
+             if not est_relief else
+             "Chaque etage repose sur le precedent : ne rien sauter.",
              False),
         ]
         y = 128.0
@@ -756,13 +908,65 @@ def _pages_substrat(
         for morceau in _couper(detail, CORPS_TEXTE, largeur):
             y -= INTERLIGNE + 1.0
             textes.append((MARGE, y, CORPS_TEXTE, morceau, False))
-        if rang > 1:
+        if rang > 1 and not est_relief:
             textes.append((MARGE, y - INTERLIGNE - 4.0, CORPS_LIGNE,
                            "En clair : les joints de la couche precedente. Chaque "
                            "plate doit les enjamber.", False))
-        pages.append((PdfPage(tuple(textes), (), vue, cadre), couche))
+        pages.append((PdfPage(tuple(textes), (), ((vue, cadre),)), couche))
         deja = list(deja) + list(couche)
     return pages
+
+
+def _page_cadre(mosaic: Mosaic, briques: Sequence[str],
+                palette: Optional[Palette]) -> PdfPage:
+    """Le cadre, en dernier — parce qu'on encadre un tableau une fois peint.
+
+    Rien n'oblige physiquement a le poser apres : il ne recouvre aucune tuile.
+    Mais une notice raconte un geste, et le geste est celui-la. Le montrer au
+    milieu du fond, melange a ses plates, faisait poser une bordure noire
+    autour d'un carre vide sans qu'on sache pourquoi.
+    """
+    vue = render_layer(mosaic, list(briques),
+                       [p for p in mosaic.placed_parts if p not in set(briques)],
+                       palette=palette)
+    cadre = _cadre_image(vue, A4_HEIGHT - 130.0, 150.0)
+    references: Dict[str, int] = {}
+    for part_id in briques:
+        design = mosaic.instances[part_id].design_id
+        references[design] = references.get(design, 0) + 1
+    detail = " · ".join(
+        f"{n} x {CATALOG[d].name if d in CATALOG else d}"
+        for d, n in sorted(references.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
+    assises = mosaic.frame_courses
+    # Le lisere est ce qui DEPASSE, pas la hauteur du cadre : dire « 19,2 mm
+    # au-dessus des tuiles » quand le cadre mesure 19,2 mm en tout et que les
+    # tuiles en occupent la moitie, c'est doubler le relief promis.
+    pied = min(mosaic.placed_parts[b].aabb.min.z for b in briques)
+    sommet_cadre = pied + assises * BRICK_HEIGHT_LDU
+    sommet_tuiles = max(
+        (mosaic.placed_parts[mosaic.tile_id(t.row, t.column)].aabb.max.z
+         for t in mosaic.tiles), default=pied)
+    lisere_mm = ldu_to_mm(max(0, sommet_cadre - sommet_tuiles))
+    textes: List[TextLine] = [
+        (MARGE, A4_HEIGHT - 58, CORPS_TITRE, "Le cadre", True),
+        (MARGE, A4_HEIGHT - 78, CORPS_SOUS_TITRE,
+         f"{assises} assise(s) de briques tout autour. Il depasse la surface "
+         f"de {lisere_mm:.1f} mm — c'est cette ombre qui fait le tableau.",
+         False),
+        (MARGE, A4_HEIGHT - 92, CORPS_LIGNE,
+         "Les briques d'une assise sur l'autre ne tombent pas au meme endroit : "
+         "c'est ce croisement qui fait un mur et non un empilement.", False),
+    ]
+    y = 128.0
+    textes.append((MARGE, y, CORPS_TEXTE, f"{len(briques)} pieces :", True))
+    for morceau in _couper(detail, CORPS_TEXTE, A4_WIDTH - 2 * MARGE):
+        y -= INTERLIGNE + 1.0
+        textes.append((MARGE, y, CORPS_TEXTE, morceau, False))
+    textes.append((MARGE, y - INTERLIGNE - 4.0, CORPS_LIGNE,
+                   "En clair : l'oeuvre terminee. Le cadre se pose tout autour, "
+                   "sans jamais la recouvrir.", False))
+    return PdfPage(tuple(textes), (), ((vue, cadre),))
 
 
 IMAGE_HAUT = A4_HEIGHT - 116.0   # bord superieur de la vue
@@ -824,71 +1028,182 @@ def _hauteur_vue(
     return min(IMAGE_MAX, disponible)
 
 
-def _pages_bande(
-    mosaic: Mosaic, rows: Sequence[int], numero: int, total: int, mise: _Mise
-) -> List[PdfPage]:
-    """La page d'une bande, et ses pages de suite si la lecture deborde.
+ENCART_FOND = (238, 238, 234)
+ENCART_TRAIT = (196, 196, 190)
+PASTILLE = 9.0
+"""Cote de la pastille de couleur dans l'encart des pieces, en points."""
+LETTRE_MINIMALE = 9.0
+"""En dessous de cette largeur de case, on n'imprime plus la lettre du code.
 
-    Le decoupage en bandes evite normalement le debordement. Mais une mosaique
-    tres large et tres bruitee peut produire une seule ligne dont la lecture ne
-    tient pas sous la vue : plutot que de refuser ou de tronquer — c'est-a-dire
-    de perdre des tuiles —, on continue sur une page de suite sans vue.
-    """
-    first_row, last_row = rows[0], rows[-1]
-    lecture = _lecture(mosaic, rows, mise.codes)
-    bas_lecture = BAS_TEXTE + mise.reserve
-    hauteur = _hauteur_vue(_hauteur_lecture(lecture), mise.reserve)
-    vue = render_progress(mosaic, first_row, last_row)
-    cadre = _cadre_image(
-        vue, IMAGE_HAUT, IMAGE_HAUT - (hauteur or IMAGE_MIN), RESERVE_REGLETTE
-    )
+Une lettre de trois points n'est pas une lettre, c'est une salissure qui cache
+la couleur — la seule information que la case transmet vraiment. Au-dela de
+cinquante tenons de large, l'encart et la couleur suffisent.
+"""
 
-    entete = [
-        (MARGE, A4_HEIGHT - 60, CORPS_TITRE * 0.75,
-         f"Mosaique — bande {numero} sur {total}", True),
-        (MARGE, A4_HEIGHT - 80, CORPS_LIGNE,
-         f"Lignes {first_row + 1} a {last_row + 1}, de gauche a droite. "
-         "En pale : deja pose. En gris : pas encore."
-         + (" Un ^ par etage de relief."
-            if any(p.level for p in mosaic.tiles) else ""), False),
+
+def _encart_pieces(mosaic: Mosaic, rows: Sequence[int], codes: Mapping[int, str],
+                   x: float, sommet: float, largeur: float):
+    """L'encart « ce qu'il faut sortir du sachet ». (rects, textes, hauteur)."""
+    pieces, _ = pieces_of_band(mosaic, rows)
+    colonnes = max(1, int(largeur // 132))
+    lignes = (len(pieces) + colonnes - 1) // colonnes
+    pas_y = 13.0
+    hauteur = 20.0 + lignes * pas_y
+    rects = [
+        (x, sommet - hauteur, largeur, hauteur, ENCART_FOND),
+        (x, sommet - hauteur, largeur, 0.8, ENCART_TRAIT),
+        (x, sommet - 0.8, largeur, 0.8, ENCART_TRAIT),
     ]
-    textes: List[TextLine] = list(entete)
-    textes.extend(
-        _reglette(cadre, mosaic.studs_x, mosaic.studs_y, first_row, last_row)
+    textes: List[TextLine] = [
+        (x + 8, sommet - 13, CORPS_TEXTE, "A sortir pour cette etape", True)
+    ]
+    pas_x = largeur / colonnes
+    for index, (design, couleur, quantite) in enumerate(pieces):
+        colonne, ligne = index % colonnes, index // colonnes
+        cx = x + 8 + colonne * pas_x
+        cy = sommet - 24 - ligne * pas_y
+        rects.append((cx, cy - PASTILLE + 2.5, PASTILLE, PASTILLE, couleur.rgb))
+        rects.append((cx, cy - PASTILLE + 2.5, PASTILLE, PASTILLE,
+                      ENCART_TRAIT) if False else
+                     (cx, cy - PASTILLE + 2.5, 0.6, PASTILLE, ENCART_TRAIT))
+        etiquette = codes.get(couleur.code, "?")
+        nom = CATALOG[design].name.replace(" with Groove", "")
+        textes.append((cx + PASTILLE + 4, cy - 6, CORPS_TEXTE,
+                       f"{quantite} x", True))
+        textes.append((cx + PASTILLE + 26, cy - 6, CORPS_LIGNE,
+                       f"{etiquette}  {nom}", False))
+    return rects, textes, hauteur
+
+
+def _lettres_sur_bande(mosaic: Mosaic, rows: Sequence[int],
+                       codes: Mapping[int, str], cadre) -> List[TextLine]:
+    """Une lettre au centre de chaque PIECE, jamais de chaque tenon.
+
+    Le lecteur pose des pieces : lui imprimer quatre fois « A » sur une tuile
+    1x4 lui ferait compter quatre pieces la ou il n'en prend qu'une.
+    """
+    x0, y0, largeur, hauteur = cadre
+    case = largeur / mosaic.studs_x
+    if case < LETTRE_MINIMALE:
+        return []
+    corps = min(9.0, case * 0.62)
+    premiere, derniere = rows[0], rows[-1]
+    textes: List[TextLine] = []
+    for pose in mosaic.tiles:
+        if not premiere <= pose.row <= derniere:
+            continue
+        rang = pose.row - premiere
+        centre_x = x0 + (pose.column + pose.length / 2) * case
+        centre_y = y0 + hauteur - (rang + 0.5) * case
+        lettre = codes.get(pose.color.code, "?")
+        # Le decalage horizontal approche le centrage : les polices de base du
+        # PDF n'exposent pas leurs largeurs ici, et une lettre majuscule de
+        # Helvetica-Bold fait environ 0,72 cadratin.
+        textes.append((centre_x - corps * 0.36, centre_y - corps * 0.35,
+                       corps, lettre, True))
+    return textes
+
+
+ECART_ETAPES = 18.0
+"""Blanc entre deux etapes de la meme page. Assez pour qu'on ne les confonde
+pas, pas assez pour qu'on croie a une page finie."""
+
+
+def _hauteur_etape(mosaic: Mosaic, rows: Sequence[int], mise: _Mise,
+                   largeur: float):
+    """Hauteur d'une etape, encart compris. Sert a savoir combien tiennent."""
+    _, _, hauteur_encart = _encart_pieces(mosaic, rows, mise.codes, 0, 0, largeur)
+    hauteur_bande = (largeur - RESERVE_REGLETTE) * len(rows) / mosaic.studs_x
+    return 22.0 + hauteur_encart + 10.0 + hauteur_bande
+
+
+def _une_etape(mosaic: Mosaic, rows: Sequence[int], numero: int, total: int,
+               mise: _Mise, sommet: float, largeur: float):
+    """Une etape posee a partir de `sommet`. (rects, textes, images, bas)."""
+    first_row, last_row = rows[0], rows[-1]
+    rects, textes, hauteur_encart = _encart_pieces(
+        mosaic, rows, mise.codes, MARGE, sommet - 22.0, largeur
     )
+    textes = [
+        (MARGE, sommet - 15.0, CORPS_TITRE * 0.85,
+         f"Etape {numero} / {total}", True),
+        (MARGE + 96.0, sommet - 15.0, CORPS_SOUS_TITRE,
+         f"lignes {first_row + 1} a {last_row + 1}, de gauche a droite"
+         + (" — un ^ par etage de relief"
+            if any(p.level for p in mosaic.tiles) else ""), False),
+    ] + textes
 
+    largeur_bande = largeur - RESERVE_REGLETTE
+    hauteur_bande = largeur_bande * len(rows) / mosaic.studs_x
+    cadre_bande = (MARGE + RESERVE_REGLETTE,
+                   sommet - 22.0 - hauteur_encart - 10.0 - hauteur_bande,
+                   largeur_bande, hauteur_bande)
+    echelle = max(6, min(24, int(600 / max(1, mosaic.studs_x)) + 6))
+    bande = render_band(mosaic, rows, echelle)
+    textes.extend(_reglette(cadre_bande, mosaic.studs_x, len(rows), 0,
+                            len(rows) - 1, premiere_ligne=first_row))
+    textes.extend(_lettres_sur_bande(mosaic, rows, mise.codes, cadre_bande))
+    return rects, textes, [(bande, cadre_bande)], cadre_bande[1]
+
+
+def _pages_etapes(mosaic: Mosaic, bandes: Sequence[Sequence[int]], mise: _Mise):
+    """Les pages d'etapes, PLUSIEURS ETAPES PAR PAGE quand elles tiennent.
+
+    Une notice LEGO met deux a quatre etapes numerotees par page ; c'est ce
+    qui rend le fascicule mince et la progression visible. La version
+    precedente en mettait une, et une bande de quatre lignes sur une oeuvre de
+    trente-deux laissait les deux tiers de la feuille blancs.
+
+    Rend (pages, index de page de chaque bande) : le controle d'ordre a besoin
+    de savoir sur quelle page chaque tuile se pose, et le deduire de la
+    longueur de la liste cesse d'etre vrai des qu'une page porte deux etapes.
+    """
+    largeur = A4_WIDTH - 2 * MARGE
     pages: List[PdfPage] = []
+    page_de_bande: List[int] = []
+    plancher = BAS_TEXTE + mise.reserve
 
-    def fermer(courantes: List[TextLine]) -> None:
-        premiere = not pages
-        pages.append(
-            PdfPage(
-                tuple(courantes) + mise.textes,
-                mise.rects,
-                vue if premiere else None,
-                cadre if premiere else None,
+    index = 0
+    while index < len(bandes):
+        sommet = A4_HEIGHT - 46.0
+        rects: List[RectFill] = []
+        textes: List[TextLine] = []
+        images = []
+        premiere = index
+        while index < len(bandes):
+            hauteur = _hauteur_etape(mosaic, bandes[index], mise, largeur)
+            if images and sommet - hauteur < plancher + 96.0:
+                break
+            r, t, i, bas = _une_etape(
+                mosaic, bandes[index], index + 1, len(bandes), mise,
+                sommet, largeur,
             )
-        )
+            rects.extend(r)
+            textes.extend(t)
+            images.extend(i)
+            page_de_bande.append(len(pages))
+            sommet = bas - ECART_ETAPES
+            index += 1
 
-    y = cadre[1] - ECART_VUE_TEXTE
-    for row, morceaux in lecture:
-        etiquette = f"L{row + 1}"
-        for index, morceau in enumerate(morceaux):
-            if y < bas_lecture:
-                fermer(textes)
-                textes = list(entete)
-                textes.append(
-                    (MARGE, A4_HEIGHT - 104, CORPS_LIGNE, "(suite)", False)
-                )
-                y = A4_HEIGHT - 124
-            if index == 0:
-                textes.append((MARGE, y, CORPS_TEXTE, etiquette, True))
-            textes.append((MARGE + RETRAIT_LECTURE, y, CORPS_LIGNE, morceau, False))
-            y -= INTERLIGNE
-        y -= ECART_LIGNES
+        # Le reperage, une fois par page : il dit ou l'on en est arrive au
+        # bout de la page, pas au bout de chaque etape.
+        derniere = bandes[index - 1]
+        reperage = render_locator(mosaic, bandes[premiere][0], derniere[-1])
+        largeur_reperage = 96.0
+        hauteur_reperage = largeur_reperage * mosaic.studs_y / mosaic.studs_x
+        bas_reperage = max(plancher, sommet - 8.0 - hauteur_reperage)
+        cadre_reperage = (MARGE, bas_reperage, largeur_reperage, hauteur_reperage)
+        images.append((reperage, cadre_reperage))
+        textes.append((MARGE + largeur_reperage + 12,
+                       bas_reperage + hauteur_reperage - 9,
+                       CORPS_TEXTE, "Ou l'on en est", True))
+        textes.append((MARGE + largeur_reperage + 12,
+                       bas_reperage + hauteur_reperage - 21, CORPS_LIGNE,
+                       "En pale : deja pose. En gris : pas encore.", False))
 
-    fermer(textes)
-    return pages
+        pages.append(PdfPage(tuple(textes) + mise.textes,
+                             tuple(rects) + mise.rects, tuple(images)))
+    return pages, page_de_bande
 
 
 def _decouper_bandes(
@@ -973,8 +1288,16 @@ def build_booklet(
         raise KeyError(f"{len(manquantes)} tuiles absentes du modele")
 
     # Les couches de fond se lisent dans les altitudes, pas dans les noms.
+    # Le cadre n'est pas une couche de fond : il ne porte rien et se pose en
+    # dernier. Melange aux plates du substrat, il faisait poser une bordure
+    # noire autour d'un carre vide.
+    briques_de_cadre = sorted(
+        part_id for part_id in mosaic.placed_parts
+        if part_id.startswith("C") and part_id not in tuiles
+    )
     par_altitude: Dict[int, List[str]] = {}
-    for part_id in sorted(set(mosaic.placed_parts) - tuiles):
+    for part_id in sorted(set(mosaic.placed_parts) - tuiles
+                          - set(briques_de_cadre)):
         par_altitude.setdefault(mosaic.placed_parts[part_id].aabb.min.z, []).append(
             part_id
         )
@@ -988,18 +1311,29 @@ def build_booklet(
     pages.extend(_pages_liste(bom, palette, mise.codes))
     page_de: Dict[str, int] = {}
 
-    for page, couche in _pages_substrat(mosaic, couches, palette):
+    altitude_des_tuiles = min(
+        (mosaic.placed_parts[t].aabb.min.z for t in tuiles), default=0)
+    for page, couche in _pages_substrat(mosaic, couches, palette,
+                                        altitude_des_tuiles):
         pages.append(page)
         for part_id in couche:
             page_de[part_id] = len(pages) - 1
 
     bandes = _decouper_bandes(mosaic, rows_per_page, mise)
-    for index, rows in enumerate(bandes, start=1):
-        pages.extend(_pages_bande(mosaic, rows, index, len(bandes), mise))
+    depart = len(pages)
+    pages_etapes, page_de_bande = _pages_etapes(mosaic, bandes, mise)
+    pages.extend(pages_etapes)
+    for numero, rows in enumerate(bandes):
         rangs = set(rows)
         for pose in mosaic.tiles:
             if pose.row in rangs:
-                page_de[mosaic.tile_id(pose.row, pose.column)] = len(pages) - 1
+                page_de[mosaic.tile_id(pose.row, pose.column)] = (
+                    depart + page_de_bande[numero])
+
+    if briques_de_cadre:
+        pages.append(_page_cadre(mosaic, briques_de_cadre, palette))
+        for part_id in briques_de_cadre:
+            page_de[part_id] = len(pages) - 1
 
     _verifier_ordre(plan, page_de)
 
@@ -1008,8 +1342,7 @@ def build_booklet(
         PdfPage(
             page.texts + tuple(_pied(numero, total, title)),
             page.rects,
-            page.image,
-            page.image_rect,
+            page.images,
         )
         for numero, page in enumerate(pages, start=1)
     ]

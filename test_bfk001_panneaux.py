@@ -167,3 +167,95 @@ class TestAssemblage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestCadre(unittest.TestCase):
+    """Le cadre : ce qu'il ferme, ce qu'il porte, ce qu'il rend possible."""
+
+    def petite(self, cote=16, graine=5):
+        return grille(cote, graine)
+
+    def test_le_cadre_entoure_sans_rogner_l_image(self):
+        g = self.petite()
+        nu = bfk.mosaic.build(g, tiles=bfk.mosaic.TILE_SET_STANDARD)
+        avec = bfk.mosaic.build(g, tiles=bfk.mosaic.TILE_SET_STANDARD, frame=2)
+        self.assertEqual(avec.studs_x, nu.studs_x)
+        self.assertEqual(avec.outer_x, nu.studs_x + 4)
+        self.assertEqual(avec.tile_count, nu.tile_count,
+                         "un cadre qui rognerait l'image serait un recadrage")
+        self.assertGreater(avec.frame_count, 0)
+
+    def test_le_cadre_depasse_toujours_la_surface(self):
+        # Un cadre a fleur n'est pas un cadre : c'est une bordure peinte.
+        g = self.petite()
+        for relief in (0, 2, 4):
+            elevations = ([[relief] * 16 for _ in range(16)]
+                          if relief else None)
+            m = bfk.mosaic.build(g, tiles=bfk.mosaic.TILE_SET_STANDARD,
+                                 heights=elevations, frame=2)
+            briques = [n for n in m.placed_parts if n.startswith("C")]
+            sommet_cadre = max(m.placed_parts[n].aabb.max.z for n in briques)
+            sommet_tuiles = max(
+                m.placed_parts[m.tile_id(t.row, t.column)].aabb.max.z
+                for t in m.tiles)
+            self.assertGreater(sommet_cadre, sommet_tuiles, f"relief {relief}")
+
+    def test_le_cadre_passe_les_six_invariants(self):
+        for relief in (0, 2):
+            g = self.petite()
+            elevations = ([[relief if (x + y) % 3 else 0 for x in range(16)]
+                           for y in range(16)] if relief else None)
+            m = bfk.mosaic.build(g, tiles=bfk.mosaic.TILE_SET_STANDARD,
+                                 heights=elevations, frame=2)
+            fautes = violations(m.placed_parts, m.geometries)
+            self.assertEqual([(v.invariant, v.detail) for v in fautes], [],
+                             f"relief {relief}")
+
+    def test_les_assises_croisent_leurs_joints(self):
+        # Deux assises decoupees a l'identique donnent un mur qui se fend le
+        # long de ses joints. C'est le meme appareil que le fond croise.
+        g = self.petite()
+        m = bfk.mosaic.build(g, tiles=bfk.mosaic.TILE_SET_STANDARD,
+                             heights=[[2] * 16 for _ in range(16)], frame=2)
+        self.assertEqual(m.frame_courses, 2)
+        par_assise = {}
+        for nom, piece in m.placed_parts.items():
+            if nom.startswith("C"):
+                par_assise.setdefault(piece.aabb.min.z, set()).add(
+                    (piece.aabb.min.x, piece.aabb.min.y))
+        altitudes = sorted(par_assise)
+        self.assertEqual(len(altitudes), 2)
+        self.assertNotEqual(par_assise[altitudes[0]], par_assise[altitudes[1]],
+                            "les deux assises tombent au meme endroit")
+
+    def test_le_cadre_rend_constructible_une_bande_d_un_tenon(self):
+        # Sans cadre, le fond d'une bande 1x40 se scinde en dix-neuf morceaux
+        # et `build` refuse. Le cadre elargit l'emprise et la ceinture.
+        etroite = tuple(
+            tuple(ligne[:1]) for ligne in grille(40, graine=11)
+        )
+        with self.assertRaises(ValueError):
+            bfk.mosaic.build(etroite, tiles=bfk.mosaic.TILE_SET_STANDARD)
+        m = bfk.mosaic.build(etroite, tiles=bfk.mosaic.TILE_SET_STANDARD,
+                             frame=2)
+        self.assertEqual([(v.invariant, v.detail)
+                          for v in violations(m.placed_parts, m.geometries)], [])
+
+    def test_le_cadre_ceinture_les_sections(self):
+        g = grille(16, graine=8)
+        a = build_assembly(g, section_side=8, frame=2)
+        self.assertEqual(a.outer_x, 20)
+        self.assertGreater(a.frame_count, 0)
+        fautes = violations(a.placed_parts, a.geometries)
+        self.assertEqual([(v.invariant, v.detail) for v in fautes], [])
+        # Et aucune section ne porte de cadre : il appartient a l'ensemble.
+        for section in a.sections:
+            self.assertEqual(section.mosaic.frame, 0)
+
+    def test_un_cadre_absurde_est_refuse(self):
+        g = self.petite()
+        with self.assertRaises(ValueError):
+            bfk.mosaic.build(g, tiles=bfk.mosaic.TILE_SET_STANDARD, frame=-1)
+        with self.assertRaises(ValueError):
+            bfk.mosaic.build(g, substrate="panels",
+                             tiles=bfk.mosaic.TILE_SET_STANDARD, frame=2)

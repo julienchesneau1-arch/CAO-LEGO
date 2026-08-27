@@ -111,13 +111,27 @@ class TestChaine(unittest.TestCase):
         self.assertEqual(resultat.mesures["tenons"], 256)
         self.assertGreater(resultat.mesures["pieces"],
                            resultat.mesures["tuiles"])
-        self.assertAlmostEqual(resultat.mesures["largeur_mm"], 16 * 8.0, places=6)
+        # La dimension annoncee est celle HORS TOUT : c'est elle qu'on
+        # accroche au mur. L'image est plus petite d'un cadre de chaque cote.
+        self.assertAlmostEqual(resultat.mesures["largeur_mm"], 20 * 8.0, places=6)
+        self.assertAlmostEqual(
+            resultat.mesures["image_largeur_mm"], 16 * 8.0, places=6)
 
     def test_une_mosaique_qui_ne_tient_pas_n_est_pas_livree(self):
-        # Un tenon de large : les tuiles ne se lient a rien. Le noyau refuse,
-        # et la chaine ne doit surtout pas ecrire de fichiers quand meme.
+        # Un tenon de large SANS CADRE : le fond se scinde en dix-neuf
+        # morceaux. Le noyau refuse, et la chaine ne doit surtout pas ecrire
+        # de fichiers quand meme.
         with self.assertRaises((ModeleRefuse, ValueError)):
-            run(photo(), Reglages(studs=1, hauteur=40))
+            run(photo(), Reglages(studs=1, hauteur=40, cadre=0))
+
+    def test_le_cadre_rend_constructibles_des_formats_qui_ne_l_etaient_pas(self):
+        # Conséquence inattendue et mesuree : une bande d'un tenon de large est
+        # impossible sans cadre — son fond se scinde — et parfaitement valide
+        # avec. Le cadre n'est pas qu'un ornement : c'est une ceinture, et
+        # l'emprise qu'il ajoute suffit a paver un fond d'un seul tenant.
+        resultat = run(photo(), Reglages(studs=1, hauteur=40, cadre=2))
+        self.assertGreater(resultat.mesures["pieces"], 0)
+        self.assertEqual(resultat.mesures["cadre"], 2)
 
 
 class TestAtelier(unittest.TestCase):

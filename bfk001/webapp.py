@@ -168,6 +168,20 @@ PAGE = r"""<!doctype html>
       </div>
     </div>
 
+    <label>Cadre
+      <span class="aide">Un tableau se cadre. Le cadre depasse la surface et
+        porte son ombre dessus ; il ceinture aussi les sections.</span>
+      <select id="cadre">
+        <option value="2">2 tenons — noir</option>
+        <option value="2|72">2 tenons — gris fonce</option>
+        <option value="2|71">2 tenons — gris clair</option>
+        <option value="2|70">2 tenons — brun rougeatre</option>
+        <option value="2|15">2 tenons — blanc</option>
+        <option value="3">3 tenons — noir</option>
+        <option value="0">aucun cadre</option>
+      </select>
+    </label>
+
     <label>Decouper en sections
       <span class="aide">Au-dela d'une cinquantaine de tenons, une mosaique ne
         passe plus sur une table. Chaque section est un modele complet avec sa
@@ -336,6 +350,8 @@ PAGE = r"""<!doctype html>
           cadrage: valeur('cadrage'),
           seuils: valeur('seuils'),
           sections: valeur('sections'),
+          cadre: valeur('cadre').split('|')[0],
+          cadre_couleur: valeur('cadre').split('|')[1] || '0',
           profondeur_inversee: document.getElementById('inversee').checked,
           titre: (champ.files[0] || {}).name || 'mosaique'
         }
@@ -526,6 +542,8 @@ def _reglages(brut: dict) -> Reglages:
             profondeur_inversee=bool(brut.get("profondeur_inversee")),
             lignes_par_page=entier("lignes_par_page", 4),
             sections=entier("sections", 0),
+            cadre=entier("cadre", 2),
+            cadre_couleur=entier("cadre_couleur", 0),
             titre=texte("titre", "mosaique"),
         )
     except (TypeError, ValueError) as raison:

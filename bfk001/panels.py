@@ -36,7 +36,8 @@ from .catalog import PartInstance, place
 from .collision import CollisionGeometry
 from .geometry import LDUVector
 from .lego import PLATE_HEIGHT_LDU, STUD_PITCH_LDU
-from .mosaic import (Mosaic, SUBSTRATE_COLOR, TILE_SET_STANDARD, build,
+from .mosaic import (FRAME_COLOR, Mosaic, SUBSTRATE_COLOR,
+                     TILE_SET_STANDARD, build, frame_courses, _cadre,
                      _paver, _verifier_relief)
 from .search import PlacedPart
 
@@ -94,6 +95,9 @@ class Assembly:
     studs_x: int
     studs_y: int
     section_side: int
+    frame: int
+    frame_color: int
+    frame_courses: int
     sections: Tuple[Section, ...]
     placed_parts: Mapping[str, PlacedPart]
     geometries: Mapping[str, CollisionGeometry]
@@ -103,6 +107,18 @@ class Assembly:
     @property
     def part_count(self) -> int:
         return len(self.placed_parts)
+
+    @property
+    def outer_x(self) -> int:
+        return self.studs_x + 2 * self.frame
+
+    @property
+    def outer_y(self) -> int:
+        return self.studs_y + 2 * self.frame
+
+    @property
+    def frame_count(self) -> int:
+        return sum(1 for nom in self.placed_parts if nom.startswith("C"))
 
     @property
     def rows(self) -> int:
@@ -198,12 +214,21 @@ def build_assembly(
     substrate_color: int = SUBSTRATE_COLOR,
     tiles: Sequence[str] = TILE_SET_STANDARD,
     heights: Optional[Sequence[Sequence[int]]] = None,
+    frame: int = 0,
+    frame_color: int = FRAME_COLOR,
 ) -> Assembly:
     """Grille -> sections independantes + couche de jonction.
 
     Chaque section est batie par `mosaic.build`, donc avec son propre fond
     croise et ses propres verifications. Elle est ensuite re-posee a sa place,
     surelevee d'une epaisseur de plate : la couche de jonction passe dessous.
+
+    Le cadre, lui, n'appartient a aucune section : il ceinture l'oeuvre entiere
+    et se pose en dernier. C'est ce qui repond a la reserve du module — une
+    jonction par-dessous est une charniere — car un cadre ferme sur les quatre
+    cotes est une ceinture, et une ceinture ne plie pas dans son plan. Le noyau
+    ne mesure toujours pas la raideur ; simplement, l'arrangement est celui
+    qu'emploient les sets officiels, et pour la meme raison.
     """
     if not grid or not grid[0]:
         raise ValueError("grille vide")
@@ -254,7 +279,8 @@ def build_assembly(
         deplaces = _decaler(
             modele.placed_parts, modele.geometries, modele.instances,
             f"S{ligne}{colonne}",
-            (x0 * STUD_PITCH_LDU, bas * STUD_PITCH_LDU, PLATE_HEIGHT_LDU),
+            ((x0 + frame) * STUD_PITCH_LDU,
+             (bas + frame) * STUD_PITCH_LDU, PLATE_HEIGHT_LDU),
         )
         parts.update(deplaces[0])
         geometries.update(deplaces[1])
@@ -271,18 +297,31 @@ def build_assembly(
     # ponts se percutaient au croisement de deux joints (H2), et les sections
     # ne reposaient sur rien ailleurs (H4). Une couche pleine coute environ
     # 5 % du modele et supprime les deux.
+    def enregistrer(placed, geo, inst):
+        parts[placed.part_id] = placed
+        geometries[placed.part_id] = geo
+        instances[placed.part_id] = inst
+
     jonction = _paver(
-        lambda placed, geo, inst: (
-            parts.__setitem__(placed.part_id, placed),
-            geometries.__setitem__(placed.part_id, geo),
-            instances.__setitem__(placed.part_id, inst),
-        ),
-        "J", -1, -2, studs_x, studs_y, 0, substrate_color,
+        enregistrer, "J", -1 - frame, -2 - frame,
+        studs_x + 2 * frame, studs_y + 2 * frame, 0, substrate_color,
     )
-    _verifier_jonction(jonction, studs_x, studs_y, section_side)
+    _verifier_jonction(
+        [(x - frame, y - frame, largeur, profondeur, design)
+         for x, y, largeur, profondeur, design in jonction],
+        studs_x, studs_y, section_side,
+    )
+
+    assises = 0
+    if frame:
+        sommet = max(piece.aabb.max.z for piece in parts.values())
+        assises = frame_courses(sommet, PLATE_HEIGHT_LDU)
+        _cadre(enregistrer, studs_x + 2 * frame, studs_y + 2 * frame, frame,
+               PLATE_HEIGHT_LDU, assises, frame_color)
 
     return Assembly(
         studs_x=studs_x, studs_y=studs_y, section_side=section_side,
+        frame=frame, frame_color=frame_color, frame_courses=assises,
         sections=tuple(sections), placed_parts=parts, geometries=geometries,
         instances=instances, join_count=len(jonction),
     )

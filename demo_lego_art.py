@@ -92,6 +92,16 @@ def main() -> int:
              "ce que votre fournisseur a en tuile, dites-le ici et toute "
              "l'optimisation se fera a l'interieur de cette contrainte.")
     analyseur.add_argument(
+        "--cadre", type=int, default=2,
+        help="epaisseur du cadre en tenons (0 pour aucun). Le cadre ferme "
+             "l'oeuvre, la fait lire comme un tableau, ceinture les sections "
+             "quand elle est decoupee, et rend constructibles des formats "
+             "etroits qui ne l'etaient pas.")
+    analyseur.add_argument(
+        "--cadre-couleur", type=int, default=0,
+        help="code LDraw du cadre : 0 noir (defaut), 15 blanc, 70 brun "
+             "rougeatre, 71 gris clair, 72 gris fonce.")
+    analyseur.add_argument(
         "--sections", type=int, default=0,
         help="decouper l'oeuvre en sections de N tenons de cote. Chacune est "
              "un modele complet avec sa propre notice, batissable seule ; une "
@@ -119,6 +129,8 @@ def main() -> int:
         par_etape=options.par_etape,
         titre=options.image.stem,
         sections=options.sections,
+        cadre=options.cadre,
+        cadre_couleur=options.cadre_couleur,
     )
 
     complete, ligne_palette = palette_utilisable(

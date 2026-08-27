@@ -715,6 +715,67 @@ C'est d'ailleurs la différence avec les sets LEGO Art officiels : leurs panneau
 
 ---
 
+## Le cadre
+
+**Toute œuvre est encadrée par défaut.** `--cadre 0` le retire, `--cadre-couleur`
+le change (0 noir, 15 blanc, 70 brun rougeâtre, 71 gris clair, 72 gris foncé).
+
+Le cadre est un mur de briques posé sur le substrat, **autour** de l'image et
+jamais dessus : l'emprise grandit de deux tenons de chaque côté, l'image ne perd
+rien. Sa hauteur est calculée pour qu'il **dépasse** la surface — une assise sans
+relief, deux avec — parce qu'un cadre à fleur n'est pas un cadre, c'est une
+bordure peinte. Ce qui fait lire un tableau, c'est l'ombre que son cadre porte
+sur lui, et le modèle la porte réellement.
+
+Deux appareils se croisent, et aucun n'est décoratif :
+
+- **en plan**, les bandes horizontales courent sur toute la largeur une assise
+  sur deux, les verticales l'autre — sinon les quatre angles seraient quatre
+  joints traversants et le cadre s'ouvrirait aux coins ;
+- **en élévation**, la découpe de chaque course part décalée d'une assise sur
+  l'autre, pour que les joints ne se superposent pas.
+
+Trois conséquences, toutes mesurées :
+
+1. **Il ceinture les sections.** C'était la réserve honnête de la découpe : une
+   jonction par-dessous est une charnière. Un cadre fermé sur les quatre côtés
+   est une ceinture. Le noyau ne mesure toujours pas la raideur, mais
+   l'arrangement est celui des sets officiels, et pour cette raison-là.
+2. **Il rend constructibles des formats qui ne l'étaient pas.** Une bande d'un
+   tenon de large est impossible sans cadre — son fond se scinde en dix-neuf
+   morceaux et `build` refuse — et parfaitement valide avec.
+3. Il coûte ses briques : 144 pièces pour une œuvre de 32 tenons, 208 pour une
+   de 48. C'est le prix d'un tableau plutôt que d'un carrelage.
+
+---
+
+## La notice, comme une notice LEGO
+
+La notice a longtemps eu une autre forme : une vue de l'œuvre entière, puis la
+lecture de chaque ligne en clair — `2x4A^ · 1G^ · 2C^^`. C'était exact, compact,
+et illisible. **Une notice LEGO ne demande jamais de décoder.** Elle montre les
+pièces à sortir, puis montre où les poser.
+
+Chaque étape porte donc, dans l'ordre du geste :
+
+1. **l'encart** « À sortir pour cette étape » — la petite boîte grise de toute
+   notice LEGO, qui dit exactement quoi prendre avant de commencer ;
+2. **la bande en grand**, avec les joints réels entre pièces et **une lettre au
+   centre de chaque pièce** — jamais de chaque tenon : imprimer quatre fois « A »
+   sur une tuile 1×4 ferait compter quatre pièces là où on n'en prend qu'une ;
+3. **le repérage** — l'œuvre entière en petit, la bande marquée.
+
+**Deux à quatre étapes par page**, comme dans un fascicule LEGO : une seule
+laissait les deux tiers de la feuille blancs. Sur les Tournesols en 32 tenons, la
+notice est passée de 15 à 10 pages en devenant plus lisible.
+
+Le fond et le relief ne se nomment plus pareil (« Fond — couche 2 sur 2 » contre
+« Relief — étage 1 sur 2 »), et **le cadre a sa page à lui, en dernier** : rien
+n'oblige physiquement à le poser après, mais une notice raconte un geste, et on
+encadre un tableau une fois peint.
+
+---
+
 ## La notice PDF
 
 `booklet.py` écrit le PDF à la main — objets numérotés, table de renvois,

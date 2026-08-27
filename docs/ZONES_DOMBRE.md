@@ -1749,6 +1749,70 @@ de laisser croire qu'un modèle validé est un modèle solide.
 
 ---
 
+### 5.52 Le cadre, et la notice qui cesse de demander qu'on décode
+
+Deux demandes en une : « pour chaque œuvre il faut un cadre comme les LEGO Art »
+et « quelque chose de simple à comprendre comme une notice LEGO standard ».
+
+#### Le cadre
+
+Un mur de briques autour de l'image, sur un substrat élargi de deux tenons de
+chaque côté. Sa hauteur n'est pas un réglage : `frame_courses` compte les assises
+jusqu'à ce que le cadre **dépasse** la surface — une sans relief, deux avec deux
+étages, parce qu'à deux étages la première assise arriverait pile à fleur.
+
+Deux appareils croisés, et j'ai dû écrire les deux avant que ça tienne : en plan
+(les bandes horizontales pleines une assise sur deux, sinon les quatre angles
+sont quatre joints traversants) et en élévation (départ décalé, sinon le mur se
+fend le long de ses joints).
+
+**Deux conséquences que je n'avais pas prévues.**
+
+La première répond à une réserve que j'avais écrite noir sur blanc au § 5.51 :
+« une jonction par-dessous est une charnière ». Un cadre fermé sur les quatre
+côtés est une ceinture. Le noyau ne mesure toujours pas la raideur — je ne
+prétends pas le contraire — mais l'arrangement est celui des sets officiels.
+
+La seconde est mesurée : **le cadre rend constructibles des formats que le noyau
+refusait**. Une bande d'un tenon de large se scinde en dix-neuf morceaux sans
+cadre ; avec, zéro violation. L'emprise que le cadre ajoute suffit à paver un
+fond d'un seul tenant. Un test l'exige désormais dans les deux sens.
+
+Et une décision de couche : `build(frame=0)` par défaut, `Reglages(cadre=2)` par
+défaut. Le solveur propose, le produit décide. Les preuves du substrat sur 1521
+formats gardent leur sens, et l'utilisateur reçoit un tableau.
+
+#### La notice
+
+Elle lisait chaque ligne en clair : `2x4A^ · 1G^ · 2C^^`. Exact, compact,
+illisible. Une notice LEGO ne demande jamais de décoder.
+
+| | Avant | Après |
+|---|---|---|
+| Ce qu'on lit | une ligne de codes par rangée | un encart de pièces, puis une bande dessinée |
+| Étapes par page | 1 | 2 à 4 |
+| Pages (Tournesols 32×32) | 15 | **10** |
+| Pages de suite | possibles | impossibles — une image ne déborde pas |
+
+Trois blocs par étape, dans l'ordre du geste : l'encart « à sortir », la bande en
+grand avec **une lettre par pièce** (jamais par tenon — quatre « A » sur une 1×4
+feraient prendre quatre pièces), et le repérage.
+
+Il a fallu que `PdfPage` porte **plusieurs images** : une seule obligeait à
+choisir entre montrer et situer.
+
+Trois défauts trouvés en regardant les pages, comme toujours :
+
+- les étages de relief s'annonçaient « Fond — couche 4 sur 4 », ce qui faisait
+  lire un fond à quelqu'un qui posait un bas-relief ;
+- la page du cadre annonçait « 19,2 mm au-dessus des tuiles » alors que le cadre
+  mesure 19,2 mm **en tout** et que les tuiles en occupent la moitié : le relief
+  promis était doublé ;
+- le cadre apparaissait au milieu des couches de fond, faisant poser une bordure
+  noire autour d'un carré vide. Il a désormais sa page, en dernier.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage
@@ -1760,7 +1824,7 @@ La chaîne **existe et tourne** : `python3 demo_lego_art.py photo.png --studs 48
 | Photo → analyse | **~99 %** | JPEG (au huitième — coût mesuré à 0,5 ΔE, § 5.31), PNG, PPM, orientation EXIF, rééchantillonnage en lumière linéaire, recadrage au bon rapport, quantification CIEDE2000 exacte, alerte sous 2 px/tenon, recadrage attentionnel par énergie de gradient. **Interface web** : glisser-déposer, réglages, aperçus, ZIP (§ 5.50). Manque : rien d'identifié. |
 | → modélisation LEGO Art | **~95 %** | Solveur + substrat validé H1–H6 et refusé quand il ne tient pas, palette officielle importable, fusion des tuiles, choix de palette au coût mesuré. **La fidélité est à la limite du médium** (§ 6.3). Relief en plateaux, aux seuils d'Otsu, et profondeur **mesurée** quand la photo en porte une (§ 6.10). Découpe en sections bâties séparément (§ 5.51). Manque : rien d'identifié en 2D. |
 | → liste de course | **~90 %** | Nomenclature exacte, filtrée aux couleurs commandables, garde-fou anti-omission, export CSV, contrainte d'approvisionnement. export BrickLink prêt à l'envoi. Manque : la **table** de correspondance des couleurs, qui est une donnée et non du code, et les prix — hors périmètre assumé. |
-| → notice de montage | **~85 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Manque : ligne graphique LEGO. |
+| → notice de montage | **~92 %** | Plan acyclique, PDF autonome (couverture en couleurs pleines, liste de course avec pastilles et codes, pose du fond, mosaïque bande par bande avec réglettes et légende), ordre vérifié contre le plan, marge d'impression vérifiée. Encart des pieces par etape, bande dessinee avec une lettre par piece, deux a quatre etapes par page, page du cadre (§ 5.52). Manque : les dessins de pieces en perspective des vraies notices. |
 
 **Environ 92 % de la demande.** Le bond depuis les ~15 % initiaux n'est pas un
 tour de passe-passe : la demande est du LEGO **Art**, donc un probleme 2D. Le
@@ -1941,10 +2005,10 @@ et le fichier `LDConfig.ldr`. Le code qui s'en sert existe et est testé ; ni
 l'une ni l'autre n'a pu être vérifiée ici. Ce sont des décisions
 d'approvisionnement, pas d'ingénierie.
 
-**Une préférence esthétique.** La ligne graphique de la notice. Le fascicule est
-complet et vérifié — structure, marges d'impression, ordre contrôlé contre le
-plan — mais il ne ressemble pas à une notice LEGO. C'est du dessin, et rien ne
-le mesure.
+**Une préférence esthétique.** Ce qui reste de la ligne graphique : les vraies
+notices dessinent chaque pièce en perspective, avec ses tenons. La nôtre les
+nomme et les montre à plat. C'est du dessin, et rien ne le mesure — mais la
+structure, elle, est celle d'une notice LEGO depuis le § 5.52.
 
 **Un autre produit.** Volume 3D, connecteurs Technic,
 géométrie non-AABB, stabilité mécanique : tout cela est listé en § 3 avec la
