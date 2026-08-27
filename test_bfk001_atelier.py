@@ -820,3 +820,86 @@ class TestPaletteDepuisLAtelier(unittest.TestCase):
 
         signature = inspect.signature(A.installer_palette)
         self.assertEqual(list(signature.parameters), ["self"])
+
+
+class TestConseilDeFormat(unittest.TestCase):
+    """Le conseil doit annoncer ce que la chaine FABRIQUE, pas autre chose."""
+
+    def test_il_annonce_exactement_ce_que_la_chaine_livre(self):
+        """Le defaut qu'il faut empecher de revenir.
+
+        La premiere version quantifiait de son cote : sans cadre, sans
+        nettoyage, sans tramage automatique. Elle annoncait des nombres de
+        pieces faux de -32 a +91 — et les ecarts se compensaient a moitie, ce
+        qui est le pire des cas : les chiffres paraissaient justes.
+
+        C'est le defaut du tramage (§ 5.61) refait un commit plus tard :
+        evaluer une grille qui n'est pas celle qu'on livre. Deux fois la meme
+        erreur veut dire que le probleme etait la DUPLICATION, pas
+        l'inattention. Ce test verifie l'egalite sur des reglages qui touchent
+        chacun un maillon different.
+        """
+        from bfk001.pipeline import Reglages, conseil_de_format, lire_image, run
+
+        image = lire_image(photo(160, 200))
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        for etiquette, options in (
+                ("par defaut", {}),
+                ("sans cadre", {"cadre": 0}),
+                ("cadre epais", {"cadre": 4}),
+                ("relief", {"relief": 2}),
+                ("tuiles larges", {"references": "large"}),
+                ("sans nettoyage", {"debruitage": 0.0}),
+                ("tramage impose", {"tramage": "complet"}),
+        ):
+            reglages = Reglages(studs=20, titre="essai", **options)
+            hauteur = round(20 * image.height / image.width)
+            conseil = conseil_de_format(image, 20, hauteur, palette, reglages,
+                                        multiples=(1.0,))[0]
+            livre = run(photo(160, 200), reglages,
+                        palette=palette,
+                        palette_complete=bfk.PROVISIONAL_PALETTE,
+                        note_palette=("info", "essai")).mesures
+            self.assertEqual(conseil["pieces"], livre["pieces"], etiquette)
+            self.assertEqual(conseil["studs_x"], livre["studs_x"], etiquette)
+
+    def test_la_vignette_montre_le_meme_morceau_avec_plus_de_tuiles(self):
+        # Une vignette de l'oeuvre entiere a 74 pixels de large est identique
+        # pour 32 et pour 96 tenons : elle decore, elle n'informe pas. Le tiers
+        # central, affiche a largeur constante, porte lui trois fois plus de
+        # tuiles dans la version fine — c'est ce qu'on veut montrer.
+        from bfk001.pipeline import Reglages, conseil_de_format, lire_image
+
+        image = lire_image(photo(160, 160))
+        conseils = conseil_de_format(
+            image, 16, 16, bfk.PROVISIONAL_PALETTE.solids_only(),
+            Reglages(studs=16, hauteur=16), multiples=(1.0, 2.0, 4.0))
+        largeurs = [bfk.read_png(c["detail_vu"]).width for c in conseils]
+        self.assertEqual(largeurs, sorted(largeurs), largeurs)
+        self.assertGreater(largeurs[-1], largeurs[0] * 2)
+        # Et l'apercu entier reste disponible a cote.
+        for c in conseils:
+            self.assertGreater(bfk.read_png(c["apercu"]).width,
+                               bfk.read_png(c["detail_vu"]).width)
+
+    def test_les_formats_conseilles_encadrent_celui_qu_on_a_demande(self):
+        from bfk001.pipeline import Reglages, conseil_de_format, lire_image
+
+        image = lire_image(photo(120, 120))
+        conseils = conseil_de_format(image, 24, 24,
+                                     bfk.PROVISIONAL_PALETTE.solids_only(),
+                                     Reglages(studs=24, hauteur=24))
+        tailles = [c["studs_x"] for c in conseils]
+        self.assertEqual(tailles, sorted(tailles))
+        self.assertIn(24, tailles)
+        self.assertLess(min(tailles), 24)
+        self.assertGreater(max(tailles), 24)
+        # Plus grand veut dire plus de pieces et plus de detail, toujours.
+        for avant, apres in zip(conseils, conseils[1:]):
+            self.assertGreater(apres["pieces"], avant["pieces"])
+            self.assertLess(apres["detail"], avant["detail"])
+
+    def test_le_conseil_par_le_reseau_refuse_une_requete_sans_photo(self):
+        atelier = Atelier()
+        with self.assertRaises(ValueError):
+            atelier.conseiller({"reglages": {"studs": 16}})

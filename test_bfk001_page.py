@@ -198,6 +198,64 @@ class TestPageDansUnNavigateur(unittest.TestCase):
                          "aucun resultat ne doit s'afficher apres un refus")
 
     # ------------------------------------------------------------------ #
+    # Quel format ? La question la plus chere de la chaine
+    # ------------------------------------------------------------------ #
+
+    def test_le_conseil_de_format_se_demande_et_se_suit(self):
+        self.page.goto(self.base + "/", wait_until="load")
+        self.assertTrue(self.page.is_disabled("#demander_conseil"),
+                        "on ne conseille rien sans photo")
+        self.page.set_input_files("#fichier", str(self.photo))
+        self.page.wait_for_selector("#demander_conseil:not([disabled])",
+                                    timeout=15000)
+        self.page.fill("#studs", "16")
+        self.page.fill("#hauteur", "16")
+        self.page.click("#demander_conseil")
+        self.page.wait_for_selector("#conseil .choix", timeout=180000)
+
+        lignes = self.page.locator("#conseil .choix")
+        self.assertGreaterEqual(lignes.count(), 3)
+        texte = self.page.inner_text("#conseil")
+        self.assertIn("pieces", texte)
+        self.assertIn("cm", texte)
+
+        # Le format demande est signale, et un seul.
+        courants = self.page.eval_on_selector_all(
+            "#conseil .choix", "n => n.filter(c => c.ariaCurrent === 'true').length")
+        self.assertEqual(courants, 1)
+
+        # Suivre le conseil ne doit pas demander de retaper un nombre.
+        self.page.click("#conseil .choix:last-of-type")
+        self.assertNotEqual(self.page.input_value("#studs"), "16")
+        courants = self.page.eval_on_selector_all(
+            "#conseil .choix", "n => n.filter(c => c.ariaCurrent === 'true').length")
+        self.assertEqual(courants, 1)
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    def test_la_vignette_du_conseil_montre_le_detail_pas_l_oeuvre_entiere(self):
+        # Une vignette de l'oeuvre entiere a 74 pixels est identique pour tous
+        # les formats : elle decore. Le tiers central, lui, porte plus de
+        # tuiles quand le format grandit — et sa largeur NATURELLE le prouve.
+        self.page.goto(self.base + "/", wait_until="load")
+        self.page.set_input_files("#fichier", str(self.photo))
+        self.page.wait_for_selector("#demander_conseil:not([disabled])",
+                                    timeout=15000)
+        self.page.fill("#studs", "16")
+        self.page.fill("#hauteur", "16")
+        self.page.click("#demander_conseil")
+        self.page.wait_for_selector("#conseil .choix img", timeout=180000)
+        self.page.wait_for_timeout(300)
+        largeurs = self.page.eval_on_selector_all(
+            "#conseil .choix img", "n => n.map(i => i.naturalWidth)")
+        self.assertEqual(largeurs, sorted(largeurs), largeurs)
+        self.assertGreater(largeurs[-1], largeurs[0])
+        # Affichees a la MEME largeur : c'est ce qui rend la comparaison juste.
+        affichees = self.page.eval_on_selector_all(
+            "#conseil .choix img", "n => n.map(i => i.clientWidth)")
+        self.assertEqual(len(set(affichees)), 1, affichees)
+        self.assertEqual(self.incidents, [], "\n".join(self.incidents))
+
+    # ------------------------------------------------------------------ #
     # Les commandes qui ne sont pas des champs de saisie
     # ------------------------------------------------------------------ #
 

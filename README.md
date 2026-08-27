@@ -7,7 +7,7 @@ Principe directeur : **séparation stricte des autorités — géométrie → co
 → mécanique**. Arithmétique exacte dans ℤ³, immutabilité profonde, `PhysicalBond`
 opaque.
 
-État : **452 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
+État : **458 tests verts** (T1a–T14 + compléments + intégration H1–H6 + accroche
 LEGO réelle + couche CAO + conformité par tirage aléatoire + toute la couche
 LEGO Art : palette, mosaïque, relief, notice, atelier, commandes).
 
@@ -99,16 +99,28 @@ palette, pas par la taille : tripler la résolution ne le bouge que de 0,13.
 **Le détail, lui, s'améliore vraiment.** Mesuré aux mêmes points physiques
 quelle que soit la taille — sans quoi on compare deux échelles différentes :
 
+En ligne de commande avec `--conseil-format`, ou dans la page par le bouton
+**« Quel format choisir ? »** — qui montre, pour chaque format, **le même
+morceau de la scène à la même largeur**. C'est la seule vignette qui prouve
+quelque chose : l'œuvre entière à 74 pixels de large est identique pour 32 et
+pour 96 tenons. Cliquer une ligne choisit ce format.
+
 ```bash
 python3 demo_lego_art.py photo.jpg --studs 48 --conseil-format
 ```
 
 | format | pièces | détail | gain | pièces par 0,1 de gain |
 |---|---|---|---|---|
-| 32×48 | 1 060 | 9,89 | | |
-| **48×71** | 2 282 | 8,93 | +0,95 | **128** |
-| 72×106 | 4 606 | 8,32 | +0,61 | 380 |
-| 96×142 | 7 871 | 7,75 | +0,58 | 567 |
+| 32×48 · 29×42 cm | 1 090 | 9,86 | | |
+| **48×71 · 42×60 cm** | 2 254 | 8,96 | +0,90 | **130** |
+| 72×106 · 61×88 cm | 4 515 | 8,34 | +0,62 | 365 |
+| 96×142 · 80×117 cm | 7 626 | 7,78 | +0,57 | 549 |
+
+Les nombres de pièces sont **ceux que la chaîne fabriquera** — cadre, nettoyage
+et tramage automatique compris. La première version quantifiait de son côté et
+se trompait de −32 à +91 pièces, les écarts se compensant à moitié : les
+chiffres *paraissaient* justes. Le conseil et la fabrication passent désormais
+par la même fonction, `grille_livree`, pour qu'ils ne puissent plus diverger.
 
 Le coût de chaque pas de finesse **triple** entre 48 et 96 tenons. Le calcul se
 fait **par photo** : un portrait lisse et une façade ciselée n'ont pas le même

@@ -230,7 +230,8 @@ def main() -> int:
             1, round(options.studs * image.height / image.width))
         print(f"  format        pieces   detail   gain   pieces par 0,1 de gain")
         precedent = None
-        for etape in conseil_de_format(image, options.studs, hauteur, palette):
+        for etape in conseil_de_format(image, options.studs, hauteur,
+                                       palette, reglages):
             if precedent is None:
                 gain, cout = "", ""
             else:

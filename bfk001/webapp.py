@@ -36,7 +36,8 @@ from typing import Dict, Mapping, Optional, Tuple
 from . import bricklink, pickabrick
 from . import palette as palette_module
 from .palette import Palette
-from .pipeline import ModeleRefuse, Reglages, palette_utilisable, run
+from .pipeline import (ModeleRefuse, Reglages, conseil_de_format,
+                       lire_image, palette_utilisable, run)
 
 __all__ = ["PAGE", "Atelier", "servir", "creer_serveur", "TAILLE_MAXIMALE",
            "DOSSIER_DEFAUT", "CATALOGUES"]
@@ -191,6 +192,21 @@ PAGE = r"""<!doctype html>
   @media (prefers-reduced-motion:reduce) {
     button.brique, .teintes button, #zone { transition:none; }
   }
+
+  #conseil { display:none; margin-top:12px; }
+  #conseil.montre { display:block; }
+  #conseil .choix { display:flex; gap:10px; align-items:center;
+                    padding:8px; border-radius:10px; cursor:pointer;
+                    border:1px solid transparent; }
+  #conseil .choix:hover { border-color:var(--trait); background:var(--creux); }
+  #conseil .choix[aria-current=true] { border-color:var(--vif);
+                                       background:var(--creux); }
+  #conseil img { width:74px; border-radius:5px; flex:none;
+                 image-rendering:pixelated; border:1px solid var(--trait); }
+  #conseil b { display:block; font-size:13.5px; }
+  #conseil span { color:var(--doux); font-size:12px; line-height:1.35; }
+  #conseil .note { color:var(--doux); font-size:12px; margin:8px 0 0;
+                   display:block; }
 
   #resultat { display:none; }
   #resultat.montre { display:block; animation:apparait .35s ease-out; }
@@ -353,6 +369,9 @@ PAGE = r"""<!doctype html>
     </div>
     <span class="aide">48 tenons est le format des sets LEGO Art. Hauteur vide :
       les proportions de la photo sont gardees.</span>
+    <button type="button" class="brique mineur" id="demander_conseil" disabled>
+      Quel format choisir ?</button>
+    <div id="conseil"></div>
 
     <label>Cadre
       <span class="aide">Un tableau se cadre. Le cadre depasse la surface et
@@ -553,6 +572,7 @@ PAGE = r"""<!doctype html>
       zone.querySelector('span').textContent =
         Math.round(fichier.size / 1024) + ' Ko — cliquez pour changer';
       lancer.disabled = false;
+      demander.disabled = false;
     });
   }
 
@@ -581,6 +601,28 @@ PAGE = r"""<!doctype html>
   });
 
   function valeur(id) { return document.getElementById(id).value.trim(); }
+
+  // Une seule lecture du formulaire. Le conseil de format et la fabrication
+  // doivent porter sur les MEMES reglages : un conseil calcule avec un autre
+  // cadre ou un autre jeu de tuiles ne conseille rien.
+  function reglagesActuels() {
+    return {
+      studs: valeur('studs'),
+      hauteur: valeur('hauteur'),
+      relief: valeur('relief'),
+      references: valeur('references'),
+      tramage: valeur('tramage'),
+      couleurs: valeur('couleurs'),
+      cadrage: valeur('cadrage'),
+      seuils: valeur('seuils'),
+      debruitage: valeur('debruitage'),
+      sections: valeur('sections'),
+      cadre: valeur('cadre').split('|')[0],
+      cadre_couleur: valeur('cadre').split('|')[1] || '0',
+      profondeur_inversee: document.getElementById('inversee').checked,
+      titre: (champ.files[0] || {}).name || 'mosaique'
+    };
+  }
 
   // Un groupe de boutons qui se comportent comme des radios : un seul enfonce,
   // et c'est le champ cache ou le champ nombre qui porte la valeur reelle.
@@ -980,6 +1022,83 @@ PAGE = r"""<!doctype html>
     }
   }
 
+  // ---------------------------------------------------------------- //
+  // Quel format ? La question la plus chere de la chaine.
+  // ---------------------------------------------------------------- //
+  var demander = document.getElementById('demander_conseil');
+  var zoneConseil = document.getElementById('conseil');
+
+  demander.addEventListener('click', function () {
+    if (!photo) return;
+    var bouton = this;
+    bouton.disabled = true;
+    zoneConseil.textContent = 'Quatre formats mis en balance, une dizaine '
+      + 'de secondes...';
+    zoneConseil.classList.add('montre');
+    fetch('/conseil', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo: photo, reglages: reglagesActuels() })
+    }).then(function (r) {
+      return r.json().then(function (corps) {
+        if (!r.ok) throw new Error(corps.erreur || ('erreur ' + r.status));
+        return corps;
+      });
+    }).then(function (reponse) {
+      zoneConseil.textContent = '';
+      var precedent = null;
+      reponse.formats.forEach(function (f) {
+        var ligne = document.createElement('div');
+        ligne.className = 'choix';
+        ligne.setAttribute('aria-current',
+          String(f.studs_x === parseInt(valeur('studs'), 10)));
+        // Le tiers central, affiche a largeur constante : c'est la seule
+        // vignette qui montre la difference. L'oeuvre entiere a 56 pixels de
+        // large est identique pour 32 et pour 96 tenons.
+        var vue = document.createElement('img');
+        vue.src = f.detail_vu; vue.alt = '';
+        var texte = document.createElement('div');
+        var titre_ = document.createElement('b');
+        titre_.textContent = f.studs_x + '\u00d7' + f.studs_y + ' — '
+          + f.largeur_cm + '\u00d7' + f.hauteur_cm + ' cm';
+        var sous = document.createElement('span');
+        var mots = f.pieces + ' pieces';
+        if (precedent) {
+          var gain = precedent.detail - f.detail;
+          mots += ' \u00b7 +' + (f.pieces - precedent.pieces) + ' pour '
+            + gain.toFixed(2) + ' de detail gagne';
+        }
+        sous.textContent = mots;
+        texte.appendChild(titre_); texte.appendChild(sous);
+        ligne.appendChild(vue); ligne.appendChild(texte);
+        // Cliquer une ligne choisit ce format : le conseil doit pouvoir etre
+        // suivi sans retaper le nombre.
+        ligne.addEventListener('click', function () {
+          document.getElementById('studs').value = f.studs_x;
+          document.getElementById('hauteur').value = f.studs_y;
+          peindreFormats();
+          Array.prototype.forEach.call(zoneConseil.children, function (c) {
+            if (c.classList.contains('choix')) {
+              c.setAttribute('aria-current', String(c === ligne));
+            }
+          });
+        });
+        zoneConseil.appendChild(ligne);
+        precedent = f;
+      });
+      var note = document.createElement('span');
+      note.className = 'note';
+      note.textContent = 'Les vignettes montrent le MEME morceau de la scene, '
+        + 'a la meme largeur : la version fine y met plus de tuiles, et la '
+        + 'difference se voit. Le detail est l\'ecart a la photo mesure a '
+        + 'finesse constante ; l\'ecart par tuile, lui, est borne par la '
+        + 'palette et ne bouge presque pas avec la taille.';
+      zoneConseil.appendChild(note);
+    }).catch(function (raison) {
+      zoneConseil.textContent = String(raison.message || raison);
+    }).finally(function () { bouton.disabled = false; });
+  });
+
   document.getElementById('formulaire').addEventListener('submit', function (e) {
     e.preventDefault();
     if (!photo) return;
@@ -996,22 +1115,7 @@ PAGE = r"""<!doctype html>
       body: JSON.stringify({
         photo: photo,
         carte_profondeur: carte,
-        reglages: {
-          studs: valeur('studs'),
-          hauteur: valeur('hauteur'),
-          relief: valeur('relief'),
-          references: valeur('references'),
-          tramage: valeur('tramage'),
-          couleurs: valeur('couleurs'),
-          cadrage: valeur('cadrage'),
-          seuils: valeur('seuils'),
-          debruitage: valeur('debruitage'),
-          sections: valeur('sections'),
-          cadre: valeur('cadre').split('|')[0],
-          cadre_couleur: valeur('cadre').split('|')[1] || '0',
-          profondeur_inversee: document.getElementById('inversee').checked,
-          titre: (champ.files[0] || {}).name || 'mosaique'
-        }
+        reglages: reglagesActuels()
       })
     }).then(function (r) {
       return r.json().then(function (corps) {
@@ -1365,6 +1469,33 @@ class Atelier:
         with self._verrou:
             return self._resultats[jeton][nom]
 
+    def conseiller(self, requete: dict) -> dict:
+        """Met quatre formats en balance sur CETTE photo. Leve ValueError.
+
+        La reponse porte un apercu par format : un ecart de 0,61 delta E ne dit
+        rien a personne, une vignette si.
+        """
+        photo = _decoder(requete.get("photo"), "photo")
+        if photo is None:
+            raise ValueError("aucune photo")
+        reglages = _reglages(requete.get("reglages") or {})
+        image = lire_image(photo)
+        hauteur = reglages.hauteur or max(
+            1, round(reglages.studs * image.height / image.width))
+        with self._verrou:
+            palette = self.palette
+        conseils = conseil_de_format(image, reglages.studs, hauteur, palette,
+                                     reglages)
+        return {"formats": [
+            {"studs_x": c["studs_x"], "studs_y": c["studs_y"],
+             "largeur_cm": c["largeur_cm"], "hauteur_cm": c["hauteur_cm"],
+             "pieces": c["pieces"], "detail": round(c["detail"], 2),
+             "apercu": "data:image/png;base64,"
+                       + base64.b64encode(c["apercu"]).decode(),
+             "detail_vu": "data:image/png;base64,"
+                          + base64.b64encode(c["detail_vu"]).decode()}
+            for c in conseils]}
+
     def archive(self, jeton: str) -> bytes:
         """Le dossier complet, en ZIP. Leve KeyError si le jeton a expire."""
         with self._verrou:
@@ -1540,7 +1671,7 @@ class _Gestionnaire(BaseHTTPRequestHandler):
             self._repondre(200, "application/json; charset=utf-8",
                            json.dumps(reponse).encode("utf-8"))
             return
-        if chemin not in ("/fabriquer", "/catalogues"):
+        if chemin not in ("/fabriquer", "/catalogues", "/conseil"):
             self._erreur(404, "page inconnue")
             return
         try:
@@ -1570,6 +1701,15 @@ class _Gestionnaire(BaseHTTPRequestHandler):
                     reponse = self.atelier.oublier_catalogues()
                 else:
                     reponse = self.atelier.definir_catalogues(requete)
+            except ValueError as raison:
+                self._erreur(400, str(raison))
+                return
+            self._repondre(200, "application/json; charset=utf-8",
+                           json.dumps(reponse).encode("utf-8"))
+            return
+        if chemin == "/conseil":
+            try:
+                reponse = self.atelier.conseiller(requete)
             except ValueError as raison:
                 self._erreur(400, str(raison))
                 return

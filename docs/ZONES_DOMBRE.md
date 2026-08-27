@@ -2746,6 +2746,64 @@ qu'on pose une fois avant d'acheter, pas à chaque fabrication.
 
 ---
 
+### 5.64 Le conseil de format dans la page — et le même défaut, refait un commit plus tard
+
+Avant d'ajouter quoi que ce soit à l'interface, j'ai vérifié ce que je venais
+de livrer. Bien m'en a pris.
+
+#### Le conseil ne conseillait pas sur ce qu'il allait fabriquer
+
+`conseil_de_format` quantifiait **de son côté** : sans cadre, sans nettoyage
+des tuiles isolées, sans tramage automatique. Il annonçait donc des nombres de
+pièces faux :
+
+| format | annoncé | livré | écart |
+|---|---|---|---|
+| 32 tenons | 1 082 | 1 114 | −32 |
+| 48 tenons | 2 282 | 2 254 | +28 |
+| 72 tenons | 4 606 | 4 515 | +91 |
+
+Le pire n'est pas l'ampleur, c'est que les erreurs **se compensaient à moitié**
+— le cadre ajoute des pièces, le nettoyage en retire — et que les chiffres
+*paraissaient* donc plausibles. Un utilisateur les emploie pour décider
+d'acheter deux mille pièces.
+
+C'est **exactement** le défaut du § 5.61, refait un commit plus tard : évaluer
+une grille qui n'est pas celle qu'on livre. Deux fois la même erreur, c'est que
+le problème n'était pas l'inattention mais la **duplication** — deux endroits
+construisaient la grille, ils ont divergé.
+
+D'où `grille_livree` et `mosaique_livree` : une seule fonction chacune,
+appelée par la chaîne comme par le conseil. Vérifié à zéro pièce d'écart sur
+sept configurations qui touchent chacune un maillon différent — sans cadre,
+cadre épais, relief, jeu de tuiles large, sans nettoyage, tramage imposé.
+
+#### La vignette que j'avais mise ne montrait rien
+
+Premier jet : une vignette de l'œuvre entière, 56 pixels de large. À cette
+taille, une mosaïque de 96 tenons et une de 32 se ressemblent **exactement**.
+L'image censée montrer le gain de détail décorait.
+
+Ce qui le montre : le **tiers central** de chaque candidat, affiché à largeur
+constante. C'est le même morceau de la scène — la photo est la même —, et la
+version fine y met trois fois plus de tuiles. La main et la montre du sujet
+apparaissent progressivement de 32 à 96 tenons. Un test vérifie la propriété
+qui compte : les largeurs *naturelles* croissent, les largeurs *affichées* sont
+identiques.
+
+#### Une troisième duplication, évitée celle-là
+
+Le panneau de conseil devait envoyer les réglages courants. Ils étaient
+construits en ligne dans le gestionnaire de soumission. Les recopier aurait
+créé la même divergence que ci-dessus, dans le navigateur cette fois : un
+conseil calculé avec un autre cadre ou un autre jeu de tuiles ne conseille
+rien. `reglagesActuels()` lit le formulaire une seule fois, pour les deux.
+
+Trois duplications rencontrées dans la même heure, dont deux déjà devenues des
+bugs. C'est le motif de la journée, et il valait d'être écrit.
+
+---
+
 ## 6. Où en est-on de la demande produit
 
 > photo → modélisation LEGO Art hyper précise → liste de course → notice de montage

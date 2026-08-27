@@ -313,6 +313,37 @@ def carte_de_relief(image, origine, cadrage, brut, reglages, hauteur,
     ), "CONVENTION du bas-relief, clair = haut — aucune profondeur mesuree"
 
 
+def grille_livree(image, palette, studs_x: int, studs_y: int, reglages):
+    """La grille TELLE QUE LA CHAINE LA LIVRE : quantifiee, puis nettoyee.
+
+    Existe pour une raison precise. Le conseil de format quantifiait de son
+    cote, sans cadre, sans nettoyage et sans tramage automatique — et annoncait
+    donc des nombres de pieces faux de -32 a +91 par rapport a ce que la chaine
+    fabrique vraiment. Les ecarts se compensaient a moitie, ce qui est le pire
+    des cas : les chiffres paraissaient justes.
+
+    C'est exactement le defaut du § 5.61, refait un commit plus tard : evaluer
+    une grille qui n'est pas celle qu'on livre. Deux fois la meme erreur veut
+    dire que le probleme n'etait pas l'inattention mais la DUPLICATION. Une
+    seule fonction, donc, appelee des deux cotes.
+    """
+    grille = mosaic.quantize(
+        image, palette, studs_x, studs_y, TRAMAGES[reglages.tramage],
+        "stretch", denoise_tolerance=reglages.debruitage,
+    )
+    if reglages.debruitage:
+        grille = mosaic.denoise(grille, image, reglages.debruitage, "stretch")
+    return grille
+
+
+def mosaique_livree(grille, reglages, elevations=None):
+    """L'oeuvre telle qu'elle sera batie, cadre compris."""
+    return mosaic.build(
+        grille, tiles=JEUX_DE_TUILES[reglages.references], heights=elevations,
+        frame=reglages.cadre, frame_color=reglages.cadre_couleur,
+    )
+
+
 FORMATS_CONSEILLES = (0.67, 1.0, 1.5, 2.0)
 """Multiples de la taille demandee qu'on met en balance.
 
@@ -322,7 +353,7 @@ la courbe se casse, sans facturer six quantifications a qui pose la question.
 
 
 def conseil_de_format(image, studs_x: int, studs_y: int, palette,
-                      tramage=False, cadrage=0.5,
+                      reglages=None, cadrage=0.5,
                       multiples=FORMATS_CONSEILLES):
     """Ce que chaque format gagne en detail, et ce qu'il coute en pieces.
 
@@ -348,17 +379,43 @@ def conseil_de_format(image, studs_x: int, studs_y: int, palette,
     # format sur sa propre echelle ne comparerait rien.
     mesure = mosaic.grille_de_mesure(*tailles[-1])
 
+    if reglages is None:
+        reglages = Reglages(studs=studs_x, hauteur=studs_y)
+
     conseils = []
     for cote, hauteur in tailles:
         cadree = mosaic._cadrer(image, cote, hauteur, "crop", cadrage)
-        grille = mosaic.quantize(cadree, palette, cote, hauteur, tramage,
-                                 "stretch")
+        grille = grille_livree(cadree, palette, cote, hauteur, reglages)
+        elevations = None
+        if reglages.relief:
+            # Le relief ajoute des plates, et il faut donc les compter. Un
+            # conseil qui l'ignore annonce une oeuvre moins chere que celle
+            # qu'on fabriquera.
+            elevations = mosaic.relief_from_image(
+                cadree, cote, hauteur, reglages.relief,
+                thresholds=reglages.seuils, fit="stretch")
+        oeuvre = mosaique_livree(grille, reglages, elevations)
+        rvb_cadre = next(
+            (c.rgb for c in palette if c.code == reglages.cadre_couleur), None)
+        vue = mosaic.preview(oeuvre, scale=4, frame_rgb=rvb_cadre)
+        # Le TIERS CENTRAL, et c'est le seul apercu qui prouve quelque chose.
+        # Une vignette de l'oeuvre entiere a 56 pixels de large montre la meme
+        # chose pour 32 et pour 96 tenons — elle decore, elle n'informe pas.
+        # Le meme morceau de scene, affiche a la meme largeur, porte trois fois
+        # plus de tuiles dans la version fine : la difference se VOIT.
+        tiers = imaging.crop(
+            vue, vue.width // 3, vue.height // 3,
+            max(1, vue.width // 3), max(1, vue.height // 3))
         conseils.append({
+            # Un apercu vaut mieux qu'un ecart de 0,61 delta E : personne ne
+            # decide d'acheter cinq mille pieces sur un nombre abstrait.
+            "apercu": write_png(vue),
+            "detail_vu": write_png(tiers),
             "studs_x": cote,
             "studs_y": hauteur,
-            "largeur_cm": round(cote * 0.8),
-            "hauteur_cm": round(hauteur * 0.8),
-            "pieces": mosaic.build(grille, frame=0).part_count,
+            "largeur_cm": round(oeuvre.outer_x * 0.8),
+            "hauteur_cm": round(oeuvre.outer_y * 0.8),
+            "pieces": oeuvre.part_count,
             "detail": mosaic.detail_gap(grille, cadree, cote, hauteur, mesure),
         })
     return conseils
@@ -525,7 +582,8 @@ def run(
     grille = mosaic.quantize(
         image, palette, reglages.studs, hauteur, TRAMAGES[reglages.tramage],
         "stretch", denoise_tolerance=reglages.debruitage,
-    )
+    )   # meme appel que `grille_livree` ; le nettoyage suit plus bas, entoure
+        # du journal qui compte les tuiles effacees.
     # Le tramage est un ARBITRAGE, pas un reglage technique : il achete de la
     # justesse tonale avec du grain visible. `blending_tiles` dit que l'oeil ne
     # fond jamais deux tuiles de 8 mm, a aucune distance — le grain se verra
@@ -591,10 +649,7 @@ def run(
     # couverture et aux vues de bande. Elle porte donc TOUJOURS le cadre, meme
     # quand l'oeuvre est decoupee — sinon la decoupe changerait l'image montree
     # a l'utilisateur, alors qu'elle ne change rien a l'oeuvre.
-    mosaique = mosaic.build(
-        grille, tiles=JEUX_DE_TUILES[reglages.references], heights=elevations,
-        frame=reglages.cadre, frame_color=reglages.cadre_couleur,
-    )
+    mosaique = mosaique_livree(grille, reglages, elevations)
     # Ce qu'on LIVRE : l'assemblage quand l'oeuvre est decoupee, l'oeuvre
     # elle-meme sinon. Tout ce qui se compte — pieces, lots, etapes — se compte
     # ici, et non sur `mosaique`, qui ne serait alors qu'une vue de travail.

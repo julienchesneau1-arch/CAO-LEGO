@@ -334,10 +334,22 @@ def test_le_conseil_de_format_met_les_formats_en_balance():
         (int(30 + 200 * x / n), int(70 + 140 * y / n), (x * y) % 251)
         for y in range(n) for x in range(n)])
 
-    conseils = conseil_de_format(image, 24, 24, palette, multiples=(1.0, 2.0))
+    from bfk001.pipeline import Reglages
+
+    reglages = Reglages(studs=24, hauteur=24)
+    conseils = conseil_de_format(image, 24, 24, palette, reglages,
+                                 multiples=(1.0, 2.0))
     assert [c["studs_x"] for c in conseils] == [24, 48]
     # Plus grand : plus de pieces, et plus de detail.
     assert conseils[1]["pieces"] > conseils[0]["pieces"]
     assert conseils[1]["detail"] < conseils[0]["detail"]
-    # Les centimetres suivent le pas de 8 mm.
-    assert conseils[0]["largeur_cm"] == round(24 * 0.8)
+    # Les centimetres sont ceux de l'oeuvre HORS TOUT, cadre compris : c'est
+    # la mesure qu'on prend contre un mur, et le cadre par defaut ajoute deux
+    # tenons de chaque cote.
+    hors_tout = 24 + 2 * reglages.cadre
+    assert conseils[0]["largeur_cm"] == round(hors_tout * 0.8)
+    # Sans cadre, la taille redescend a celle de l'image seule.
+    nu = conseil_de_format(image, 24, 24, palette,
+                           Reglages(studs=24, hauteur=24, cadre=0),
+                           multiples=(1.0,))[0]
+    assert nu["largeur_cm"] == round(24 * 0.8)
