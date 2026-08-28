@@ -3834,6 +3834,75 @@ catalogue, rien ne change — la règle de finition reste, et le journal reste
 muet.
 
 
+### 5.73 H2 coûtait 45 % de la chaîne — trois fois plus qu'il ne devait
+
+La résolution est le seul levier contre l'effet de pixels (§ 5.72), et elle
+coûtait cher : 33 s à 96×128 tenons. Le profil désigne un coupable unique —
+`check_h2_collision`, **45 % de toute la chaîne**.
+
+#### Trois gaspillages, tous corrigés sans changer un bit du résultat
+
+**1. Neuf découpes sur dix ne touchaient rien.** `solid_overlap` retire les
+vides de la zone examinée, un par un, en découpant les morceaux. Mesuré sur une
+mosaïque réelle de 1588 pièces : les grandes plates du substrat portent jusqu'à
+**226 vides**, et sur les 449 214 découpes examinées, **91,2 % ne touchaient
+même pas la zone étudiée**. La boucle les traversait toutes, pour chaque
+morceau déjà découpé.
+
+L'élagage est **prouvable**, pas heuristique : `pieces` part de `(base,)` et
+`_subtract_box` ne rend que des sous-boîtes de son argument. Par récurrence,
+tout morceau est inclus dans `base` ; un vide disjoint de `base` est donc
+disjoint de chaque morceau.
+
+**2. Huit coins transformés au lieu de deux.** `Orientation` n'accepte que des
+coefficients dans {−1, 0, 1} avec M^T M = I — cela force exactement une valeur
+non nulle par ligne et par colonne, soit une **permutation signée des axes**.
+Le noyau en accepte donc exactement **24**, vérifié en force brute sur les 3⁹
+combinaisons de coefficients. Chaque coordonnée de sortie vaut alors ± une
+seule coordonnée d'entrée : ses extrêmes viennent de `min` et `max`. Deux coins
+suffisent. Vérifié sur les 24 orientations × 40 boîtes tirées au hasard : zéro
+désaccord.
+
+**3. Le même calcul fait deux fois.** `intersection_aabb` appelait
+`geometric_relation`, qui calcule les intervalles de recouvrement, puis les
+recalculait pour bâtir le résultat — sur 2,7 millions d'appels. Le critère est
+désormais écrit sur place, donc il **peut dériver** : c'est le seul risque du
+changement, et un test compare les deux sur 40 000 paires tirées au hasard.
+
+#### Le résultat
+
+| | avant | après |
+|---|---:|---:|
+| contrôle à 48×64 | 3,85 s | **0,72 s** |
+| total à 48×64 | ~13 s | **5,4 s** |
+| contrôle à 96×128 | 14,77 s | **3,26 s** |
+| total à 96×128 | ~33 s | **13,1 s** |
+| la suite complète | 4 min 52 | **2 min 23** |
+
+**Identique au bit près.** Six configurations — relief, sections, sans cadre,
+tuiles minimales et larges — comparées par 74 empreintes SHA-256 portant sur
+tous les fichiers livrés, les mesures et le journal. Seules les durées écoulées
+diffèrent, et elles ont été neutralisées pour que la comparaison porte sur le
+contenu et non sur le chronomètre.
+
+#### Le risque réel de ce commit, et comment il est tenu
+
+Une optimisation qui rendrait H2 **aveugle** serait le pire défaut possible de
+ce dépôt : un invariant vert qui ne veut rien dire. Les tests ne mesurent donc
+pas la vitesse, ils construisent des pénétrations réelles et vérifient qu'elles
+sont toujours vues — y compris quand le vide qui compte est **noyé parmi 220
+inutiles en ordre aléatoire**, et quand un vide tangent de volume nul ne doit
+rien retirer.
+
+#### Ce que le profil dit maintenant
+
+H2 est passé de 47,7 à 11,2 s de profil et n'est plus dominant. Les trois coûts
+sont désormais du même ordre : H2 (11,2 s), la notice (9,3 s, dont 7,2 s dans
+`resample_box` sur **1708 appels** pour à peine soixante-dix dessins distincts)
+et le décodage JPEG (7,6 s). La redondance de la notice est le prochain
+gisement évident.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter

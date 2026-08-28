@@ -992,3 +992,208 @@ class TestUnEnTeteNeSeCroitPas(unittest.TestCase):
         relu = bfk.read_png(bfk.write_png(image))
         self.assertEqual(relu.data, image.data,
                          "une image ordinaire traverse la borne inchangee")
+
+
+# =============================================================================
+# Elaguer les decoupes sans jamais rendre H2 aveugle
+# =============================================================================
+
+
+class TestLElagageDesVidesEstExact(unittest.TestCase):
+    """`solid_overlap` ecarte les vides disjoints de la base. C'est PROUVABLE.
+
+    `pieces` part de `(base,)` et `_subtract_box` ne rend que des sous-boites
+    de son argument : par recurrence, tout morceau est inclus dans `base`. Un
+    vide disjoint de `base` est donc disjoint de chaque morceau, et le passer
+    dans la boucle ne peut rien retirer.
+
+    L'enjeu n'est pas la vitesse mais le contraire : une optimisation qui
+    rendrait H2 AVEUGLE serait le pire defaut possible de ce depot — un
+    invariant vert qui ne veut rien dire. D'ou ces cas, construits pour que
+    le vide qui compte soit noye parmi ceux qui ne comptent pas.
+    """
+
+    @staticmethod
+    def boite(x0, y0, z0, x1, y1, z1):
+        from bfk001.geometry import AABB, LDUVector
+        return AABB(LDUVector(x0, y0, z0), LDUVector(x1, y1, z1))
+
+    def loin(self, combien=220):
+        """Des vides tres a l'ecart : ils ne peuvent rien retirer."""
+        return tuple(self.boite(1000 + i * 10, 0, 0, 1005 + i * 10, 5, 5)
+                     for i in range(combien))
+
+    def setUp(self):
+        from bfk001.collision import solid_overlap
+        from bfk001.geometry import intersection_aabb
+        self.recouvrement = solid_overlap
+        self.intersection = intersection_aabb
+        self.a = self.boite(0, 0, 0, 100, 100, 100)
+        self.vide = self.boite(40, 40, 40, 60, 60, 60)
+
+    def test_un_corps_loge_dans_le_vide_ne_penetre_pas(self):
+        b = self.boite(45, 45, 45, 55, 55, 55)
+        resultat = self.recouvrement(
+            self.intersection(self.a, b), self.a,
+            (self.vide,) + self.loin(), b, ())
+        self.assertIsNone(resultat, "loge dans le vide : CONTACT, pas PENETRATION")
+
+    def test_le_meme_vide_NOYE_parmi_220_inutiles_compte_toujours(self):
+        import random
+        b = self.boite(45, 45, 45, 55, 55, 55)
+        melange = list(self.loin()) + [self.vide]
+        random.Random(3).shuffle(melange)
+        self.assertIsNone(
+            self.recouvrement(self.intersection(self.a, b), self.a,
+                              tuple(melange), b, ()),
+            "l'ordre des vides ne doit rien changer")
+
+    def test_un_corps_qui_DEBORDE_du_vide_est_toujours_vu(self):
+        # Le cas qui compte : si l'elagage effacait le vide utile, on
+        # trouverait plus de matiere ; s'il effacait la detection, moins.
+        b = self.boite(45, 45, 45, 70, 55, 55)
+        avec_bruit = self.recouvrement(
+            self.intersection(self.a, b), self.a,
+            (self.vide,) + self.loin(), b, ())
+        sans_bruit = self.recouvrement(
+            self.intersection(self.a, b), self.a, (self.vide,), b, ())
+        self.assertIsNotNone(avec_bruit, "le debordement est une PENETRATION")
+        self.assertEqual(
+            sorted((r.min, r.max) for r in avec_bruit),
+            sorted((r.min, r.max) for r in sans_bruit),
+            "les vides lointains ne changent pas la region trouvee")
+
+    def test_sans_le_vide_utile_la_penetration_est_franche(self):
+        b = self.boite(45, 45, 45, 55, 55, 55)
+        self.assertIsNotNone(
+            self.recouvrement(self.intersection(self.a, b), self.a,
+                              self.loin(), b, ()),
+            "sans vide, un corps entierement dedans PENETRE")
+
+    def test_un_vide_qui_touche_la_base_sans_volume_ne_retire_rien(self):
+        # Contact de volume nul : `intersection_aabb` rend None, et retirer
+        # une tranche d'epaisseur nulle ne retire aucune matiere. L'elagage
+        # doit se comporter comme la boucle complete.
+        b = self.boite(45, 45, 45, 55, 55, 55)
+        base = self.intersection(self.a, b)
+        tangent = self.boite(55, 45, 45, 65, 55, 55)   # colle a la face x=55
+        avec = self.recouvrement(base, self.a, (tangent,), b, ())
+        sans = self.recouvrement(base, self.a, (), b, ())
+        self.assertEqual(
+            sorted((r.min, r.max) for r in avec or ()),
+            sorted((r.min, r.max) for r in sans or ()),
+            "un vide tangent ne retire rien, elague ou non")
+
+
+class TestDeuxCoinsValentHuit(unittest.TestCase):
+    """`transform_aabb` ne transforme plus que deux coins. C'est EXACT.
+
+    `Orientation` n'accepte que des coefficients dans {-1, 0, 1} avec
+    M^T M = I : cela force exactement une valeur non nulle par ligne et par
+    colonne — une permutation SIGNEE des axes. Chaque coordonnee de sortie
+    vaut donc +/- une seule coordonnee d'entree, et ses extremes viennent des
+    extremes de celle-la : `min` et `max`.
+
+    Le raisonnement est court, ce qui le rend facile a croire a tort. Ces
+    tests le verifient sur les 24 orientations plutot que sur deux.
+    """
+
+    def toutes_les_orientations(self):
+        import itertools
+        from bfk001.geometry import Orientation
+        trouvees = []
+        for coefficients in itertools.product((-1, 0, 1), repeat=9):
+            try:
+                trouvees.append(Orientation(*coefficients))
+            except (ValueError, TypeError):
+                pass
+        return trouvees
+
+    def test_le_noyau_n_accepte_exactement_que_les_24_rotations(self):
+        # La demonstration repose entierement sur cette contrainte : si une
+        # 25e orientation passait, le raccourci deviendrait faux.
+        self.assertEqual(len(self.toutes_les_orientations()), 24)
+
+    def test_deux_coins_donnent_le_meme_resultat_que_huit(self):
+        import random
+        from bfk001.geometry import (AABB, LDUVector, transform_aabb,
+                                     transform_local_to_world)
+
+        def par_huit(boite, pose):
+            coins = [transform_local_to_world(LDUVector(x, y, z), pose)
+                     for x in (boite.min.x, boite.max.x)
+                     for y in (boite.min.y, boite.max.y)
+                     for z in (boite.min.z, boite.max.z)]
+            return AABB(
+                LDUVector(min(c.x for c in coins), min(c.y for c in coins),
+                          min(c.z for c in coins)),
+                LDUVector(max(c.x for c in coins), max(c.y for c in coins),
+                          max(c.z for c in coins)))
+
+        tirage = random.Random(11)
+        essais = 0
+        for orientation in self.toutes_les_orientations():
+            for _ in range(20):
+                x, y, z = (tirage.randint(-200, 200) for _ in range(3))
+                boite = AABB(
+                    LDUVector(x, y, z),
+                    LDUVector(x + tirage.randint(1, 80),
+                              y + tirage.randint(1, 80),
+                              z + tirage.randint(1, 80)))
+                pose = (LDUVector(tirage.randint(-500, 500),
+                                  tirage.randint(-500, 500),
+                                  tirage.randint(-500, 500)), orientation)
+                self.assertEqual(transform_aabb(boite, pose),
+                                 par_huit(boite, pose))
+                essais += 1
+        self.assertEqual(essais, 24 * 20)
+
+
+class TestIntersectionEtRelationNeDiventJamaisPasPareil(unittest.TestCase):
+    """`intersection_aabb` ne passe plus par `geometric_relation`.
+
+    Elle appliquait le critere en appelant la relation, puis recalculait les
+    intervalles pour batir le resultat : deux fois le meme travail sur 2,7
+    millions d'appels. Le critere est desormais ecrit sur place — donc il peut
+    DERIVER, et c'est le seul risque de ce changement.
+    """
+
+    def test_les_deux_sont_d_accord_sur_quarante_mille_paires(self):
+        import random
+        from bfk001.geometry import (AABB, GeometricRelation, LDUVector,
+                                     geometric_relation, intersection_aabb)
+
+        tirage = random.Random(5)
+
+        def boite():
+            x, y, z = (tirage.randint(-40, 40) for _ in range(3))
+            return AABB(LDUVector(x, y, z),
+                        LDUVector(x + tirage.randint(0, 50),
+                                  y + tirage.randint(0, 50),
+                                  z + tirage.randint(0, 50)))
+
+        desaccords = 0
+        for _ in range(40000):
+            a, b = boite(), boite()
+            attendu = (geometric_relation(a, b)
+                       is GeometricRelation.OVERLAPPING)
+            if (intersection_aabb(a, b) is not None) != attendu:
+                desaccords += 1
+        self.assertEqual(desaccords, 0)
+
+    def test_un_contact_de_volume_nul_ne_rend_rien(self):
+        from bfk001.geometry import AABB, LDUVector, intersection_aabb
+        a = AABB(LDUVector(0, 0, 0), LDUVector(10, 10, 10))
+        for touche in (AABB(LDUVector(10, 0, 0), LDUVector(20, 10, 10)),
+                       AABB(LDUVector(10, 10, 0), LDUVector(20, 20, 10)),
+                       AABB(LDUVector(10, 10, 10), LDUVector(20, 20, 20))):
+            self.assertIsNone(intersection_aabb(a, touche),
+                              "face, arete ou sommet : volume nul")
+
+    def test_elle_refuse_toujours_ce_qui_n_est_pas_un_AABB(self):
+        from bfk001.geometry import AABB, LDUVector, intersection_aabb
+        a = AABB(LDUVector(0, 0, 0), LDUVector(10, 10, 10))
+        with self.assertRaises(TypeError):
+            intersection_aabb(a, "pas une boite")
+        with self.assertRaises(TypeError):
+            intersection_aabb(None, a)
