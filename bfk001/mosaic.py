@@ -47,6 +47,7 @@ __all__ = [
     "grille_de_mesure",
     "detail_gap",
     "DITHER_AUTO_MIN_GAIN",
+    "arbitrage_du_tramage",
     "DITHER_GRAIN_TOLERANCE",
     "PaletteCost",
     "palette_cost_curve",
@@ -335,40 +336,39 @@ def quantize(
         # Le cadrage et le reechantillonnage sont faits UNE fois et partages :
         # les repeter pour chacune des deux quantifications triplerait le
         # travail le plus cher de la chaine sur une photo de douze megapixels.
-        cadree = _cadrer(image, studs_x, studs_y, fit, offset)
-        reduite = resample_box(cadree, studs_x, studs_y)
-        sans = _quantifier(reduite, palette, studs_x, studs_y, False)
-        avec = _quantifier(reduite, palette, studs_x, studs_y, "adaptive")
-        if denoise_tolerance > 0:
-            juge_sans = denoise(sans, cadree, denoise_tolerance, "stretch", 0.5)
-            juge_avec = denoise(avec, cadree, denoise_tolerance, "stretch", 0.5)
-        else:
-            juge_sans, juge_avec = sans, avec
-
-        # Le critere reste le PIRE ecart tonal, et une limite connue de cette
-        # mesure vaut d'etre ecrite ici plutot que decouverte deux fois.
+        # CE CRITERE EST FAUX SUR LES PHOTOGRAPHIES, et ce n'est plus lui qui
+        # decide par defaut (`Reglages.tramage` vaut "aucun"). Il reste ici
+        # parce qu'on peut le demander, et parce que ce qui a ete essaye pour
+        # le reparer merite d'etre ecrit une fois plutot que refait quatre.
         #
-        # Un ecart tonal se mesure sur la MOYENNE d'un bloc de 4x4 tuiles, et
-        # une moyenne ne voit pas le grain qu'elle moyenne : deux damiers de
-        # tons opposes ont la meme moyenne qu'un aplat. Sur une photo reelle le
-        # critere a donc annonce +3,64 en faveur du tramage, et l'oeuvre livree
-        # etait un semis de confettis dans le ciel — a mon oeil, moins belle que
-        # la version nette.
+        # Il tranche sur le PIRE ecart tonal, mesure sur la MOYENNE de blocs de
+        # 4x4 tuiles — et une moyenne ne voit pas le grain qu'elle moyenne. Sur
+        # six photographies reelles il a declenche trois fois, et les trois fois
+        # la version nette etait meilleure ou equivalente a l'oeil.
         #
-        # J'ai essaye d'ajouter une condition de grain, mesuree par
-        # `detail_gap`, qui lui voit le semis. Elle corrige bien ce cas. Mais
-        # elle refuse AUSSI le degrade pur, ou le tramage ne seme pas : il pose
-        # une ceinture d'une tuile le long de chaque bord de bande, et cela
-        # adoucit vraiment la transition. La perte de detail y vaut -0,12 contre
-        # -0,13 sur la photo : la MEME grandeur pour un verdict visuel oppose.
-        # Aucun seuil ne les separe — la photo a meme le plus GROS gain tonal.
+        # QUATRE grandeurs ont ete essayees pour separer « le tramage aide » de
+        # « le tramage nuit ». Toutes pointent a l'envers de l'oeil :
         #
-        # Ajouter cette condition rendrait « auto » muet : il ne se declencherait
-        # plus nulle part. Imposer cela sur la foi d'un seul jugement a l'oeil
-        # serait echanger un defaut verifie contre un autre. Le critere reste
-        # donc celui-ci, et la chaine DIT desormais ce que le tramage coute en
-        # grain — a qui regarde de trancher, en un mot (`--tramage aucun`).
-        gain = fidelity(juge_sans, cadree, 4)[1] - fidelity(juge_avec, cadree, 4)[1]
+        #   grandeur                     degrade (aide)   photo (nuit)
+        #   gain tonal                             1,34           3,64
+        #   tuiles isolees ajoutees               43,8 %         17,6 %
+        #   tuiles derapees > 12 delta E          +8,8 %         +0,1 %
+        #   faux contours a corriger               3,98 %         8,16 %
+        #
+        # La derniere ligne est la plus parlante : le faux contour est le defaut
+        # EXACT que le tramage existe pour corriger, et les photos en ont deux
+        # fois plus que les degrades — la ou il est pourtant le plus laid.
+        #
+        # La difference n'est donc pas dans le tramage : elle est dans ce qu'il
+        # REMPLACE. Une bande franche sur un champ lisse est tres saillante ;
+        # une photographie n'en a pas. Et le seul objet parfaitement lisse du
+        # jeu d'essai est un degrade synthetique, que personne ne photographie.
+        #
+        # Qui voudra rouvrir ce critere devra donc trouver autre chose que ces
+        # quatre-la — ou constater, comme ici, que le defaut valait mieux que
+        # le seuil (§ 5.66, § 5.69, § 5.71 du registre).
+        sans, avec, gain = arbitrage_du_tramage(
+            image, palette, studs_x, studs_y, fit, offset, denoise_tolerance)
         if rapport is not None:
             # Le gain etait CALCULE puis jete, et le journal ne montrait que le
             # cout. Un arbitrage dont on ne publie qu'un cote n'est pas un
@@ -624,6 +624,50 @@ def _quantifier(reduced, palette, studs_x, studs_y, dither):
                         buffer[ny][nx][i] += error[i] * weight / 16
         grid.append(row)
     return tuple(tuple(row) for row in grid)
+
+
+def arbitrage_du_tramage(image: Image, palette: Palette, studs_x: int,
+                         studs_y: int, fit: str = "crop", offset=0.5,
+                         denoise_tolerance: float = 0.0):
+    """(grille nette, grille tramee, gain tonal). UNE seule implementation.
+
+    Existe pour deux raisons.
+
+    D'ABORD parce que la decision et son compte rendu doivent sortir du meme
+    calcul. Ce depot a deja paye deux fois le prix d'une evaluation qui se
+    dedouble (§ 5.61, § 5.64) : deux copies derivent, et les chiffres annonces
+    cessent de decrire ce qu'on livre.
+
+    ENSUITE parce que la chaine ne trame plus par defaut mais doit continuer a
+    DIRE ce que le tramage aurait donne. Sans cette fonction, le journal aurait
+    refait le calcul de son cote — exactement le defaut precedent.
+
+    Le critere est le PIRE ecart tonal, pas le moyen : le travail du tramage est
+    de supprimer les echecs francs — bandes, faux contours —, pas de grappiller
+    une moyenne.
+
+    `denoise_tolerance` n'est pas un raffinement : sans lui, la decision porte
+    sur une grille que l'appelant MODIFIE ensuite. Mesure sur une photo reelle :
+    le tramage gagnait 5,20 delta E sur le pire ecart tonal — et le nettoyage
+    des tuiles isolees, applique juste apres, effacait 604 des 710 tuiles
+    tramees et ramenait le gain a 0,00. On juge donc les candidats TELS QU'ILS
+    SERONT LIVRES.
+
+    Le cadrage et le reechantillonnage sont faits UNE fois et partages : les
+    repeter pour chacune des deux quantifications triplerait le travail le plus
+    cher de la chaine sur une photo de douze megapixels.
+    """
+    cadree = _cadrer(image, studs_x, studs_y, fit, offset)
+    reduite = resample_box(cadree, studs_x, studs_y)
+    sans = _quantifier(reduite, palette, studs_x, studs_y, False)
+    avec = _quantifier(reduite, palette, studs_x, studs_y, "adaptive")
+    if denoise_tolerance > 0:
+        juge_sans = denoise(sans, cadree, denoise_tolerance, "stretch", 0.5)
+        juge_avec = denoise(avec, cadree, denoise_tolerance, "stretch", 0.5)
+    else:
+        juge_sans, juge_avec = sans, avec
+    gain = fidelity(juge_sans, cadree, 4)[1] - fidelity(juge_avec, cadree, 4)[1]
+    return sans, avec, gain
 
 
 DITHER_NEGLIGIBLE_DELTA_E = 4.0

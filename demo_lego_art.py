@@ -80,10 +80,15 @@ def construire_analyseur() -> argparse.ArgumentParser:
                                 "de 0 a 1, ou « auto » — la fenetre retenant le "
                                 "plus de detail. « auto » vaut mieux qu'un "
                                 "centrage aveugle, il ne vaut pas un regard.")
-    analyseur.add_argument("--tramage",
-                           choices=("auto", "adaptatif", "aucun", "complet"),
-                           default="auto",
-                           help="melange de tuiles voisines la ou la palette manque")
+    analyseur.add_argument(
+        "--tramage", choices=("auto", "adaptatif", "aucun", "complet"),
+        default="aucun",
+        help="melange de tuiles voisines la ou la palette manque. « aucun » "
+             "par defaut, et c'est une decision MESUREE : sur six photos "
+             "reelles, la version nette a toujours ete jugee meilleure ou "
+             "equivalente. « auto » laisse le critere decider comme avant, "
+             "« adaptatif » et « complet » l'imposent. La chaine dit toujours "
+             "ce que le tramage aurait gagne et coute.")
     analyseur.add_argument("--lignes-par-page", type=int, default=4,
                            help="lignes de mosaique par page de la notice PDF")
     analyseur.add_argument("--hauteur", type=int, default=None,

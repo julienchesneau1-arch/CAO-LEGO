@@ -822,6 +822,105 @@ class TestPaletteDepuisLAtelier(unittest.TestCase):
         self.assertEqual(list(signature.parameters), ["self"])
 
 
+class TestLeTramageNEstPlusLeDefaut(unittest.TestCase):
+    """Quatre criteres essayes, quatre qui pointent a l'envers de l'oeil.
+
+    Sur six photographies reelles, « auto » a declenche trois fois et la
+    version nette etait a chaque fois meilleure ou equivalente. Le seul cas ou
+    le tramage gagne vraiment est un degrade synthetique, que personne ne
+    photographie. Faute de critere qui separe les deux, on ne devine pas : on
+    change le DEFAUT pour celui qui est meilleur sur le seul type d'image que
+    cette application recoit, et on continue de DIRE ce que l'autre aurait
+    donne.
+    """
+
+    def test_le_defaut_est_aucun_dans_les_trois_facades(self):
+        # Un defaut qui ne vaut que dans les Reglages n'est le defaut de
+        # personne : les deux facades l'ecrasaient chacune de leur cote.
+        import demo_lego_art
+        from bfk001 import pipeline, webapp
+
+        self.assertEqual(pipeline.Reglages().tramage, "aucun")
+        options = demo_lego_art.construire_analyseur().parse_args(["photo.png"])
+        self.assertEqual(options.tramage, "aucun")
+        self.assertEqual(webapp._reglages({"studs": "24"}).tramage, "aucun")
+
+    def test_la_grille_livree_par_defaut_est_la_nette(self):
+        from bfk001 import pipeline
+
+        image = bfk.read_png(photo(160, 200))
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        reglages = pipeline.Reglages(studs=20, hauteur=25)
+        livree = pipeline.grille_livree(image, palette, 20, 25, reglages)
+        nette = bfk.mosaic.denoise(
+            bfk.mosaic.quantize(image, palette, 20, 25, False, "stretch"),
+            image, reglages.debruitage, "stretch")
+        self.assertEqual(livree, nette)
+
+    def test_auto_existe_toujours_et_decide_toujours(self):
+        # Changer le defaut ne doit pas rendre « auto » muet : qui le demande
+        # doit retrouver exactement l'ancien comportement.
+        from bfk001 import pipeline
+
+        image = bfk.read_png(photo(160, 200))
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        rapport = {}
+        bfk.mosaic.quantize(image, palette, 20, 25, "auto", "stretch",
+                            rapport=rapport)
+        self.assertIn("gain_tonal", rapport)
+        self.assertIn("trame", rapport)
+
+    def test_le_journal_annonce_les_deux_chiffres_dans_les_deux_sens(self):
+        from bfk001 import pipeline
+
+        def journal(**options):
+            r = pipeline.run(photo(160, 200),
+                             pipeline.Reglages(studs=20, titre="t", **options),
+                             palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+                             palette_complete=bfk.PROVISIONAL_PALETTE,
+                             note_palette=("info", "essai"))
+            return "\n".join(t for _, t in r.journal)
+
+        defaut = journal()
+        self.assertIn("tramage :", defaut)
+        # Ecarte, mais CHIFFRE : le gain qu'on renonce et le grain qu'on evite.
+        self.assertRegex(defaut, r"tramage : (ecarte|sans objet)")
+        if "sans objet" not in defaut:
+            self.assertIn("gagnerait", defaut)
+            self.assertIn("pire ecart tonal", defaut)
+            self.assertIn("finesse locale", defaut)
+            self.assertIn("--tramage auto", defaut)
+
+        force = journal(tramage="auto")
+        self.assertRegex(force, r"tramage : (APPLIQUE|ecarte|sans objet)")
+
+    def test_le_gain_annonce_vient_du_meme_calcul_que_la_decision(self):
+        # Le journal ne recalcule pas de son cote : c'est le defaut des
+        # § 5.61 et § 5.64, fait deux fois. Une seule fonction, deux appelants.
+        image = bfk.read_png(photo(160, 200))
+        palette = bfk.PROVISIONAL_PALETTE.solids_only()
+        _, _, gain = bfk.mosaic.arbitrage_du_tramage(
+            image, palette, 20, 25, "stretch", 0.5, 4.0)
+        rapport = {}
+        bfk.mosaic.quantize(image, palette, 20, 25, "auto", "stretch",
+                            denoise_tolerance=4.0, rapport=rapport)
+        self.assertAlmostEqual(rapport["gain_tonal"], gain, places=12)
+
+    def test_le_defaut_coute_moins_de_pieces(self):
+        # Consequence mesurable : le tramage isole des tuiles, et une tuile
+        # isolee est une piece de plus. Sur trois photos reelles il coutait
+        # de 116 a 257 pieces.
+        from bfk001 import pipeline
+
+        def pieces(**o):
+            return pipeline.run(
+                photo(160, 200), pipeline.Reglages(studs=24, titre="p", **o),
+                palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+                palette_complete=bfk.PROVISIONAL_PALETTE,
+                note_palette=("info", "e")).mesures["pieces"]
+        self.assertLessEqual(pieces(), pieces(tramage="complet"))
+
+
 class TestLArbitrageDuTramageSePublie(unittest.TestCase):
     """Un arbitrage dont on ne publie qu'un cote n'en est pas un.
 

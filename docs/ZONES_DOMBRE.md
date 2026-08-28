@@ -3656,6 +3656,92 @@ conseil qui ment, et il n'est pas corrigé ici faute d'avoir établi la règle
 vraie. Noté plutôt que réparé à l'aveugle.
 
 
+### 5.71 Quatre critères essayés, quatre réfutés — et c'est le défaut qui change
+
+Demande explicite : régler le problème du tramage automatique. Mandat pour
+toucher au critère, refusé trois fois jusqu'ici (§ 5.66, § 5.67, § 5.69).
+
+#### Trois hypothèses, trois réfutations par la mesure
+
+**1. « Le tramage pose une bordure cohérente sur un dégradé, un semis isolé sur
+une photo. »** Le dépôt mesure déjà les tuiles isolées. Réfuté :
+
+| | tuiles isolées après tramage |
+|---|---:|
+| dégradé vertical | 17,7 % |
+| dégradé doux | **43,8 %** |
+| plage | 15,3 % |
+| cavalier | 17,6 % |
+| lièvre | 30,1 % |
+
+Le dégradé en produit **plus** que les photos. L'hypothèse va à l'envers.
+
+**2. « Le tramage fait déraper des tuiles loin de la couleur voulue. »** Née
+d'une observation réelle : dans le ciel de la plage, le tramage sème des points
+**magenta** sur du bleu. Mesuré sur la distribution complète des écarts par
+tuile — tuiles au-delà de 12 ΔE ajoutées par le tramage :
+
+| dégradé vertical | dégradé doux | vélo | cavalier |
+|---:|---:|---:|---:|
+| +1,4 % | **+8,8 %** | +0,4 % | +0,1 % |
+
+Encore à l'envers.
+
+**3. « Le tramage corrige des faux contours, et il n'y en a que sur du lisse. »**
+Un faux contour : deux tuiles voisines de couleurs différentes là où la photo,
+elle, ne change pas — le défaut exact que le tramage existe pour corriger,
+mesuré sur la grille **nette**. Réfuté aussi :
+
+| dégradé vertical | dégradé doux | vélo | cavalier |
+|---:|---:|---:|---:|
+| 3,98 % | 3,98 % | **8,34 %** | **8,16 %** |
+
+Les photos en ont **deux fois plus** que les dégradés, et c'est pourtant là que
+le tramage est le plus laid.
+
+#### Ce que quatre réfutations veulent dire
+
+Avec le gain tonal (§ 5.69), quatre grandeurs indépendantes ont été essayées.
+Toutes pointent à l'envers de l'œil ou ne séparent pas. La conclusion n'est pas
+« il faut chercher mieux » — c'est que **la différence n'est pas dans le
+tramage**, elle est dans ce qu'il remplace : une bande franche sur un champ
+lisse est un artefact très saillant, une photographie n'en a pas.
+
+Et le seul objet parfaitement lisse de tout le jeu d'essai est un **dégradé
+synthétique**. Personne ne photographie un dégradé.
+
+#### Livré : le défaut change, pas le critère
+
+`Reglages.tramage` vaut désormais `"aucun"`, dans les **trois** façades — les
+`Reglages`, la ligne de commande et la page l'écrasaient chacune de leur côté,
+et un test le vérifie maintenant. `auto` reste disponible et se comporte
+exactement comme avant.
+
+Bénéfice mesuré au-delà du rendu : le tramage isole des tuiles, et une tuile
+isolée coûte une pièce. Le défaut net économise **116 à 257 pièces** sur les
+trois photos concernées.
+
+Le journal chiffre les deux côtés de la décision, y compris quand il ne trame
+pas :
+
+```
+  tramage : ecarte (defaut) — il gagnerait +2.02 delta E sur le pire ecart
+            tonal, +0.35 de finesse locale, 258 tuile(s) isolees de grain.
+```
+
+Et pour que ce chiffre ne puisse pas mentir, `arbitrage_du_tramage` est
+désormais la **seule** implémentation : la décision de `quantize` et le compte
+rendu du journal en sortent tous les deux. Recalculer ailleurs est le défaut des
+§ 5.61 et § 5.64, déjà commis deux fois ; ici il aurait été commis une
+troisième, puisque le journal doit rendre compte d'un calcul que la chaîne ne
+fait plus.
+
+Le fond de l'argument était dans le dépôt depuis le début, et personne ne l'avait
+confronté à autre chose qu'un dégradé : `blending_tiles` dit que l'œil résout
+chaque tuile de 8 mm **à toute distance de lecture**. Le fondu optique sur lequel
+repose le tramage n'a jamais lieu ; le grain, lui, se voit toujours.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter

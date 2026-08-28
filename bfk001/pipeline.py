@@ -126,7 +126,39 @@ class Reglages:
     hauteur: Optional[int] = None
     relief: int = 0
     references: str = "standard"
-    tramage: str = "auto"
+    tramage: str = "aucun"
+    """Ce qui est LIVRE par defaut, et ce n'est plus « auto ». Mesure.
+
+    Le tramage achete de la justesse tonale avec du grain visible. Sur les six
+    photographies reelles passees dans cette chaine, « auto » l'a declenche
+    trois fois — et les trois fois le rendu net etait meilleur ou equivalent a
+    l'oeil, jamais moins bon :
+
+        photo      gain tonal   cout en grain   verdict
+        lievre          -0,44               —   ecarte, a raison
+        plage            1,02           +0,24   match nul
+        cavalier         1,17           +0,39   nette meilleure
+        velo             3,64           +0,40   nette meilleure
+
+    Le seul cas ou le tramage gagne vraiment est un DEGRADE SYNTHETIQUE, que
+    personne ne photographie.
+
+    J'ai cherche un critere qui separe les deux, et j'en ai essaye quatre. Tous
+    pointent a l'envers de l'oeil : le degrade produit PLUS de tuiles isolees
+    que les photos (17,7 % contre 15,3-30,1 %), PLUS de tuiles derapees loin de
+    la couleur voulue (+8,8 % contre +0,1 %), et MOINS de faux contours a
+    corriger (4,0 % contre 8,3 %). Le gain tonal, lui, est plus gros sur la
+    photo ou le tramage est le plus laid. Aucune de ces grandeurs ne separe.
+
+    Faute de critere, on ne devine pas : on change le DEFAUT pour celui qui est
+    meilleur sur le seul type d'image que cette application recoit, et on
+    continue de DIRE ce que le tramage aurait donne. `--tramage auto` rend
+    l'ancien comportement, `adaptatif` et `complet` forcent.
+
+    Le noyau de l'argument est physique et deja mesure ici : `blending_tiles`
+    dit que l'oeil resout chaque tuile de 8 mm a toute distance de lecture. Le
+    fondu optique sur lequel repose le tramage n'a jamais lieu ; le grain, lui,
+    se voit toujours."""
     couleurs: Optional[str] = None
     tolerance: float = 1.0
     cadrage: str = "auto"
@@ -643,60 +675,60 @@ def run(
         # du journal qui compte les tuiles effacees.
     # Le tramage est un ARBITRAGE, pas un reglage technique : il achete de la
     # justesse tonale avec du grain visible. `blending_tiles` dit que l'oeil ne
-    # fond jamais deux tuiles de 8 mm, a aucune distance — le grain se verra
-    # donc. La decision doit etre visible, et reversible d'un drapeau.
-    if reglages.tramage == "auto":
-        nette = mosaic.quantize(image, palette, reglages.studs, hauteur,
-                                False, "stretch")
-        if nette != grille:
-            isolees = sum(
-                1 for y in range(hauteur) for x in range(reglages.studs)
-                if all(grille[y][x].code != grille[vy][vx].code
-                       for vy, vx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1))
-                       if 0 <= vy < hauteur and 0 <= vx < reglages.studs)
-            )
-            # Le critere tranche sur la justesse tonale, qui se mesure sur la
-            # MOYENNE de blocs de 4x4 tuiles — et une moyenne ne voit pas le
-            # grain qu'elle moyenne. `detail_gap`, lui, compare aux memes points
-            # physiques sans moyenner : il le voit. Les deux se contredisent
-            # parfois, et sur une photo reelle c'est le grain qui avait raison.
-            #
-            # Aucun seuil ne separe le grain qui BRUITE (photographie) du grain
-            # qui ADOUCIT (degrade pur) : meme perte de detail, verdict visuel
-            # oppose. Plutot que de trancher a la place de qui regarde, on donne
-            # le chiffre — et le mot pour l'annuler.
+    # fond jamais deux tuiles de 8 mm, a aucune distance — le fondu optique sur
+    # lequel repose le tramage n'a donc jamais lieu, et le grain se voit
+    # toujours. La chaine ne trame plus par defaut (voir `Reglages.tramage`),
+    # mais elle DIT ce que le tramage aurait donne : mesurer et informer plutot
+    # que trancher en silence, des deux cotes de la decision.
+    if reglages.tramage in ("auto", "aucun"):
+        if reglages.tramage == "aucun":
+            # Le meme calcul que celui qui deciderait, par le MEME appel.
+            _, trame, gagne = mosaic.arbitrage_du_tramage(
+                image, palette, reglages.studs, hauteur, "stretch", 0.5,
+                reglages.debruitage)
+            arbitrage = {"gain_tonal": gagne,
+                         "seuil": mosaic.DITHER_AUTO_MIN_GAIN,
+                         "trame": False}
+        else:
+            trame = grille
+            gagne = arbitrage.get("gain_tonal")
+
+        livre_trame = arbitrage.get("trame", False)
+        if trame != mosaic.quantize(image, palette, reglages.studs, hauteur,
+                                    False, "stretch"):
+            isolees = len(mosaic.isolated_tiles(trame))
             mesure = mosaic.grille_de_mesure(reglages.studs, hauteur)
-            perdu = (mosaic.detail_gap(grille, image, reglages.studs, hauteur,
+            nette = grille if not livre_trame else mosaic.quantize(
+                image, palette, reglages.studs, hauteur, False, "stretch")
+            perdu = (mosaic.detail_gap(trame, image, reglages.studs, hauteur,
                                        mesure)
                      - mosaic.detail_gap(nette, image, reglages.studs, hauteur,
                                          mesure))
-            gagne = arbitrage.get("gain_tonal")
-            journal.append((
-                "info",
-                "  tramage : applique — il gagne "
-                + (f"{gagne:.2f} delta E sur le PIRE ecart tonal"
-                   if gagne is not None else "de la justesse tonale")
-                + f" et laisse {isolees} tuile(s) isolees de grain.",
-            ))
-            journal.append((
-                "info" if perdu <= 0 else "alerte",
-                f"            ce grain coute {perdu:+.2f} delta E de finesse "
-                "locale" + (" — le gain tonal se mesure sur des moyennes qui "
-                            "ne le voient pas.\n            "
-                            "« --tramage aucun » si vous preferez la nettete."
-                            if perdu > 0 else
-                            ". Il ne coute rien ici."),
-            ))
+            chiffres = (f"{gagne:+.2f} delta E sur le pire ecart tonal, "
+                        f"{perdu:+.2f} de finesse locale, "
+                        f"{isolees} tuile(s) isolees de grain")
+            if livre_trame:
+                journal.append((
+                    "info", f"  tramage : APPLIQUE — il gagne {chiffres}."))
+                journal.append((
+                    "info",
+                    "            « --tramage aucun » si vous preferez la "
+                    "nettete."))
+            else:
+                journal.append((
+                    "info",
+                    "  tramage : ecarte (defaut) — il gagnerait "
+                    f"{chiffres}."))
+                journal.append((
+                    "info",
+                    "            Sur six photographies reelles, la version "
+                    "nette a toujours ete jugee meilleure ou equivalente.\n"
+                    "            « --tramage auto » pour laisser le critere "
+                    "decider, « adaptatif » pour l'imposer."))
         else:
-            gagne = arbitrage.get("gain_tonal")
             journal.append((
                 "info",
-                "  tramage : ecarte — il ne gagnait "
-                + (f"que {gagne:.2f} delta E sur le pire ecart tonal, sous le "
-                   f"seuil de {arbitrage.get('seuil', 0):.2f}"
-                   if gagne is not None else "pas assez")
-                + ", pour le grain qu'il aurait coute.",
-            ))
+                "  tramage : sans objet — il ne changerait aucune tuile ici."))
 
     if reglages.debruitage:
         avant = grille

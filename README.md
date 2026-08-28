@@ -552,9 +552,15 @@ est sans appel — mais il comparait au mauvais témoin. L'alternative n'est pas
 « rien », c'est une **bande à bord franc**, et l'œil est plus sensible à un bord
 qu'à du grain.
 
-Le défaut est donc `"adaptive"` : on ne trame que là où la palette ne sait pas
-produire la couleur voulue. Erreur tonale au pire **12,4 → 7,8 ΔE** pour deux
-références de plus ; Floyd complet en aurait coûté dix-sept. La diffusion se
+Le tramage adaptatif ne trame donc que là où la palette ne sait pas produire la
+couleur voulue. Erreur tonale au pire **12,4 → 7,8 ΔE** pour deux références de
+plus ; Floyd complet en aurait coûté dix-sept.
+
+*(Cette section raconte l'histoire du réglage. Le verdict a de nouveau changé
+depuis, sur six photographies réelles cette fois : le défaut livré est
+aujourd'hui `aucun` — voir « Le tramage : écarté par défaut, et chiffré quand
+même ». L'argument de physique du premier paragraphe avait raison ; ce qui
+manquait était de le confronter à autre chose qu'un dégradé.)* La diffusion se
 fait en **serpentin**, un rang sur deux à l'envers, ce qui casse les vermicules
 diagonaux de Floyd-Steinberg — trois lignes, et trois références de moins.
 
@@ -564,7 +570,7 @@ plein (8,54 ΔE), au-delà on n'achète plus que du **grain inventé** — la
 variation d'une tuile à sa voisine que la photo ne contient pas. C'est la mesure
 qui manquait à toutes les décisions précédentes sur le tramage : celle du coût.
 
-`--tramage aucun|adaptatif|complet` pour trancher soi-même.
+`--tramage auto|adaptatif|complet` pour trancher soi-même.
 
 ---
 
@@ -811,20 +817,55 @@ celles du noyau : exact sur les 24 rotations.
 
 ---
 
-## Le tramage se décide par image
+## Le tramage : écarté par défaut, et chiffré quand même
 
-Il n'a pas de bon réglage universel. Sur un paysage, le tramage adaptatif
-améliore le pire écart tonal (12,4 → 7,5) ; sur un portrait aux grands aplats
-de peau, il l'**aggrave** (10,2 → 11,5) et crible le visage de damier. Un défaut
-fixe se trompe forcément sur l'une des deux.
+**`--tramage aucun` est le défaut**, et c'est une décision mesurée, pas un goût.
 
-`--tramage auto` (défaut) mesure les deux et tranche : **tramer si et seulement
-si le pire écart tonal s'améliore d'au moins 1 ΔE**, le seuil de perception. Le
-pire et non le moyen — le travail du tramage est de supprimer les faux contours,
-pas de grappiller une moyenne.
+Sur les six photographies réelles passées dans cette chaîne, le critère
+automatique a déclenché trois fois. Les trois fois, la version nette était
+meilleure ou équivalente à l'œil — jamais moins bonne :
 
-Effet secondaire : ne pas tramer allonge les suites de même couleur, donc la
-fusion des tuiles rend davantage. Sur le portrait, 776 tuiles au lieu de 1567.
+| photo | gain tonal | coût en grain | verdict | pièces économisées |
+|---|---:|---:|---|---:|
+| lièvre | −0,44 | — | écarté, à raison | 0 |
+| plage | 1,02 | +0,24 | match nul | 196 |
+| cavalier | 1,17 | +0,39 | **nette meilleure** | 116 |
+| vélo | 3,64 | +0,40 | **nette meilleure** | 257 |
+
+Le seul cas où le tramage gagne vraiment est un **dégradé synthétique**, que
+personne ne photographie.
+
+**J'ai cherché un critère qui sépare les deux, et j'en ai essayé quatre.** Tous
+pointent à l'envers de l'œil : le dégradé produit **plus** de tuiles isolées que
+les photos (17,7 % contre 15,3–30,1 %), **plus** de tuiles dérapées loin de la
+couleur voulue (+8,8 % contre +0,1 %), et **moins** de faux contours à corriger
+(4,0 % contre 8,3 %). Le gain tonal, lui, est le plus gros sur la photo où le
+tramage est le plus laid. Aucune de ces grandeurs ne sépare.
+
+Faute de critère, on ne devine pas : on change le **défaut** pour celui qui est
+meilleur sur le seul type d'image que cette application reçoit, et la chaîne
+continue de **dire** ce que l'autre aurait donné, des deux côtés de la décision :
+
+```
+  tramage : ecarte (defaut) — il gagnerait +2.02 delta E sur le pire ecart
+            tonal, +0.35 de finesse locale, 258 tuile(s) isolees de grain.
+            Sur six photographies reelles, la version nette a toujours ete
+            jugee meilleure ou equivalente.
+            « --tramage auto » pour laisser le critere decider, « adaptatif »
+            pour l'imposer.
+```
+
+Le fond de l'argument est physique, et il était déjà mesuré ici :
+`blending_tiles` dit que l'œil **résout chaque tuile de 8 mm à toute distance de
+lecture**. Le fondu optique sur lequel repose le tramage n'a jamais lieu ; le
+grain, lui, se voit toujours.
+
+`--tramage auto` rend l'ancien comportement — **tramer si et seulement si le
+pire écart tonal s'améliore d'au moins 1 ΔE** — et `adaptatif` / `complet`
+l'imposent.
+
+Effet secondaire du défaut net : les suites de même couleur s'allongent, donc la
+fusion des tuiles rend davantage. D'où les pièces économisées ci-dessus.
 
 ---
 

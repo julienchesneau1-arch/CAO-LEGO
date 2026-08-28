@@ -462,11 +462,15 @@ PAGE = r"""<!doctype html>
         </select>
       </label>
       <label>Tramage
+        <span class="aide">Melange des tuiles voisines la ou la palette manque.
+          « aucun » par defaut : sur six photographies reelles, la version nette
+          a toujours ete jugee meilleure ou equivalente. Le journal dit ce que
+          le tramage aurait gagne et coute.</span>
         <select id="tramage">
-          <option value="auto">auto — decide par image</option>
-          <option value="aucun">aucun</option>
-          <option value="complet">complet</option>
+          <option value="aucun">aucun — net (defaut)</option>
+          <option value="auto">auto — laisse le critere decider</option>
           <option value="adaptatif">adaptatif</option>
+          <option value="complet">complet</option>
         </select>
       </label>
       <label>Nombre de couleurs
@@ -1558,7 +1562,7 @@ def _reglages(brut: dict) -> Reglages:
             hauteur=entier("hauteur", None),
             relief=entier("relief", 0),
             references=texte("references", "standard"),
-            tramage=texte("tramage", "auto"),
+            tramage=texte("tramage", "aucun"),
             couleurs=texte("couleurs", None),
             tolerance=float(brut.get("tolerance") or 1.0),
             cadrage=texte("cadrage", "auto"),
