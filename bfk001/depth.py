@@ -8,10 +8,24 @@ simple : une photo en couleurs ne contient aucune information de profondeur.
 Sauf que ce n'est pas tout a fait vrai, et c'est ce module.
 
 Un telephone en mode portrait MESURE la profondeur — deux objectifs, un capteur
-de temps de vol, ou un reseau embarque — et beaucoup d'entre eux ECRIVENT cette
-mesure dans le fichier JPEG lui-meme, a cote de l'image. Google appelle ca
-Dynamic Depth ; c'est une norme publique. Le fichier que vous avez deja sur
-votre telephone contient donc, souvent, la carte de profondeur du sujet.
+de temps de vol, ou un reseau embarque — et certains ECRIVENT cette mesure dans
+le fichier JPEG lui-meme, a cote de l'image.
+
+CE QUE CE MODULE LIT, EXACTEMENT : les deux conteneurs de Google, GDepth (Lens
+Blur) et Dynamic Depth, tous deux portes par du XMP. Rien d'autre.
+
+Et il faut dire la portee reelle de cette phrase, parce que la version
+precedente promettait « le fichier que vous avez deja sur votre telephone » :
+sur les cinq photographies reelles soumises a cette chaine, **aucune ne porte
+de XMP** — quatre viennent d'un appareil Apple (profil ICC « appl »), une est
+ressortie d'une messagerie sans la moindre metadonnee. Le chemin embarque n'a
+donc jamais eu l'occasion de servir une seule fois.
+
+Ce n'est pas un defaut du code, qui fait ce qu'il annonce et que ses tests
+verifient contre des conteneurs conformes ; c'est un defaut de PORTEE, et le
+taire serait laisser croire qu'il suffit d'envoyer une photo de portrait. Le
+chemin fiable, quel que soit l'appareil, reste `--carte-profondeur` avec une
+carte produite dehors.
 
 Et pour tous les autres cas, un estimateur monoculaire (MiDaS, Depth Anything,
 Marigold) produit une carte de profondeur excellente, en dehors de ce depot,

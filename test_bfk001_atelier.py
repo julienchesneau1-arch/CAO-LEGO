@@ -822,6 +822,58 @@ class TestPaletteDepuisLAtelier(unittest.TestCase):
         self.assertEqual(list(signature.parameters), ["self"])
 
 
+class TestLArbitrageDuTramageSePublie(unittest.TestCase):
+    """Un arbitrage dont on ne publie qu'un cote n'en est pas un.
+
+    Le journal disait « ce grain coute +0,39 delta E » sans jamais dire contre
+    QUOI. Le gain etait calcule dans `quantize`, servait a decider, et etait
+    jete. On lisait donc le prix sans le bien.
+    """
+
+    def gain_rapporte(self, **options):
+        from bfk001 import pipeline
+
+        resultat = pipeline.run(
+            photo(160, 200),
+            pipeline.Reglages(studs=20, titre="essai", **options),
+            palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+            palette_complete=bfk.PROVISIONAL_PALETTE,
+            note_palette=("info", "essai"))
+        return "\n".join(t for _, t in resultat.journal)
+
+    def test_le_gain_sort_par_le_meme_appel_que_la_decision(self):
+        # Le recalculer ailleurs le ferait diverger : c'est arrive deux fois
+        # dans ce depot (§ 5.61, § 5.64). Le rapport suit la decision.
+        rapport = {}
+        image = bfk.read_png(photo(160, 200))
+        grille = bfk.mosaic.quantize(
+            image, bfk.PROVISIONAL_PALETTE.solids_only(), 20, 25,
+            "auto", "stretch", rapport=rapport)
+        self.assertIn("gain_tonal", rapport)
+        self.assertIn("trame", rapport)
+        self.assertEqual(rapport["seuil"], bfk.mosaic.DITHER_AUTO_MIN_GAIN)
+        # La cle dit bien ce qui a ete livre.
+        nette = bfk.mosaic.quantize(
+            image, bfk.PROVISIONAL_PALETTE.solids_only(), 20, 25,
+            False, "stretch")
+        self.assertEqual(rapport["trame"], grille != nette)
+
+    def test_le_journal_chiffre_le_gain_dans_les_deux_sens(self):
+        texte = self.gain_rapporte()
+        self.assertIn("tramage :", texte)
+        self.assertIn("delta E", texte)
+        # Quel que soit le verdict, un nombre accompagne le mot.
+        ligne = next(l for l in texte.splitlines() if "tramage :" in l)
+        self.assertRegex(ligne, r"-?\d+\.\d\d delta E",
+                         f"verdict sans chiffre : {ligne}")
+
+    def test_un_tramage_impose_ne_pretend_pas_avoir_arbitre(self):
+        # Sans « auto », aucune comparaison n'a lieu : annoncer un gain serait
+        # inventer un chiffre.
+        texte = self.gain_rapporte(tramage="complet")
+        self.assertNotIn("tramage : applique", texte)
+
+
 class TestConseilDeFormat(unittest.TestCase):
     """Le conseil doit annoncer ce que la chaine FABRIQUE, pas autre chose."""
 

@@ -635,9 +635,10 @@ def run(
 
     depart = time.perf_counter()
     # L'image est deja au bon rapport : plus rien a rogner ici.
+    arbitrage: dict = {}
     grille = mosaic.quantize(
         image, palette, reglages.studs, hauteur, TRAMAGES[reglages.tramage],
-        "stretch", denoise_tolerance=reglages.debruitage,
+        "stretch", denoise_tolerance=reglages.debruitage, rapport=arbitrage,
     )   # meme appel que `grille_livree` ; le nettoyage suit plus bas, entoure
         # du journal qui compte les tuiles effacees.
     # Le tramage est un ARBITRAGE, pas un reglage technique : il achete de la
@@ -669,10 +670,13 @@ def run(
                                        mesure)
                      - mosaic.detail_gap(nette, image, reglages.studs, hauteur,
                                          mesure))
+            gagne = arbitrage.get("gain_tonal")
             journal.append((
                 "info",
-                f"  tramage : applique — il gagne de la justesse tonale et "
-                f"laisse {isolees} tuile(s) isolees de grain.",
+                "  tramage : applique — il gagne "
+                + (f"{gagne:.2f} delta E sur le PIRE ecart tonal"
+                   if gagne is not None else "de la justesse tonale")
+                + f" et laisse {isolees} tuile(s) isolees de grain.",
             ))
             journal.append((
                 "info" if perdu <= 0 else "alerte",
@@ -684,10 +688,14 @@ def run(
                             ". Il ne coute rien ici."),
             ))
         else:
+            gagne = arbitrage.get("gain_tonal")
             journal.append((
                 "info",
-                "  tramage : ecarte — il ne gagnait pas assez pour le grain "
-                "qu'il aurait coute.",
+                "  tramage : ecarte — il ne gagnait "
+                + (f"que {gagne:.2f} delta E sur le pire ecart tonal, sous le "
+                   f"seuil de {arbitrage.get('seuil', 0):.2f}"
+                   if gagne is not None else "pas assez")
+                + ", pour le grain qu'il aurait coute.",
             ))
 
     if reglages.debruitage:

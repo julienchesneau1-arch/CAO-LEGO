@@ -227,6 +227,7 @@ def quantize(
     fit: str = "crop",
     offset=0.5,
     denoise_tolerance: float = 0.0,
+    rapport: Optional[dict] = None,
 ) -> Tuple[Tuple[LegoColor, ...], ...]:
     """Image -> grille de couleurs LEGO.
 
@@ -368,6 +369,16 @@ def quantize(
         # donc celui-ci, et la chaine DIT desormais ce que le tramage coute en
         # grain — a qui regarde de trancher, en un mot (`--tramage aucun`).
         gain = fidelity(juge_sans, cadree, 4)[1] - fidelity(juge_avec, cadree, 4)[1]
+        if rapport is not None:
+            # Le gain etait CALCULE puis jete, et le journal ne montrait que le
+            # cout. Un arbitrage dont on ne publie qu'un cote n'est pas un
+            # arbitrage : on lisait « ce grain coute +0,39 » sans jamais savoir
+            # contre quoi. Il ressort par le meme appel que la decision — le
+            # recalculer ailleurs le ferait diverger, ce qui est deja arrive
+            # deux fois dans ce depot.
+            rapport["gain_tonal"] = gain
+            rapport["seuil"] = DITHER_AUTO_MIN_GAIN
+            rapport["trame"] = gain >= DITHER_AUTO_MIN_GAIN
         return avec if gain >= DITHER_AUTO_MIN_GAIN else sans
 
     if dither not in (True, False, "adaptive"):

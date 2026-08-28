@@ -3509,6 +3509,77 @@ dans sa propre docstring. La limite est écrite ici, avec ses chiffres, et
 l'instrument continue de dire ce qu'il mesure — ni plus, ni moins.
 
 
+### 5.69 Un arbitrage dont on ne publiait qu'un côté
+
+Sixième photographie : un Cavalier en contre-jour, fond flou. Fichier Apple
+d'origine — Exif, ICC « appl », APP10 « AROT » — 3024×4032, baseline. Elle a
+traversé la chaîne sans incident : 1275 pièces, plancher de palette à 6,7 ΔE.
+
+#### Le mode portrait ne viendra pas
+
+Recherche exhaustive dans le fichier : `xmpmeta` **0 occurrence**, `GDepth` 0,
+`Container` 0, `MPF` 0, zéro octet après l'EOI final. L'Exif lui-même est
+réduit à l'orientation et aux dimensions — ni marque, ni modèle, ni ouverture.
+
+Bilan sur **six photographies réelles** : aucune ne porte de XMP. `embedded_depth`
+ne lit que les deux conteneurs de Google — GDepth et Dynamic Depth, tous deux
+portés par du XMP. Le chemin embarqué **n'a jamais eu l'occasion de servir une
+seule fois**, et redemander « une photo prise en mode portrait » ne pouvait pas
+le faire servir.
+
+Ce n'est pas un défaut du code : il fait ce qu'il annonce, et ses tests le
+vérifient contre des conteneurs conformes. C'est un défaut de **portée**, et il
+était écrit noir sur blanc dans la docstring : « le fichier que vous avez déjà
+sur votre téléphone contient donc, souvent, la carte de profondeur du sujet ».
+Corrigé pour dire ce qui est lu, et ce qui a été mesuré.
+
+#### Le vrai défaut, trouvé en regardant le rendu
+
+Le tramage automatique s'est déclenché, et la version nette est visiblement
+meilleure : la porte sombre à gauche se crible de damier. Troisième photo réelle
+où `auto` déclenche et où l'œil préfère la version nette.
+
+En allant lire pourquoi, un défaut simple est apparu — indépendant de tout seuil.
+Le journal disait :
+
+```
+  tramage : applique — il gagne de la justesse tonale et laisse 558 tuiles
+            isolees de grain.
+            ce grain coute +0.39 delta E de finesse locale
+```
+
+**Le prix sans le bien.** Le gain était calculé dans `quantize`, servait à
+décider, et était jeté. Un arbitrage dont on ne publie qu'un côté n'est pas un
+arbitrage — et le § 5.66 avait explicitement choisi *mesurer et informer plutôt
+que trancher*. La moitié de la mesure manquait.
+
+Le gain ressort désormais **par le même appel que la décision** (`rapport=`), et
+non par un recalcul : recalculer ailleurs, c'est le défaut des § 5.61 et § 5.64,
+fait deux fois.
+
+#### Ce que les chiffres montrent, une fois publiés
+
+| photo | gain tonal (pire écart) | coût en grain | verdict de l'œil |
+|---|---:|---:|---|
+| lièvre | −0,44 | — | écarté, correctement |
+| plage | 1,02 | +0,24 | match nul |
+| cavalier | 1,17 | +0,39 | **nette meilleure** |
+| vélo | 3,64 | +0,40 | **nette meilleure** |
+
+Deux des trois déclenchements sont **marginaux** — 1,02 et 1,17 pour un seuil à
+1,00 — ce qui suggérait de relever le seuil. Mais le vélo gagne **3,64** et
+reste pire à l'œil : aucun seuil sur cette grandeur ne sauve les trois cas.
+
+Les deux grandeurs ne sont d'ailleurs **pas commensurables** — l'une est le pire
+écart tonal sur des moyennes de blocs 4×4, l'autre une perte de finesse locale —
+et le journal les nomme séparément plutôt que de les soustraire. Écrire
+« coût > gain » aurait été une erreur d'unités déguisée en verdict.
+
+Le critère reste donc inchangé, pour la troisième fois, et pour une raison
+mesurée et non par prudence : rien de ce que j'ai essayé ne sépare les cas. Ce
+qui change, c'est que le lecteur voit enfin les deux nombres.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter
