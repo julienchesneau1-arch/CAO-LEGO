@@ -848,6 +848,7 @@ class TestConseilDeFormat(unittest.TestCase):
                 ("sans cadre", {"cadre": 0}),
                 ("cadre epais", {"cadre": 4}),
                 ("relief", {"relief": 2}),
+                ("relief renverse", {"relief": 2, "relief_inverse": True}),
                 ("tuiles larges", {"references": "large"}),
                 ("sans nettoyage", {"debruitage": 0.0}),
                 ("tramage impose", {"tramage": "complet"}),

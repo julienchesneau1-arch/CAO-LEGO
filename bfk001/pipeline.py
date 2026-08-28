@@ -47,6 +47,8 @@ __all__ = [
     "lire_image",
     "palette_utilisable",
     "carte_de_relief",
+    "RELIEF_PAR_CONVENTION",
+    "PENTE_SUSPECTE",
     "run",
 ]
 
@@ -131,6 +133,33 @@ class Reglages:
     seuils: str = "otsu"
     codes_couleur: Optional[str] = None
     profondeur_inversee: bool = False
+    relief_inverse: bool = False
+    """Convention du bas-relief quand aucune profondeur n'est mesuree.
+
+    `False` : clair = haut, la convention du camee. `True` : sombre = haut.
+
+    Ce n'est pas un reglage cosmetique, et l'absence de ce champ etait un
+    defaut. Sans carte de profondeur, la chaine lit la CLARTE de la photo et
+    en fait des etages ; la clarte n'est pas la profondeur, et sur un paysage
+    les deux se contredisent franchement. Mesure sur la photo du lievre de
+    bronze, 48x64 tenons, trois etages, moyenne des elevations sur le tiers
+    haut et le tiers bas de l'image :
+
+        convention        tiers haut (ciel)   tiers bas (sol)
+        clair = haut                   2,25              0,40
+        sombre = haut                  0,75              2,60
+
+    Clair = haut fait SAILLIR LE CIEL de 5 mm devant le sol. Personne ne peut
+    vouloir cela, et jusqu'ici personne ne pouvait l'eviter :
+    `--profondeur-inversee` ne parle que de l'encodage d'une carte fournie et
+    ne touchait pas ce chemin-la. Sur un portrait la convention du camee reste
+    la bonne — le visage est plus clair que le fond — d'ou un defaut inchange
+    et un interrupteur, plutot qu'un renversement.
+
+    Aucun critere automatique ne les departage : les marches tombent aux memes
+    endroits dans les deux cas (555 contre 559 tenons de marche sur la photo
+    des chiens), donc `relief_edge_alignment` est aveugle a l'inversion. Le
+    choix revient a l'oeil, et l'oeil a besoin de pouvoir le faire."""
     lignes_par_page: int = 4
     par_etape: int = 24
     titre: str = "mosaique"
@@ -259,6 +288,27 @@ def palette_utilisable(chemins: Optional[Sequence[str]] = None):
     )
 
 
+RELIEF_PAR_CONVENTION = "CONVENTION du bas-relief"
+"""Debut de la provenance quand le relief vient de la CLARTE et non d'une mesure.
+
+Une constante et non une chaine recopiee : le journal doit pouvoir reconnaitre
+ce cas — c'est le seul ou la convention peut sortir a l'envers — et deux
+formulations qui divergent rendraient l'avertissement muet sans que rien
+n'echoue.
+"""
+
+
+PENTE_SUSPECTE = 0.5
+"""Ecart haut/bas, en etages, au-dela duquel le journal signale la pente.
+
+Repere de lecture, pas constante mesuree — comme le 1 % de tours isolees juste
+au-dessus. Un demi-etage de moyenne fait 1,6 mm : en dessous, la pente ne se
+voit pas ; au-dessus, un haut d'image qui ressort se remarque. Trois photos ne
+suffisent pas a etalonner un seuil, et c'est pourquoi le journal SIGNALE au
+lieu de corriger.
+"""
+
+
 def carte_de_relief(image, origine, cadrage, brut, reglages, hauteur,
                     carte_fournie=None):
     """Les elevations, par la source la plus fiable disponible.
@@ -273,6 +323,9 @@ def carte_de_relief(image, origine, cadrage, brut, reglages, hauteur,
        portrait mesure la profondeur et beaucoup d'appareils la deposent dans
        le fichier. C'est de la mesure, pas une convention.
     3. La clarte de la photo. La convention du camee, celle du bas-relief.
+       Clair = haut par defaut, sombre = haut avec `relief_inverse` : sur un
+       paysage la premiere fait saillir le ciel devant le sol, et il faut
+       pouvoir la renverser (voir `Reglages.relief_inverse`).
 
     On dit toujours laquelle a servi : un relief juste et un relief plausible
     se ressemblent, et seule la provenance les distingue.
@@ -307,10 +360,12 @@ def carte_de_relief(image, origine, cadrage, brut, reglages, hauteur,
     # Le relief se lit sur la PHOTO, jamais sur la grille : ni palette, ni
     # tramage. Le tramage est un bruit que l'oeil fond dans les couleurs et
     # qu'il ne fond jamais dans les hauteurs (voir `relief_from_image`).
+    sens = "sombre = haut" if reglages.relief_inverse else "clair = haut"
     return mosaic.relief_from_image(
         image, reglages.studs, hauteur, reglages.relief,
+        invert=reglages.relief_inverse,
         thresholds=reglages.seuils, fit="stretch",
-    ), "CONVENTION du bas-relief, clair = haut — aucune profondeur mesuree"
+    ), f"{RELIEF_PAR_CONVENTION}, {sens} — aucune profondeur mesuree"
 
 
 def grille_livree(image, palette, studs_x: int, studs_y: int, reglages):
@@ -393,6 +448,7 @@ def conseil_de_format(image, studs_x: int, studs_y: int, palette,
             # qu'on fabriquera.
             elevations = mosaic.relief_from_image(
                 cadree, cote, hauteur, reglages.relief,
+                invert=reglages.relief_inverse,
                 thresholds=reglages.seuils, fit="stretch")
         oeuvre = mosaique_livree(grille, reglages, elevations)
         rvb_cadre = next(
@@ -703,6 +759,32 @@ def run(
             "info",
             f"            rendement des marches {rendement:.2f} sur 1 — part du "
             "contraste de la photo que les marches exploitent",
+        ))
+        # Le relief tire de la clarte n'est pas de la profondeur, et il peut
+        # donc sortir a l'envers sans que rien ne proteste : le rendement des
+        # marches, seul indicateur jusqu'ici, est AVEUGLE a l'inversion — les
+        # marches tombent aux memes endroits dans les deux sens. Il fallait une
+        # grandeur orientee. Elle est signalee, jamais corrigee : trois photos
+        # ne suffisent pas a etalonner un critere (§ 5.66, § 5.67).
+        pente = mosaic.relief_tilt(elevations)
+        remarque = ""
+        if pente > PENTE_SUSPECTE:
+            remarque = (" — le haut de l'image RESSORT ; sur un paysage c'est "
+                        "le ciel devant le sol")
+            # Le remede depend de la source, et il n'y en a pas toujours un.
+            # Le dire quand il n'existe pas serait pire que se taire.
+            if provenance.startswith(RELIEF_PAR_CONVENTION):
+                if not reglages.relief_inverse:
+                    # Formulation NEUTRE : le meme journal s'affiche dans la
+                    # page, ou le reglage est une case a cocher et non un
+                    # drapeau. Nommer l'option de la commande y serait faux.
+                    remarque += " — renversez la convention (sombre = haut)"
+            else:
+                remarque += ", verifiez le sens de la carte"
+        journal.append((
+            "info",
+            f"            tiers haut {pente:+.2f} etage(s) par rapport au tiers "
+            f"bas{remarque}",
         ))
         if len(hauteurs) < reglages.relief + 1:
             journal.append((

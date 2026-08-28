@@ -48,7 +48,14 @@ def _installer() -> bool:
     return True
 
 
-def main() -> int:
+def construire_analyseur() -> argparse.ArgumentParser:
+    """Les options de la commande, isolees pour qu'un test puisse les lire.
+
+    Elles vivaient dans `main`, ou rien ne pouvait les atteindre sans lancer
+    une fabrication complete. Un drapeau qui n'arrive pas jusqu'aux `Reglages`
+    n'existe pas pour l'utilisateur, et c'est exactement ce qui etait arrive a
+    la convention du bas-relief.
+    """
     analyseur = argparse.ArgumentParser(description=__doc__)
     analyseur.add_argument("image", type=pathlib.Path)
     analyseur.add_argument("--studs", type=int, default=48, help="cote en tenons")
@@ -98,7 +105,16 @@ def main() -> int:
         "--profondeur-inversee", action="store_true",
         help="la carte encode une DISTANCE (proche = sombre) et non une "
              "disparite. MiDaS et Depth Anything sortent une disparite : "
-             "n'employez ce drapeau que si le relief sort en creux.")
+             "n'employez ce drapeau que si le relief sort en creux. Ne "
+             "concerne QUE --carte-profondeur ; sans carte, voyez "
+             "--relief-inverse.")
+    analyseur.add_argument(
+        "--relief-inverse", action="store_true",
+        help="renverse la convention du bas-relief : sombre = haut. Sans "
+             "carte de profondeur, le relief se lit sur la clarte, et sur un "
+             "paysage la convention du camee fait SAILLIR LE CIEL devant le "
+             "sol. Ce drapeau remet le ciel au fond. Sur un portrait, ne "
+             "l'employez pas : le visage y est plus clair que le fond.")
     analyseur.add_argument(
         "--seuils", choices=("otsu", "uniform"), default="otsu",
         help="ou tombent les marches du relief : otsu = dans les creux de "
@@ -165,9 +181,13 @@ def main() -> int:
                                 "accepte de perdre pour economiser un sachet")
     analyseur.add_argument("--couleurs", default=None,
                            help="limiter la mosaique aux N meilleures couleurs")
-    options = analyseur.parse_args()
+    return analyseur
 
-    if options.installer_palette and not _installer(): 
+
+def main() -> int:
+    options = construire_analyseur().parse_args()
+
+    if options.installer_palette and not _installer():
         return 3
 
     reglages = Reglages(
@@ -182,6 +202,7 @@ def main() -> int:
         seuils=options.seuils,
         codes_couleur=options.codes_couleur,
         profondeur_inversee=options.profondeur_inversee,
+        relief_inverse=options.relief_inverse,
         lignes_par_page=options.lignes_par_page,
         par_etape=options.par_etape,
         titre=options.image.stem,

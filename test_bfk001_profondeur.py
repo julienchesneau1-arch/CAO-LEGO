@@ -362,3 +362,215 @@ class TestCablageDeLaCommande(unittest.TestCase):
         self.assertIn("MESUREE", provenance)
         self.assertEqual((len(hauteurs), len(hauteurs[0])), (24, 24))
         self.assertGreater(max(v for ligne in hauteurs for v in ligne), 0)
+
+
+def paysage(largeur, hauteur):
+    """Un ciel clair au-dessus d'un sol sombre.
+
+    Le cas ou la convention du camee se trompe le plus visiblement : elle
+    n'entend rien a la profondeur, elle lit la clarte, et sur un paysage la
+    clarte est en haut alors que le proche est en bas.
+    """
+    pixels = bytearray()
+    for y in range(hauteur):
+        clair = y < hauteur // 2
+        v = 225 if clair else 45
+        for _ in range(largeur):
+            pixels += bytes((v, v, v))
+    return bfk.Image(largeur, hauteur, bytes(pixels))
+
+
+class TestLaPenteDuRelief(unittest.TestCase):
+    """`relief_tilt` : l'instrument qui a trouve le ciel en saillie."""
+
+    def test_une_carte_haute_devant_donne_une_pente_positive(self):
+        carte = [[3, 3]] * 3 + [[1, 1]] * 3 + [[0, 0]] * 3
+        self.assertAlmostEqual(bfk.mosaic.relief_tilt(carte), 3.0)
+
+    def test_une_carte_basse_devant_donne_une_pente_negative(self):
+        carte = [[0, 0]] * 3 + [[1, 1]] * 3 + [[3, 3]] * 3
+        self.assertAlmostEqual(bfk.mosaic.relief_tilt(carte), -3.0)
+
+    def test_une_carte_plate_ne_penche_pas(self):
+        self.assertAlmostEqual(bfk.mosaic.relief_tilt([[2, 2]] * 9), 0.0)
+
+    def test_le_tiers_du_milieu_ne_compte_pas(self):
+        # Trois lignes hautes, trois basses, et un milieu extreme qui ne doit
+        # rien changer : la mesure compare les deux BORDS de l'image.
+        carte = [[2, 2]] * 3 + [[9, 9]] * 3 + [[0, 0]] * 3
+        self.assertAlmostEqual(bfk.mosaic.relief_tilt(carte), 2.0)
+
+    def test_une_carte_trop_courte_ou_vide_ne_fait_pas_tomber(self):
+        self.assertEqual(bfk.mosaic.relief_tilt([]), 0.0)
+        self.assertEqual(bfk.mosaic.relief_tilt([[]]), 0.0)
+        self.assertEqual(bfk.mosaic.relief_tilt([[1], [2]]), 0.0)
+
+
+class TestLaConventionSeRenverse(unittest.TestCase):
+    """Le defaut : « clair = haut » etait un choix qu'on ne pouvait pas faire.
+
+    `--profondeur-inversee` ne parle que de l'ENCODAGE d'une carte fournie.
+    Sans carte, le relief se lit sur la clarte et rien ne pouvait le
+    retourner — sur un paysage, le ciel sortait devant le sol de cinq
+    millimetres et il n'y avait aucun recours.
+    """
+
+    def setUp(self):
+        self.photo = paysage(240, 240)
+
+    def hauteurs(self, inverse):
+        from bfk001 import pipeline
+
+        reglages = pipeline.Reglages(studs=24, hauteur=24, relief=3,
+                                     relief_inverse=inverse)
+        return pipeline.carte_de_relief(
+            self.photo, self.photo, 0.5, b"", reglages, 24)
+
+    def test_par_defaut_le_ciel_ressort(self):
+        hauteurs, provenance = self.hauteurs(False)
+        self.assertGreater(bfk.mosaic.relief_tilt(hauteurs), 1.0)
+        self.assertIn("clair = haut", provenance)
+
+    def test_renversee_le_ciel_passe_au_fond(self):
+        hauteurs, provenance = self.hauteurs(True)
+        self.assertLess(bfk.mosaic.relief_tilt(hauteurs), -1.0)
+        self.assertIn("sombre = haut", provenance)
+
+    def test_les_deux_conventions_restent_une_convention(self):
+        # Ni l'une ni l'autre n'est une mesure, et le journal ne doit jamais
+        # laisser croire le contraire.
+        for inverse in (False, True):
+            _, provenance = self.hauteurs(inverse)
+            self.assertIn("aucune profondeur mesuree", provenance)
+            self.assertNotIn("MESUREE", provenance)
+
+    def test_une_carte_fournie_ignore_la_convention_de_clarte(self):
+        # La carte est une mesure : le drapeau de convention ne la concerne
+        # pas, et doit rester sans effet sur ce chemin.
+        from bfk001 import pipeline
+
+        depuis = carte(240, 240)
+        rendus = []
+        for inverse in (False, True):
+            reglages = pipeline.Reglages(studs=24, hauteur=24, relief=3,
+                                         relief_inverse=inverse)
+            hauteurs, provenance = pipeline.carte_de_relief(
+                self.photo, self.photo, 0.5, b"", reglages, 24,
+                carte_fournie=bfk.write_png(depuis))
+            self.assertIn("MESUREE", provenance)
+            rendus.append(hauteurs)
+        self.assertEqual(rendus[0], rendus[1])
+
+
+def bandeau(largeur, hauteur, haut, bas):
+    """Deux bandes horizontales de clarte imposee."""
+    pixels = bytearray()
+    for y in range(hauteur):
+        v = haut if y < hauteur // 2 else bas
+        for _ in range(largeur):
+            pixels += bytes((v, v, v))
+    return bfk.Image(largeur, hauteur, bytes(pixels))
+
+
+class TestLaPenteSeLitDansLeJournal(unittest.TestCase):
+    """Un relief a l'envers etait invisible : le journal n'en disait rien."""
+
+    def journal(self, **options):
+        from bfk001 import pipeline
+
+        resultat = pipeline.run(
+            bfk.write_png(paysage(240, 240)),
+            pipeline.Reglages(studs=24, hauteur=24, relief=3, **options),
+            palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+            palette_complete=bfk.PROVISIONAL_PALETTE,
+            note_palette=("info", "essai"))
+        return "\n".join(texte for _, texte in resultat.journal)
+
+    def test_la_pente_est_annoncee_et_le_ciel_denonce(self):
+        texte = self.journal()
+        self.assertIn("tiers haut", texte)
+        self.assertIn("RESSORT", texte)
+
+    def test_renversee_la_pente_est_annoncee_sans_reproche(self):
+        texte = self.journal(relief_inverse=True)
+        self.assertIn("tiers haut", texte)
+        self.assertNotIn("RESSORT", texte)
+
+    def test_renversee_un_haut_qui_ressort_est_quand_meme_signale(self):
+        """L'observation vaut toujours ; le remede, non.
+
+        Le premier jet taisait la remarque des que `relief_inverse` etait mis,
+        au motif que le remede etait deja pris. Un ciel SOMBRE renverse
+        ressort exactement pareil, et le journal serait redevenu muet sur le
+        seul cas qu'il existe pour attraper.
+        """
+        from bfk001 import pipeline
+
+        nuit = bandeau(240, 240, 45, 225)   # ciel sombre, sol clair
+        resultat = pipeline.run(
+            bfk.write_png(nuit),
+            pipeline.Reglages(studs=24, hauteur=24, relief=3,
+                              relief_inverse=True),
+            palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+            palette_complete=bfk.PROVISIONAL_PALETTE,
+            note_palette=("info", "essai"))
+        texte = "\n".join(t for _, t in resultat.journal)
+        self.assertIn("RESSORT", texte)
+        self.assertNotIn("renversez", texte,
+                         "le remede est deja pris : le proposer serait faux")
+
+    def test_une_carte_mesuree_qui_penche_renvoie_a_la_carte(self):
+        # Une carte encodee a l'envers place le fond devant. C'est le defaut
+        # que `--profondeur-inversee` corrige, et rien ne le signalait.
+        from bfk001 import pipeline
+
+        photo = bandeau(240, 240, 120, 120)
+        # Proche = clair par defaut : un haut clair met le haut DEVANT.
+        depuis = bandeau(240, 240, 250, 20)
+        resultat = pipeline.run(
+            bfk.write_png(photo),
+            pipeline.Reglages(studs=24, hauteur=24, relief=3),
+            palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+            palette_complete=bfk.PROVISIONAL_PALETTE,
+            carte_profondeur=bfk.write_png(depuis),
+            note_palette=("info", "essai"))
+        texte = "\n".join(t for _, t in resultat.journal)
+        self.assertIn("MESUREE", texte)
+        self.assertIn("RESSORT", texte)
+        self.assertIn("verifiez le sens de la carte", texte)
+        self.assertNotIn("renversez", texte,
+                         "la convention de clarte ne concerne pas une carte")
+
+    def test_une_oeuvre_plate_ne_parle_pas_de_pente(self):
+        from bfk001 import pipeline
+
+        resultat = pipeline.run(
+            bfk.write_png(paysage(240, 240)),
+            pipeline.Reglages(studs=24, hauteur=24),
+            palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+            palette_complete=bfk.PROVISIONAL_PALETTE,
+            note_palette=("info", "essai"))
+        texte = "\n".join(t for _, t in resultat.journal)
+        self.assertNotIn("tiers haut", texte)
+
+
+class TestLaCommandeExposeLaConvention(unittest.TestCase):
+    """Un reglage qui n'atteint pas la facade n'existe pas pour l'utilisateur."""
+
+    def test_la_ligne_de_commande_porte_le_drapeau(self):
+        import demo_lego_art
+
+        analyseur = demo_lego_art.construire_analyseur()
+        options = analyseur.parse_args(["photo.png", "--relief-inverse"])
+        self.assertTrue(options.relief_inverse)
+        self.assertFalse(analyseur.parse_args(["photo.png"]).relief_inverse)
+
+    def test_la_page_porte_la_case_et_la_transmet(self):
+        from bfk001 import webapp
+
+        self.assertIn('id="relief_inverse"', webapp.PAGE)
+        self.assertIn("relief_inverse:", webapp.PAGE)
+        reglages = webapp._reglages({"studs": "24", "relief": "2",
+                                    "relief_inverse": True})
+        self.assertTrue(reglages.relief_inverse)
+        self.assertFalse(webapp._reglages({"studs": "24"}).relief_inverse)

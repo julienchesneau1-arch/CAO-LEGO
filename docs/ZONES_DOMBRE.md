@@ -3294,6 +3294,115 @@ c'est-à-dire le réseau de neurones qu'on importe déjà.
 
 Retenu comme mesuré et écarté, pour ne pas y revenir.
 
+### 5.67 « As-tu joué avec la profondeur ? » — non, et c'est en vérifiant que j'ai trouvé le défaut
+
+Question posée sur les rendus livrés. Réponse vérifiée avant d'être donnée :
+`Reglages.relief` vaut **0** par défaut et aucun `apercu_relief.png` n'existe
+dans aucun des quatre dossiers de sortie produits. **Tous les rendus montrés
+étaient plats.** La chaîne sait faire du relief depuis longtemps ; je ne l'avais
+jamais employé sur une photo réelle.
+
+#### Le défaut, trouvé en relisant le chemin qu'on m'interrogeait sur
+
+`carte_de_relief` a trois sources, de la mesure à la convention : carte fournie,
+carte embarquée dans le JPEG, clarté de la photo. Les deux premières reçoivent
+`near_is_bright=not reglages.profondeur_inversee`. La troisième :
+
+```python
+return mosaic.relief_from_image(
+    image, reglages.studs, hauteur, reglages.relief,
+    thresholds=reglages.seuils, fit="stretch",
+)
+```
+
+`invert` n'est **jamais passé**. `relief_from_image` l'accepte, `etage_field`
+l'applique, aucun appelant ne le fournit. La convention « clair = haut » était
+donc **impossible à renverser** depuis la commande comme depuis la page :
+`--profondeur-inversee` ne parle que de l'encodage d'une carte fournie, et le
+seul chemin qui fonctionne sans carte — celui que prend toute photo ordinaire —
+n'avait aucun interrupteur.
+
+#### Ce que cela donnait, mesuré sur la photo du lièvre
+
+48×64 tenons, trois étages, élévation moyenne du tiers haut et du tiers bas :
+
+| Convention | tiers haut (ciel) | tiers bas (sol) |
+|---|---:|---:|
+| clair = haut (le seul disponible) | 2,25 | 0,40 |
+| sombre = haut | 0,75 | 2,60 |
+
+**Le ciel saillait de 5 mm devant le sol.** Sur un portrait la convention du
+camée reste la bonne — un visage est plus clair que son fond — d'où un défaut
+inchangé et un interrupteur, plutôt qu'un renversement.
+
+#### Pourquoi rien ne l'avait attrapé
+
+`relief_edge_alignment` est **aveugle à l'inversion** : les marches tombent aux
+mêmes endroits dans les deux sens (555 contre 559 tenons de marche sur la photo
+des chiens ; 0,61 de rendement dans les deux cas sur le lièvre). Le seul
+indicateur du journal ne pouvait pas voir le problème. Le mesurer demandait une
+grandeur **orientée**, et il n'y en avait aucune.
+
+#### Livré
+
+`mosaic.relief_tilt(heights)` — élévation moyenne du tiers haut moins celle du
+tiers bas — et la ligne de journal correspondante :
+
+```
+  relief  : 3 etage(s), 9.6 mm d'epaisseur
+            source : CONVENTION du bas-relief, clair = haut
+            tiers haut +1.85 etage(s) par rapport au tiers bas — le haut de
+            l'image RESSORT ; sur un paysage c'est le ciel devant le sol —
+            renversez la convention (sombre = haut)
+```
+
+Plus `Reglages.relief_inverse`, `--relief-inverse`, et une case dans la page.
+
+Le seuil de signalement (un demi-étage) est un **repère de lecture**, comme le
+1 % de tours isolées voisin, et non une constante mesurée : trois photos ne
+suffisent pas à étalonner un critère automatique — c'est la leçon du § 5.66,
+appliquée le lendemain. Le journal **signale**, il ne corrige pas.
+
+Vérification de l'instrument sur les deux photos réelles : il alerte sur le
+lièvre (+1,85) et se tait sur les chiens (−1,38), où la convention du camée
+donne effectivement le meilleur rendu — les chiens se détachent de la couette.
+Deux photos ne prouvent rien ; elles ne le contredisent pas.
+
+**Le premier jet du signalement avait lui-même un angle mort.** Il se taisait
+dès que `relief_inverse` était mis, au motif que le remède était déjà pris. Un
+ciel **sombre** renversé ressort exactement pareil, et le journal serait
+redevenu muet sur le seul cas qu'il existe pour attraper. Corrigé :
+l'observation est toujours dite, le remède seulement quand il en reste un. Et
+sur une carte **mesurée** la même pente accuse l'encodage de la carte
+(`--profondeur-inversee`), pas la convention de clarté — ce qui donne au
+signalement une seconde utilité qu'il n'avait pas été conçu pour avoir.
+
+#### Le défaut du § 5.61 guettait une troisième fois
+
+`conseil_de_format` recalcule les élévations de son côté pour annoncer un
+nombre de pièces. Ajouter l'option sans l'y passer aurait fait mentir le conseil
+de 116 pièces sur la photo des chiens. Le cas est entré dans le test
+paramétré qui compare le conseil à ce que la chaîne livre — et ce test tombe
+bien (465 ≠ 462) si on retire l'option d'un seul des deux côtés. Vérifié en la
+retirant.
+
+#### Ce que l'aperçu montre du relief, mesuré aussi
+
+`preview(relief=True)` éclaire les marches, pas les plateaux — physiquement
+correct pour une vue de dessus. Mesuré sur le lièvre : **11,4 % de la surface**
+est ombrée, de 38,7/255 en moyenne. Le relief se voit donc, mais uniquement aux
+ruptures ; deux conventions opposées donnent deux images qui se ressemblent au
+premier coup d'œil. C'est une limite de la vue de dessus, pas un défaut à
+corriger en inventant un rendu.
+
+#### Ce que la commande a gagné au passage
+
+Les options de `demo_lego_art.py` vivaient dans `main`, hors de portée de tout
+test sans lancer une fabrication complète. `construire_analyseur()` les isole.
+Un drapeau qui n'arrive pas jusqu'aux `Reglages` n'existe pas pour
+l'utilisateur — c'est précisément ce qui venait d'arriver.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter

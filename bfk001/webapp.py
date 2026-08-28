@@ -410,10 +410,20 @@ PAGE = r"""<!doctype html>
     </label>
 
     <div id="bloc_profondeur" hidden>
-      <label>Carte de profondeur (facultatif)
+      <div class="ligne" style="margin-bottom:9px">
+        <input type="checkbox" id="relief_inverse">
+        <label for="relief_inverse" style="margin:0; font-weight:400">
+          sombre = haut — a cocher pour un paysage</label>
+      </div>
+      <span class="aide">Sans carte de profondeur, les etages se lisent sur la
+        CLARTE de la photo : clair = haut, la convention du camee. Elle va au
+        portrait, ou le visage est plus clair que le fond. Sur un paysage elle
+        fait ressortir le ciel devant le sol — cette case la renverse.</span>
+
+      <label style="margin-top:12px">Carte de profondeur (facultatif)
         <span class="aide">Une carte mesuree — MiDaS, Depth Anything — remplace
-          la convention « clair = haut ». Sans elle, une carte deja presente
-          dans le JPEG est lue automatiquement.</span>
+          la convention de clarte, quel que soit son sens. Sans elle, une carte
+          deja presente dans le JPEG est lue automatiquement.</span>
       </label>
       <input type="file" id="carte" accept="image/*">
       <div class="ligne" style="margin-top:9px">
@@ -620,6 +630,7 @@ PAGE = r"""<!doctype html>
       cadre: valeur('cadre').split('|')[0],
       cadre_couleur: valeur('cadre').split('|')[1] || '0',
       profondeur_inversee: document.getElementById('inversee').checked,
+      relief_inverse: document.getElementById('relief_inverse').checked,
       titre: (champ.files[0] || {}).name || 'mosaique'
     };
   }
@@ -1554,6 +1565,7 @@ def _reglages(brut: dict) -> Reglages:
             seuils=texte("seuils", "otsu"),
             codes_couleur=texte("codes_couleur", None),
             profondeur_inversee=bool(brut.get("profondeur_inversee")),
+            relief_inverse=bool(brut.get("relief_inverse")),
             lignes_par_page=entier("lignes_par_page", 4),
             sections=entier("sections", 0),
             cadre=entier("cadre", 2),

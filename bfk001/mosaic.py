@@ -66,6 +66,7 @@ __all__ = [
     "smooth_relief",
     "relief_speckle",
     "relief_plateaus",
+    "relief_tilt",
     "fidelity",
     "blending_tiles",
 ]
@@ -1903,6 +1904,39 @@ def relief_plateaus(heights) -> Tuple[int, ...]:
                             pile.append((yy, xx))
             tailles.append(taille)
     return tuple(sorted(tailles, reverse=True))
+
+
+def relief_tilt(heights) -> float:
+    """Elevation moyenne du tiers HAUT moins celle du tiers BAS.
+
+    Un chiffre, et il repond a la seule question que la convention du camee
+    laisse ouverte : est-ce que le haut de l'image ressort ?
+
+    Le relief tire de la clarte n'est pas de la profondeur, et rien dans la
+    chaine ne le verifiait. Sur la photo d'un lievre de bronze dans une vigne,
+    48x64 tenons, trois etages, clair = haut donnait +1,85 : le CIEL saillait
+    de 5 mm devant le sol. C'est absurde, c'etait invisible dans le journal,
+    et aucune option ne permettait de le corriger. Les trois defauts ont ete
+    corriges ensemble ; celui-ci est l'instrument.
+
+    Une valeur nettement positive sur un paysage accuse la convention ; sur un
+    portrait en contre-jour elle peut etre juste. La fonction MESURE, elle ne
+    tranche pas : aucune regle a trois photos ne merite d'etre codee en dur, et
+    `relief_edge_alignment` est aveugle a l'inversion (les marches tombent aux
+    memes endroits dans les deux sens).
+
+    Rend 0.0 pour une carte vide ou trop courte pour avoir deux tiers.
+    """
+    carte = [list(ligne) for ligne in heights]
+    if not carte or not carte[0]:
+        return 0.0
+    tiers = len(carte) // 3
+    if tiers < 1:
+        return 0.0
+    largeur = len(carte[0])
+    haut = sum(sum(ligne) for ligne in carte[:tiers]) / (tiers * largeur)
+    bas = sum(sum(ligne) for ligne in carte[-tiers:]) / (tiers * largeur)
+    return haut - bas
 
 
 def relief_from_image(

@@ -879,16 +879,35 @@ ou du grain relevé — nombre de plateaux et nombre de cases isolées — et pr
 quand il mouchette :
 
 ```
-  relief  : 2 etage(s), 6.4 mm d'epaisseur — convention du bas-relief, clair = haut
+  relief  : 2 etage(s), 6.4 mm d'epaisseur
+            source : CONVENTION du bas-relief, clair = haut
             3 plateaux (le plus grand : 2503 tenons), 0 case(s) isolee(s)
+            rendement des marches 0.61 sur 1
+            tiers haut +1.85 etage(s) par rapport au tiers bas — le haut de
+            l'image RESSORT ; sur un paysage c'est le ciel devant le sol —
+            renversez la convention (sombre = haut)
 ```
+
+La dernière ligne est **orientée**, et c'est la seule qui le soit : le rendement
+des marches est aveugle à l'inversion — elles tombent aux mêmes endroits dans
+les deux sens. Sans elle, un relief entièrement à l'envers passait inaperçu.
 
 **Ce qu'il faut savoir avant d'en attendre un set officiel.** Une photo ne
 contient aucune profondeur : rien dans le fichier ne dit qu'un visage est devant
 un mur. Élever selon la clarté est une **convention** — celle du camée — et elle
 se trompe exactement là où la photo la contredit : un sujet sombre sur fond clair
-sortira en creux. `--relief` accepte `invert` par l'API, et `build(heights=…)`
-accepte n'importe quelle autre carte.
+sortira en creux.
+
+**`--relief-inverse` renverse la convention** — sombre = haut. Sur un paysage,
+clair = haut fait saillir le ciel devant le sol : mesuré à +1,85 étage d'écart
+entre le tiers haut et le tiers bas sur une photo de vigne, soit 5 mm de ciel en
+avant. Sur un portrait, ne l'employez pas : le visage y est plus clair que le
+fond, et la convention du camée est la bonne. Aucun critère automatique ne les
+départage, et le journal signale la pente plutôt que de trancher.
+
+Ce drapeau ne concerne **que** la convention de clarté ; `--profondeur-inversee`
+parle de l'encodage d'une carte fournie, ce qui est une autre question.
+`build(heights=…)` accepte par ailleurs n'importe quelle autre carte.
 
 Le relief obtenu est **topographique** : des terrasses de niveau. Celui d'un set
 LEGO Art est dessiné à la main et change aussi de *type* de pièce selon
