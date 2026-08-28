@@ -3403,6 +3403,112 @@ Un drapeau qui n'arrive pas jusqu'aux `Reglages` n'existe pas pour
 l'utilisateur — c'est précisément ce qui venait d'arriver.
 
 
+### 5.68 La photo suivante ne passait pas du tout — et l'instrument de la veille était déjà aveugle
+
+Une cinquième photo : un homme en combinaison sur une plage, deux chiens, la mer.
+La chaîne l'a **refusée** avant toute mosaïque.
+
+```
+JPEG progressif ou etendu non supporte : ce decodeur ne lit que le baseline
+sequentiel (SOF0/SOF1). Reenregistrer la photo en baseline, ou en PNG.
+```
+
+#### Ce que les cinq photos disent ensemble
+
+| photo | taille | encodage | segments |
+|---|---:|---|---|
+| vélo | 4257 Ko | baseline | Exif + ICC |
+| chiens | 2306 Ko | baseline | Exif + ICC |
+| lièvre | 2234 Ko | baseline | Exif + ICC |
+| **plage** | **103 Ko** | **SOF2 progressif** | JFIF seul |
+
+Les trois arrivées en original sont baseline. Celle passée par une messagerie
+est progressive, sans EXIF, à 4 % du poids. Le refus était honnête — il valait
+mille fois mieux qu'une image fausse — mais il refusait **le cas le plus
+courant** : quelqu'un qui transfère une photo depuis son téléphone. Une demande
+en quatre points qui commence par « mettre une photo dans l'app » n'est pas
+satisfaite par un message d'erreur exact.
+
+#### Pourquoi c'était bon marché
+
+Un JPEG progressif range ses coefficients en balayages successifs : les DC de
+toute l'image d'abord, puis les AC par tranches spectrales, chacune raffinée
+bit à bit. **Ce décodeur ne garde que le DC.** Les balayages AC — l'essentiel
+du fichier — se sautent donc sans être décodés. La photo de plage compte huit
+balayages ; trois portent du DC.
+
+```
+(3, Ss=0, Se=0, Ah=0, Al=2)   <- DC initial, entrelacé
+(3, Ss=0, Se=0, Ah=2, Al=1)   <- raffinement
+(3, Ss=0, Se=0, Ah=1, Al=0)   <- raffinement
+(1, Ss=1, Se=63, ...)  x5     <- sautés
+```
+
+Le décodeur y a gagné une structure plus juste : il parcourt désormais **tous**
+les balayages au lieu de s'arrêter au premier, et la moyenne du bloc se calcule
+une fois à la fin, à partir du coefficient DC brut — au fil du décodage, aucun
+raffinement n'aurait été possible.
+
+#### Vérifications
+
+- Les trois photos baseline se décodent **au bit près comme avant** (SHA-256
+  identiques). Un remaniement du décodeur qui changerait une image existante
+  serait une régression silencieuse.
+- Un **encodeur progressif** dans le fichier de test, sur le même principe que
+  l'encodeur baseline qui existait déjà : blocs unis, domaine où un décodeur DC
+  doit être exact au bit près. « Ça a l'air bon sur une photo » ne prouve rien.
+- Le cas **4:2:0**, où la grille de blocs de la luminance et celle de la
+  chrominance diffèrent : une erreur d'indice y donne une image *plausible*, les
+  couleurs glissant d'un bloc. Test non vide, vérifié en intervertissant deux
+  indices dans le décodeur — lui seul tombe.
+- Le raffinement testé séparément, avec deux bits d'approximation et des
+  valeurs impaires : sans lui le DC reste faux d'un bit, et le test précédent
+  passerait quand même.
+
+Restent refusés, explicitement : sans perte (SOF3), arithmétique, hiérarchique.
+Aucun appareil n'en produit, et un décodeur qui ne lit que le DC n'a rien à
+lire dans un JPEG sans perte — il n'y en a pas.
+
+#### Un défaut préexistant, trouvé en jetant des octets au hasard
+
+En vérifiant que le nouveau décodeur ne boucle pas sur un fichier tronqué, une
+corruption a fait sortir `_build_huffman` par un **`IndexError` sec** — pas une
+erreur explicite, une erreur d'indice à huit appels de profondeur. Vérifié sur
+la version d'avant : **identique**, le défaut n'était pas de moi. Une table qui
+annonce douze symboles et n'en porte que trois est maintenant refusée en le
+disant. Quarante corruptions aléatoires d'un en-tête valide : quarante refus
+propres, zéro `IndexError`.
+
+Un fichier progressif tronqué à 30 % rend d'ailleurs l'image **entière** : les
+balayages DC sont au début, et ce sont les seuls que nous lisons. Propriété du
+format, pas mérite du code — mais elle explique pourquoi la troncature ne
+produit rien d'étrange ici.
+
+#### Et la pente du § 5.67 s'est fait prendre le lendemain
+
+La même photo, trois étages, convention par défaut. `relief_tilt` rend **−0,86**
+et le journal se tait. Bande par bande :
+
+| bande | élévation moyenne |
+|---|---:|
+| ciel | 2,00 |
+| ciel bas / horizon | 2,37 |
+| mer | 1,35 |
+| sable moyen | 2,45 |
+| sable premier plan | 3,00 |
+
+Le sable du premier plan est à 3,00 : le plus proche est bien le plus haut,
+c'est juste. Mais **le ciel est à 2,00 et la mer à 1,35** — le ciel saille de
+2 mm devant une mer qui est deux cents mètres plus près. La pente ne le voit
+pas : elle compare deux bandes, et un premier plan clair compense un ciel clair.
+
+**Je n'ai pas ajouté de critère.** Un test de monotonie, une troisième bande,
+un seuil sur la variance : ce serait une nouvelle règle calibrée sur cinq
+photos, exactement ce que le § 5.66 a refusé et ce que le § 5.67 s'interdit
+dans sa propre docstring. La limite est écrite ici, avec ses chiffres, et
+l'instrument continue de dire ce qu'il mesure — ni plus, ni moins.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter

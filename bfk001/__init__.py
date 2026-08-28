@@ -20,7 +20,7 @@ Decoupage (Section O, DAG acyclique) :
     lego          --     metrologie du systeme LEGO et pieces (hors contrat)
     catalog       --     references, couleurs, nomenclature (hors contrat)
     imaging       --     lecture et reechantillonnage d'images (hors contrat)
-    jpeg          --     decodeur JPEG baseline au huitieme (hors contrat)
+    jpeg          --     decodeur JPEG au huitieme, baseline et progressif
     palette       --     palette LEGO et quantification perceptuelle (hors contrat)
     mosaic        --     solveur LEGO Art : image -> modele (hors contrat)
     instructions  --     plan de montage acyclique (hors contrat)

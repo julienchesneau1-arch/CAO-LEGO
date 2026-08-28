@@ -1,4 +1,4 @@
-"""Decodeur JPEG baseline au huitieme (HORS CONTRAT, couche perception).
+"""Decodeur JPEG au huitieme (HORS CONTRAT, couche perception).
 
 Une application LEGO Art qui ne lit pas un JPEG n'est pas une application : les
 photos viennent d'appareils, et les appareils produisent du JPEG. Aucune
@@ -12,11 +12,23 @@ reconstruire les pixels : on decode les coefficients, on ne garde que le DC, et
 on obtient directement une image au huitieme. Pas de transformee inverse, pas
 de 12 millions de pixels a fabriquer pour en jeter 99,99 %.
 
-Ce decodeur est donc DELIBEREMENT partiel, et c'est une qualite :
-  - baseline sequentiel uniquement (SOF0). Le progressif (SOF2) leve une erreur
-    explicite plutot que de rendre n'importe quoi.
+LE PROGRESSIF EST LU AUSSI, et pour la meme raison qui rend le reste simple.
+Un JPEG progressif range ses coefficients en plusieurs balayages : d'abord les
+DC de toute l'image, puis les AC par tranches, avec un raffinement bit a bit.
+Comme seul le DC nous interesse, les balayages AC — la grande majorite du
+fichier — se SAUTENT sans etre decodes. Il ne reste que le balayage DC initial
+et ses raffinements, qui tiennent en trente lignes.
+
+Ce n'est pas academique : une photo passee par une messagerie ressort en
+progressif, sans EXIF, et c'est exactement ce qu'un utilisateur depose dans
+l'application. Le refus explicite valait mieux que du n'importe quoi, mais il
+refusait quand meme la photo.
+
+Ce decodeur reste DELIBEREMENT partiel, et c'est une qualite :
   - sortie au huitieme de la resolution. Pour une mosaique c'est encore dix
     fois trop fin.
+  - sans perte (SOF3), arithmetique (SOF9+) et hierarchique restent refuses,
+    explicitement : ils ne sortent d'aucun appareil photo.
   - gere le sous-echantillonnage de la chrominance, les marqueurs de reprise et
     l'orientation EXIF, parce que toute photo de telephone en a besoin.
 """
@@ -92,6 +104,19 @@ def _extend(value: int, length: int) -> int:
 
 
 def _build_huffman(counts: bytes, symbols: bytes) -> Dict[Tuple[int, int], int]:
+    """Table de Huffman canonique, a partir du compte par longueur.
+
+    Le controle de coherence n'est pas decoratif : un fichier tronque ou
+    corrompu annonce plus de symboles qu'il n'en porte, et la construction
+    sortait alors par un `IndexError` sec, a huit appels de profondeur. Ce
+    module refuse explicitement tout ce qu'il ne sait pas lire ; une table
+    incoherente ne fait pas exception.
+    """
+    if len(counts) < 16 or sum(counts[:16]) > len(symbols):
+        raise ValueError(
+            "table de Huffman incoherente : le fichier annonce plus de "
+            "symboles qu'il n'en porte. JPEG tronque ou corrompu."
+        )
     table: Dict[Tuple[int, int], int] = {}
     code = 0
     index = 0
@@ -110,11 +135,131 @@ def _decode_symbol(reader: _BitReader, table: Dict[Tuple[int, int], int]) -> int
         code = (code << 1) | reader.read_bit()
         if (length, code) in table:
             return table[(length, code)]
-    raise ValueError("code de Huffman invalide : fichier corrompu ou non baseline")
+    raise ValueError("code de Huffman invalide : fichier corrompu")
+
+
+def _prochain_marqueur(data: bytes, position: int) -> int:
+    """Position du premier VRAI marqueur a partir de `position`.
+
+    Un flux entropique contient des 0xFF qui n'en sont pas : 0xFF00 est
+    l'echappement d'un 0xFF de donnees, et 0xFFD0-0xFFD7 sont les marqueurs de
+    reprise, qui ponctuent le flux sans le terminer. Sans cette distinction, on
+    ne peut pas passer d'un balayage au suivant — et le progressif en compte
+    une dizaine.
+    """
+    while position < len(data) - 1:
+        if data[position] == 0xFF:
+            suivant = data[position + 1]
+            if suivant not in (0x00, 0xFF) and not 0xD0 <= suivant <= 0xD7:
+                return position
+        position += 1
+    return len(data)
+
+
+def _balayage_baseline(reader, composantes, plans, huff_dc, huff_ac,
+                       reprise: int, mcus_x: int, mcus_y: int) -> None:
+    """Decode l'unique balayage d'un JPEG baseline.
+
+    Les coefficients AC sont PARCOURUS sans etre conserves : il faut avancer
+    dans le flux pour atteindre le DC du bloc suivant, mais eux ne servent a
+    rien ici. Extrait de `read_jpeg_eighth` quand le progressif a impose d'y
+    voir plusieurs balayages plutot qu'un seul.
+    """
+    predictions = {composante["id"]: 0 for composante in composantes}
+    depuis_reprise = 0
+    for mcu_y in range(mcus_y):
+        for mcu_x in range(mcus_x):
+            if reprise and depuis_reprise == reprise:
+                reader.restart()
+                predictions = {c["id"]: 0 for c in composantes}
+                depuis_reprise = 0
+            depuis_reprise += 1
+
+            for composante in composantes:
+                table_dc = huff_dc[composante["dc"]]
+                table_ac = huff_ac[composante["ac"]]
+                plan = plans[composante["id"]]
+                for v in range(composante["v"]):
+                    for h in range(composante["h"]):
+                        longueur = _decode_symbol(reader, table_dc)
+                        difference = _extend(reader.receive(longueur), longueur)
+                        predictions[composante["id"]] += difference
+
+                        k = 1
+                        while k < 64:
+                            symbole = _decode_symbol(reader, table_ac)
+                            if symbole == 0:
+                                break
+                            course, taille = symbole >> 4, symbole & 15
+                            if taille == 0:
+                                if course != 15:
+                                    break
+                                k += 16
+                                continue
+                            k += course + 1
+                            reader.receive(taille)
+
+                        plan[mcu_y * composante["v"] + v][
+                            mcu_x * composante["h"] + h
+                        ] = predictions[composante["id"]]
+
+
+def _balayage_dc(reader, composantes, plans, huff_dc, reprise,
+                 approximation_haute: int, approximation_basse: int,
+                 mcus_x: int, mcus_y: int, blocs) -> None:
+    """Decode UN balayage DC, initial ou de raffinement.
+
+    C'est tout ce que le progressif demande ici. Le DC d'un bloc y arrive en
+    deux temps : un balayage initial pose les bits de poids fort (decales de
+    `Al`), des balayages de raffinement ajoutent un bit chacun. Les balayages
+    AC, qui font l'essentiel du fichier, ne sont jamais lus.
+
+    Un balayage peut etre entrelace — tous les plans, dans l'ordre des MCU — ou
+    porter sur un seul plan, et l'ordre des blocs n'est alors plus le meme.
+    Les deux se rencontrent dans des fichiers reels.
+    """
+    entrelace = len(composantes) > 1
+    if entrelace:
+        unites = [(y, x) for y in range(mcus_y) for x in range(mcus_x)]
+    else:
+        large, haut = blocs[composantes[0]["id"]]
+        unites = [(y, x) for y in range(haut) for x in range(large)]
+
+    predictions = {composante["id"]: 0 for composante in composantes}
+    depuis_reprise = 0
+    for unite_y, unite_x in unites:
+        if reprise and depuis_reprise == reprise:
+            reader.restart()
+            predictions = {composante["id"]: 0 for composante in composantes}
+            depuis_reprise = 0
+        depuis_reprise += 1
+
+        for composante in composantes:
+            plan = plans[composante["id"]]
+            hauteur_bloc = composante["v"] if entrelace else 1
+            largeur_bloc = composante["h"] if entrelace else 1
+            for v in range(hauteur_bloc):
+                for h in range(largeur_bloc):
+                    if entrelace:
+                        ligne = unite_y * composante["v"] + v
+                        colonne = unite_x * composante["h"] + h
+                    else:
+                        ligne, colonne = unite_y, unite_x
+                    if approximation_haute:
+                        # Raffinement : un bit, a la position Al.
+                        if reader.read_bit():
+                            plan[ligne][colonne] |= 1 << approximation_basse
+                        continue
+                    longueur = _decode_symbol(reader, huff_dc[composante["dc"]])
+                    difference = _extend(reader.receive(longueur), longueur)
+                    predictions[composante["id"]] += difference
+                    plan[ligne][colonne] = (
+                        predictions[composante["id"]] << approximation_basse
+                    )
 
 
 def read_jpeg_eighth(data: bytes) -> Image:
-    """Decode un JPEG baseline au huitieme de sa resolution.
+    """Decode un JPEG au huitieme de sa resolution, baseline ou progressif.
 
     Retourne une Image RVB de ceil(largeur/8) x ceil(hauteur/8) pixels, chacun
     valant la moyenne d'un bloc 8x8 de l'original. L'orientation EXIF est
@@ -130,8 +275,37 @@ def read_jpeg_eighth(data: bytes) -> Image:
     width = height = 0
     restart_interval = 0
     position = 2
-    scan_start = None
-    scan_components: List[dict] = []
+    progressif = False
+    planes: Dict[int, List[List[int]]] = {}
+    blocs: Dict[int, Tuple[int, int]] = {}
+    mcus_x = mcus_y = 0
+    h_max = v_max = 1
+    balayages = 0
+
+    def preparer_les_plans() -> None:
+        """Alloue un echantillon par bloc 8x8, une fois le cadre connu.
+
+        En baseline le cadre precede toujours l'unique balayage ; en progressif
+        il precede une dizaine de balayages qui ecrivent tous dans les MEMES
+        plans. L'allocation ne peut donc plus vivre dans la boucle de decodage.
+        """
+        nonlocal mcus_x, mcus_y, h_max, v_max
+        h_max = max(composante["h"] for composante in components)
+        v_max = max(composante["v"] for composante in components)
+        mcus_x = -(-width // (8 * h_max))
+        mcus_y = -(-height // (8 * v_max))
+        for composante in components:
+            planes[composante["id"]] = [
+                [0] * (mcus_x * composante["h"])
+                for _ in range(mcus_y * composante["v"])
+            ]
+            # Grille propre au plan : c'est elle qui ordonne les blocs d'un
+            # balayage non entrelace, et elle est plus petite que la grille des
+            # MCU des que la taille n'est pas un multiple exact.
+            blocs[composante["id"]] = (
+                -(-width * composante["h"] // (8 * h_max)),
+                -(-height * composante["v"] // (8 * v_max)),
+            )
 
     while position < len(data) - 1:
         if data[position] != 0xFF:
@@ -169,7 +343,8 @@ def read_jpeg_eighth(data: bytes) -> Image:
                 table = _build_huffman(counts, symbols)
                 (huff_ac if classe else huff_dc)[identifier] = table
                 index += 17 + total
-        elif marker == 0xC0 or marker == 0xC1:  # baseline
+        elif marker in (0xC0, 0xC1, 0xC2):  # baseline, etendu, progressif
+            progressif = marker == 0xC2
             height, width = struct.unpack(">HH", payload[1:5])
             count = payload[5]
             components = []
@@ -184,15 +359,21 @@ def read_jpeg_eighth(data: bytes) -> Image:
                         "q": payload[8 + c * 3],
                     }
                 )
-        elif marker in (0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB):
+            if not width or not height or not components:
+                raise ValueError("JPEG invalide : cadre vide")
+            preparer_les_plans()
+        elif marker in (0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD,
+                        0xCE, 0xCF):
             raise ValueError(
-                "JPEG progressif ou etendu non supporte : ce decodeur ne lit que "
-                "le baseline sequentiel (SOF0/SOF1). Reenregistrer la photo en "
-                "baseline, ou en PNG."
+                "JPEG sans perte, arithmetique ou hierarchique non supporte : "
+                "ce decodeur lit le baseline (SOF0/SOF1) et le progressif "
+                "(SOF2). Reenregistrer la photo, ou la fournir en PNG."
             )
         elif marker == 0xDD:  # intervalle de reprise
             restart_interval = struct.unpack(">H", payload[:2])[0]
-        elif marker == 0xDA:  # debut du balayage
+        elif marker == 0xDA:  # debut d'un balayage
+            if not components:
+                raise ValueError("JPEG invalide : balayage avant le cadre")
             count = payload[0]
             scan_components = []
             for c in range(count):
@@ -203,74 +384,41 @@ def read_jpeg_eighth(data: bytes) -> Image:
                         component["dc"] = tables >> 4
                         component["ac"] = tables & 15
                         scan_components.append(component)
+            spectre_debut = payload[1 + count * 2]
+            approximation = payload[3 + count * 2]
             scan_start = position + 2 + length
-            break
+            reader = _BitReader(data, scan_start)
+            if not progressif:
+                _balayage_baseline(
+                    reader, scan_components, planes, huff_dc, huff_ac,
+                    restart_interval, mcus_x, mcus_y)
+                balayages += 1
+            elif spectre_debut == 0:
+                _balayage_dc(
+                    reader, scan_components, planes, huff_dc,
+                    restart_interval, approximation >> 4, approximation & 15,
+                    mcus_x, mcus_y, blocs)
+                balayages += 1
+            # Un balayage AC ne porte aucun DC : on le SAUTE sans le decoder.
+            # C'est ce qui rend le progressif bon marche ici — ces balayages
+            # font l'essentiel du fichier.
+            position = _prochain_marqueur(data, scan_start)
+            continue
         position += 2 + length
 
-    if not components or scan_start is None:
+    if not components or not balayages:
         raise ValueError("JPEG incomplet : aucun balayage exploitable")
 
-    h_max = max(component["h"] for component in components)
-    v_max = max(component["v"] for component in components)
-    mcus_x = -(-width // (8 * h_max))
-    mcus_y = -(-height // (8 * v_max))
-
-    # Un plan par composante, un echantillon par bloc 8x8 : c'est l'image au
-    # huitieme, obtenue sans aucune transformee inverse.
-    planes = {
-        component["id"]: [
-            [0] * (mcus_x * component["h"]) for _ in range(mcus_y * component["v"])
-        ]
-        for component in components
-    }
-
-    reader = _BitReader(data, scan_start)
-    predictions = {component["id"]: 0 for component in components}
-    depuis_reprise = 0
-
-    for mcu_y in range(mcus_y):
-        for mcu_x in range(mcus_x):
-            if restart_interval and depuis_reprise == restart_interval:
-                reader.restart()
-                predictions = {component["id"]: 0 for component in components}
-                depuis_reprise = 0
-            depuis_reprise += 1
-
-            for component in scan_components:
-                table_dc = huff_dc[component["dc"]]
-                table_ac = huff_ac[component["ac"]]
-                quantification = quant[component["q"]]
-                plane = planes[component["id"]]
-                for v in range(component["v"]):
-                    for h in range(component["h"]):
-                        longueur = _decode_symbol(reader, table_dc)
-                        difference = _extend(reader.receive(longueur), longueur)
-                        predictions[component["id"]] += difference
-
-                        # Les coefficients AC doivent etre parcourus pour
-                        # avancer dans le flux, mais ils ne sont pas conserves :
-                        # seul le DC nous interesse.
-                        k = 1
-                        while k < 64:
-                            symbole = _decode_symbol(reader, table_ac)
-                            if symbole == 0:
-                                break
-                            course, taille = symbole >> 4, symbole & 15
-                            if taille == 0:
-                                if course != 15:
-                                    break
-                                k += 16
-                                continue
-                            k += course + 1
-                            reader.receive(taille)
-
-                        moyenne = (
-                            predictions[component["id"]]
-                            * quantification[_ZIGZAG_FIRST]
-                        ) // 8 + 128
-                        ligne = mcu_y * component["v"] + v
-                        colonne = mcu_x * component["h"] + h
-                        plane[ligne][colonne] = min(255, max(0, moyenne))
+    # Les plans portent le coefficient DC BRUT ; la moyenne du bloc s'en
+    # deduit ici, une seule fois, quel que soit le nombre de balayages qui l'ont
+    # ecrit. Le faire au fil du decodage empechait tout raffinement.
+    for component in components:
+        quantification = quant[component["q"]][_ZIGZAG_FIRST]
+        plan = planes[component["id"]]
+        for ligne in plan:
+            for index, coefficient in enumerate(ligne):
+                ligne[index] = min(
+                    255, max(0, (coefficient * quantification) // 8 + 128))
 
     out_width = -(-width // 8)
     out_height = -(-height // 8)

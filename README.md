@@ -23,9 +23,14 @@ preuve, soit nommée avec la décision qui lui manque.
 python3 demo_lego_art.py photo.jpg --studs 48 --hauteur 64 --sortie resultat/
 ```
 
-JPEG, PNG ou PPM. L'orientation EXIF est appliquée, et la palette est
-diagnostiquée **avant** de construire : si elle ne peut pas rendre la photo, la
-commande le dit et nomme les couleurs qui manquent.
+JPEG — **baseline et progressif** — PNG ou PPM. L'orientation EXIF est
+appliquée, et la palette est diagnostiquée **avant** de construire : si elle ne
+peut pas rendre la photo, la commande le dit et nomme les couleurs qui manquent.
+
+Le progressif n'est pas un détail de format : une photo transférée par une
+messagerie ressort ré-encodée en progressif, sans EXIF. Sur quatre photos
+réelles, les trois arrivées en original étaient baseline et celle passée par
+une messagerie était progressive — et elle était refusée.
 
 **Palette officielle.** Les 12 couleurs intégrées ne suffisent à aucune photo
 (17,8 ΔE sur un paysage, contre 9,7 avec la palette officielle). Fournir
@@ -249,7 +254,7 @@ page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
 | `bfk001/catalog.py` | — | Références LEGO, couleurs, nomenclature (**hors contrat**) |
 | `bfk001/serialization.py` | — | Persistance JSON sans aucune liaison (**hors contrat**) |
 | `bfk001/imaging.py` | — | Lecture PNG/PPM, rééchantillonnage par moyenne de bloc en lumière linéaire, et par **médiane** pour ce qu'on n'a pas le droit de moyenner (**hors contrat**) |
-| `bfk001/jpeg.py` | — | Décodeur JPEG baseline **au huitième** (DC seul), orientation EXIF (**hors contrat**) |
+| `bfk001/jpeg.py` | — | Décodeur JPEG **au huitième** (DC seul), baseline et progressif, orientation EXIF (**hors contrat**) |
 | `bfk001/palette.py` | — | Palette LEGO, import LDConfig, quantification CIE L\*a\*b\* (**hors contrat**) |
 | `bfk001/mosaic.py` | — | Solveur LEGO Art : image → modèle avec substrat (**hors contrat**) |
 | `bfk001/instructions.py` | — | Plan de montage acyclique, ordonné par portance (**hors contrat**) |

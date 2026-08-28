@@ -105,6 +105,284 @@ def encode_jpeg_blocs_unis(blocs, largeur_blocs, hauteur_blocs, composantes=1):
     )
 
 
+def encode_jpeg_progressif(blocs, largeur_blocs, hauteur_blocs,
+                           composantes=1, approximation=1, avec_ac=True):
+    """JPEG PROGRESSIF minimal, blocs unis, en trois balayages.
+
+    Meme domaine que l'encodeur baseline ci-dessus, et pour la meme raison :
+    un decodeur qui ne garde que le DC doit etre exact sur des blocs unis, et
+    « ca a l'air bon sur une photo » ne prouve rien.
+
+    Trois balayages, parce que c'est la structure qui compte :
+      1. DC initial, decale de `approximation` bits — le decodeur doit poser
+         les bits de poids fort au bon endroit ;
+      2. un balayage AC, que le decodeur doit SAUTER sans le lire — s'il tente
+         de le decoder avec la table DC, tout deraille ensuite ;
+      3. DC de raffinement, un bit par bloc — sans lui la valeur reste fausse
+         d'un bit de poids `approximation`.
+    """
+    quantification = bytes([1] * 64)
+    dc_counts = bytes([0, 0, 0, 12] + [0] * 12)
+    dc_syms = bytes(range(12))
+    ac_counts = bytes([1] + [0] * 15)
+    ac_syms = bytes([0x00])
+
+    def codes(counts, syms):
+        table, code, index = {}, 0, 0
+        for longueur in range(1, 17):
+            for _ in range(counts[longueur - 1]):
+                table[syms[index]] = (longueur, code)
+                code += 1
+                index += 1
+            code <<= 1
+        return table
+
+    table_dc, table_ac = codes(dc_counts, dc_syms), codes(ac_counts, ac_syms)
+
+    def dc_de(c, by, bx):
+        return (blocs[c][by * largeur_blocs + bx] - 128) * 8
+
+    # Balayage 1 : les bits de poids fort du DC, entrelace.
+    premier = _Bits()
+    prediction = [0] * composantes
+    for by in range(hauteur_blocs):
+        for bx in range(largeur_blocs):
+            for c in range(composantes):
+                haut = dc_de(c, by, bx) >> approximation
+                difference = haut - prediction[c]
+                prediction[c] = haut
+                taille, amplitude = _categorie(difference)
+                longueur, code = table_dc[taille]
+                premier.write(code, longueur)
+                if taille:
+                    premier.write(amplitude, taille)
+
+    # Balayage 2 : un AC vide par bloc, sur la premiere composante seulement.
+    # Le decodeur ne doit pas le lire ; l'encodeur l'ecrit quand meme, sinon le
+    # test ne verifie pas qu'il le saute.
+    ac = _Bits()
+    for _ in range(largeur_blocs * hauteur_blocs):
+        longueur, code = table_ac[0x00]
+        ac.write(code, longueur)
+
+    # Balayage 3 : le bit de raffinement de chaque DC.
+    raffinement = _Bits()
+    for by in range(hauteur_blocs):
+        for bx in range(largeur_blocs):
+            for c in range(composantes):
+                for i in range(approximation - 1, -1, -1):
+                    raffinement.write((dc_de(c, by, bx) >> i) & 1, 1)
+
+    def segment(marqueur, charge):
+        return (b"\xff" + bytes([marqueur])
+                + struct.pack(">H", len(charge) + 2) + charge)
+
+    sof = struct.pack(">BHHB", 8, hauteur_blocs * 8, largeur_blocs * 8,
+                      composantes)
+    for c in range(composantes):
+        sof += bytes([c + 1, 0x11, 0])
+
+    def entete_sos(indices, ss, se, ah, al):
+        charge = bytes([len(indices)])
+        for c in indices:
+            charge += bytes([c + 1, 0x00])
+        return charge + bytes([ss, se, (ah << 4) | al])
+
+    tous = list(range(composantes))
+    fichier = (
+        b"\xff\xd8"
+        + segment(0xDB, b"\x00" + quantification)
+        + segment(0xC2, sof)
+        + segment(0xC4, b"\x00" + dc_counts + dc_syms)
+        + segment(0xC4, b"\x10" + ac_counts + ac_syms)
+        + segment(0xDA, entete_sos(tous, 0, 0, 0, approximation))
+        + premier.flush()
+    )
+    if avec_ac:
+        fichier += (segment(0xDA, entete_sos([0], 1, 63, 0, 0)) + ac.flush())
+    for i in range(approximation, 0, -1):
+        fichier += segment(0xDA, entete_sos(tous, 0, 0, i, i - 1))
+    fichier += raffinement.flush()
+    return fichier + b"\xff\xd9"
+
+
+def test_le_progressif_se_decode_exactement_comme_le_baseline():
+    """Le meme contenu, code des deux facons, doit sortir identique.
+
+    Une photo passee par une messagerie ressort en progressif. Le decodeur la
+    refusait — refus honnete, mais refus quand meme, et c'est justement la
+    photo qu'un utilisateur depose dans l'application.
+    """
+    valeurs = [30, 80, 130, 180, 200, 150, 100, 50, 10, 60, 110, 240]
+    baseline = bfk.read_jpeg_eighth(encode_jpeg_blocs_unis([valeurs], 4, 3, 1))
+    progressif = bfk.read_jpeg_eighth(encode_jpeg_progressif([valeurs], 4, 3, 1))
+
+    assert (progressif.width, progressif.height) == (4, 3)
+    lus = [progressif.pixel(x, y)[0] for y in range(3) for x in range(4)]
+    assert lus == valeurs, "le progressif doit etre exact, pas approche"
+    assert progressif.data == baseline.data, "les deux codages, une seule image"
+
+
+def test_le_raffinement_du_progressif_sert_vraiment():
+    """Sans les balayages de raffinement, le DC reste faux d'un bit.
+
+    Le test precedent passerait encore si le decodeur ignorait le raffinement
+    et que les valeurs etaient toutes paires. Celui-ci l'interdit : deux bits
+    d'approximation, des valeurs choisies pour que les bits de poids faible
+    comptent.
+    """
+    valeurs = [37, 91, 133, 179, 201, 155, 99, 51, 13, 67, 111, 239]
+    image = bfk.read_jpeg_eighth(
+        encode_jpeg_progressif([valeurs], 4, 3, 1, approximation=2))
+    lus = [image.pixel(x, y)[0] for y in range(3) for x in range(4)]
+    assert lus == valeurs, f"raffinement perdu : {lus}"
+
+
+def test_le_progressif_saute_vraiment_les_balayages_ac():
+    """Avec et sans balayage AC, le meme DC doit sortir.
+
+    Si le decodeur tentait de lire un balayage AC — avec la table DC, et sans
+    l'ordre spectral — il ne planterait pas forcement : il decalerait le flux
+    et les balayages suivants rendraient du bruit. Comparer les deux fichiers
+    est le seul moyen de prouver qu'il le saute.
+    """
+    valeurs = [30, 80, 130, 180, 200, 150, 100, 50, 10, 60, 110, 240]
+    avec = bfk.read_jpeg_eighth(encode_jpeg_progressif([valeurs], 4, 3, 1))
+    sans = bfk.read_jpeg_eighth(
+        encode_jpeg_progressif([valeurs], 4, 3, 1, avec_ac=False))
+    assert avec.data == sans.data
+
+
+def test_le_progressif_en_couleurs_ne_melange_pas_les_plans():
+    """Trois composantes, trois valeurs distinctes : la conversion doit tenir.
+
+    Un balayage DC entrelace ecrit dans trois plans a la suite. Une erreur
+    d'indice y donnerait une image plausible mais fausse en couleur — le genre
+    de defaut qu'un coup d'oeil sur une photo ne rattrape pas.
+    """
+    luminance = [120] * 12
+    cb = [200] * 12
+    cr = [90] * 12
+    baseline = bfk.read_jpeg_eighth(
+        encode_jpeg_blocs_unis([luminance, cb, cr], 4, 3, 3))
+    progressif = bfk.read_jpeg_eighth(
+        encode_jpeg_progressif([luminance, cb, cr], 4, 3, 3))
+    assert progressif.data == baseline.data
+    assert progressif.pixel(0, 0) == (66, 122, 247)
+
+
+def encode_jpeg_progressif_420(luma, cb, cr, mcus_x, mcus_y):
+    """Progressif AVEC sous-echantillonnage 4:2:0, blocs unis.
+
+    Le cas des vraies photos : la luminance porte quatre blocs par MCU, la
+    chrominance un seul. Les deux grilles de blocs different alors, et c'est
+    exactement la ou une erreur d'indice se cache — invisible sur une photo,
+    qui reste plausible quand la chrominance glisse d'un bloc.
+
+    `luma` compte 2*mcus_x par 2*mcus_y valeurs, `cb` et `cr` mcus_x par
+    mcus_y. Deux balayages : DC initial decale d'un bit, puis raffinement.
+    """
+    quantification = bytes([1] * 64)
+    dc_counts = bytes([0, 0, 0, 12] + [0] * 12)
+    dc_syms = bytes(range(12))
+    ac_counts = bytes([1] + [0] * 15)
+    ac_syms = bytes([0x00])
+
+    def codes(counts, syms):
+        table, code, index = {}, 0, 0
+        for longueur in range(1, 17):
+            for _ in range(counts[longueur - 1]):
+                table[syms[index]] = (longueur, code)
+                code += 1
+                index += 1
+            code <<= 1
+        return table
+
+    table_dc = codes(dc_counts, dc_syms)
+    plans = [(luma, 2, 2, 2 * mcus_x), (cb, 1, 1, mcus_x), (cr, 1, 1, mcus_x)]
+
+    def blocs_de_la_mcu(mx, my):
+        """(indice de plan, valeur) dans l'ordre exact du flux entrelace."""
+        for indice, (valeurs, h, v, largeur) in enumerate(plans):
+            for dv in range(v):
+                for dh in range(h):
+                    yield indice, valeurs[(my * v + dv) * largeur + mx * h + dh]
+
+    premier, raffinement = _Bits(), _Bits()
+    prediction = [0, 0, 0]
+    for my in range(mcus_y):
+        for mx in range(mcus_x):
+            for indice, valeur in blocs_de_la_mcu(mx, my):
+                dc = (valeur - 128) * 8
+                haut = dc >> 1
+                difference = haut - prediction[indice]
+                prediction[indice] = haut
+                taille, amplitude = _categorie(difference)
+                longueur, code = table_dc[taille]
+                premier.write(code, longueur)
+                if taille:
+                    premier.write(amplitude, taille)
+                raffinement.write(dc & 1, 1)
+
+    def segment(marqueur, charge):
+        return (b"\xff" + bytes([marqueur])
+                + struct.pack(">H", len(charge) + 2) + charge)
+
+    sof = struct.pack(">BHHB", 8, mcus_y * 16, mcus_x * 16, 3)
+    sof += bytes([1, 0x22, 0]) + bytes([2, 0x11, 0]) + bytes([3, 0x11, 0])
+
+    def entete_sos(ss, se, ah, al):
+        return (bytes([3, 1, 0x00, 2, 0x00, 3, 0x00])
+                + bytes([ss, se, (ah << 4) | al]))
+
+    return (
+        b"\xff\xd8"
+        + segment(0xDB, b"\x00" + quantification)
+        + segment(0xC2, sof)
+        + segment(0xC4, b"\x00" + dc_counts + dc_syms)
+        + segment(0xC4, b"\x10" + ac_counts + ac_syms)
+        + segment(0xDA, entete_sos(0, 0, 0, 1))
+        + premier.flush()
+        + segment(0xDA, entete_sos(0, 0, 1, 0))
+        + raffinement.flush()
+        + b"\xff\xd9"
+    )
+
+
+def test_le_progressif_sous_echantillonne_place_bien_la_chrominance():
+    """4:2:0 : quatre blocs de luminance pour un de chrominance.
+
+    C'est le format de toute photo de telephone, et le seul endroit du
+    progressif ou les deux grilles de blocs different. Une erreur d'indice y
+    donne une image PLAUSIBLE — les couleurs glissent d'un bloc — donc un
+    regard sur une photo ne la rattrape pas. D'ou des valeurs choisies.
+    """
+    # 2x2 MCU : 4x4 blocs de luminance, 2x2 de chrominance.
+    luma = [10, 60, 110, 160,
+            200, 150, 100, 50,
+            35, 85, 135, 185,
+            240, 190, 140, 90]
+    cb = [200, 40, 128, 90]
+    cr = [90, 210, 128, 60]
+    image = bfk.read_jpeg_eighth(encode_jpeg_progressif_420(luma, cb, cr, 2, 2))
+    assert (image.width, image.height) == (4, 4)
+
+    def attendu(y, cb_valeur, cr_valeur):
+        b, r = cb_valeur - 128, cr_valeur - 128
+        return (
+            min(255, max(0, int(y + 1.402 * r))),
+            min(255, max(0, int(y - 0.344136 * b - 0.714136 * r))),
+            min(255, max(0, int(y + 1.772 * b))),
+        )
+
+    for ligne in range(4):
+        for colonne in range(4):
+            voulu = attendu(luma[ligne * 4 + colonne],
+                            cb[(ligne // 2) * 2 + colonne // 2],
+                            cr[(ligne // 2) * 2 + colonne // 2])
+            assert image.pixel(colonne, ligne) == voulu, (colonne, ligne)
+
+
 def test_jpeg_decoder_is_exact_on_uniform_blocks():
     """Le coefficient DC EST la moyenne du bloc : la sortie doit etre exacte."""
     valeurs = [30, 80, 130, 180, 200, 150, 100, 50, 10, 60, 110, 240]
@@ -132,12 +410,31 @@ def test_jpeg_decoder_refuses_what_it_cannot_read():
     with pytest.raises(ValueError, match="pas un fichier JPEG"):
         bfk.read_jpeg_eighth(b"\x89PNG\r\n\x1a\n")
 
-    # SOF2 : progressif. Le decodeur doit le dire, pas rendre du bruit.
+    # SOF3 : sans perte. Aucun appareil n'en produit, et un decodeur qui ne
+    # garde que le DC n'a rien a y lire — il n'y a pas de DC. Le refus reste.
+    # Le progressif, lui, n'est plus refuse : il est decode (voir plus haut).
     valide = bytearray(encode_jpeg_blocs_unis([[128] * 12], 4, 3, 1))
     position = valide.index(b"\xff\xc0")
-    valide[position + 1] = 0xC2
-    with pytest.raises(ValueError, match="progressif"):
+    valide[position + 1] = 0xC3
+    with pytest.raises(ValueError, match="sans perte"):
         bfk.read_jpeg_eighth(bytes(valide))
+
+    # Une table de Huffman tronquee : elle annonce douze symboles et n'en
+    # porte que trois. Defaut PREEXISTANT, trouve en jetant des octets
+    # aleatoires sur un en-tete valide — il sortait par un IndexError sec.
+    with pytest.raises(ValueError, match="incoherente"):
+        bfk.read_jpeg_eighth(
+            b"\xff\xd8\xff\xc4\x00\x14\x00"
+            + bytes([0, 0, 0, 12] + [0] * 12) + bytes(range(3))
+            + b"\xff\xd9")
+
+    # Un balayage avant le cadre : incoherent, et il faut le dire plutot que
+    # de lever une erreur d'indice trois fonctions plus loin.
+    sans_cadre = bytearray(encode_jpeg_blocs_unis([[128] * 12], 4, 3, 1))
+    position = sans_cadre.index(b"\xff\xc0")
+    sans_cadre[position + 1] = 0xFE   # devient un commentaire
+    with pytest.raises(ValueError, match="avant le cadre"):
+        bfk.read_jpeg_eighth(bytes(sans_cadre))
 
 
 # =============================================================================
