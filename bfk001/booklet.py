@@ -32,6 +32,7 @@ restent nets a l'impression et evitent d'embarquer une fonte matricielle.
 from __future__ import annotations
 
 import zlib
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -343,6 +344,29 @@ def _disque(toile: "_Canvas", cx: float, cy: float, rx: float, ry: float,
             toile.fill(x0, y, x1 - x0, 1, rgb)
 
 
+MEMO_DESSINS = 256
+"""Dessins de pieces gardes en memoire. Une notice n'en connait qu'une centaine.
+
+`render_piece` est une fonction PURE de ses quatre arguments — elle ne lit que
+le catalogue et des constantes — et la notice redessine sans cesse les memes
+pieces : chaque etape rappelle « ce qu'il faut sortir du sachet », et la meme
+tuile 1x1 noire revient a chaque page.
+
+Mesure sur une photo reelle, et la redondance CROIT avec la resolution, c'est-
+a-dire exactement la ou le temps compte :
+
+    format      appels   dessins distincts   redondance
+    48x64          789                 114         6,9x
+    96x128        1693                 128        13,2x
+
+Deux cent cinquante-six couvre largement le double du pire cas observe. Le cache
+est borne parce qu'un cache non borne est une fuite : rien n'interdit a un
+appelant de balayer mille echelles.
+"""
+
+_MEMO_PIECES: "OrderedDict[Tuple[str, Tuple[int, int, int], float, Tuple[int, int, int]], Image]" = OrderedDict()
+
+
 def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0,
                  fond: Tuple[int, int, int] = (255, 255, 255)) -> Image:
     """La piece en perspective, avec ses tenons. Comme dans une notice LEGO.
@@ -357,6 +381,16 @@ def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0
 
     `echelle` est en points par tenon, sur le dessin FINAL.
     """
+    # L'echelle entre dans la cle TELLE QUELLE, sans arrondi : deux flottants
+    # differents peuvent donner deux dessins differents, et arrondir la cle
+    # rendrait le cache approximatif. Un `Image` est un value object gele aux
+    # donnees en `bytes` : le partager entre appelants est sans danger.
+    cle = (design_id, tuple(rgb), echelle, tuple(fond))
+    garde = _MEMO_PIECES.get(cle)
+    if garde is not None:
+        _MEMO_PIECES.move_to_end(cle)
+        return garde
+
     piece = CATALOG[design_id]
     largeur, profondeur = piece.studs_x, piece.studs_y
     hauteur = piece.body_height_ldu / STUD_PITCH_LDU
@@ -422,9 +456,13 @@ def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0
             _disque(toile, x_bas, y_bas, rx, ry, _teindre(rgb, FACE_DROITE))
             _disque(toile, x_bas, y_haut, rx, ry, _teindre(rgb, 1.06))
 
-    return resample_box(toile.image(),
-                        max(1, largeur_px // SUPERECHANTILLON),
-                        max(1, hauteur_px // SUPERECHANTILLON))
+    dessin = resample_box(toile.image(),
+                          max(1, largeur_px // SUPERECHANTILLON),
+                          max(1, hauteur_px // SUPERECHANTILLON))
+    _MEMO_PIECES[cle] = dessin
+    if len(_MEMO_PIECES) > MEMO_DESSINS:
+        _MEMO_PIECES.popitem(last=False)
+    return dessin
 
 
 def _echelle_auto(studs: int, cible: int = 640) -> int:

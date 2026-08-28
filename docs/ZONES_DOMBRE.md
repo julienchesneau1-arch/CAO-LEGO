@@ -3897,10 +3897,41 @@ rien retirer.
 #### Ce que le profil dit maintenant
 
 H2 est passé de 47,7 à 11,2 s de profil et n'est plus dominant. Les trois coûts
-sont désormais du même ordre : H2 (11,2 s), la notice (9,3 s, dont 7,2 s dans
-`resample_box` sur **1708 appels** pour à peine soixante-dix dessins distincts)
-et le décodage JPEG (7,6 s). La redondance de la notice est le prochain
-gisement évident.
+sont désormais du même ordre : H2 (11,2 s), la notice (9,3 s) et le décodage
+JPEG (7,6 s).
+
+#### La notice redessinait treize fois la même pièce
+
+`render_piece` est une fonction **pure** de ses quatre arguments — elle ne lit
+que le catalogue et des constantes — et la notice la rappelle à chaque étape,
+puisque chaque étape rappelle « ce qu'il faut sortir du sachet ». La redondance
+**croît avec la résolution**, c'est-à-dire exactement là où le temps compte :
+
+| format | appels | dessins distincts | redondance |
+|---|---:|---:|---:|
+| 48×64 | 789 | 114 | 6,9× |
+| 96×128 | 1693 | 128 | **13,2×** |
+
+Un cache borné à 256 entrées (le double du pire cas observé) suffit. L'échelle
+entre dans la clé **sans arrondi** : arrondir rendrait le cache approximatif.
+`Image` étant un value object gelé aux données en `bytes`, partager le même
+objet entre appelants est sans danger — et un test l'exige plutôt que de le
+supposer.
+
+**Une leçon de mesure au passage.** Une première mesure en un seul essai donnait
+13,1 → 12,3 s : j'ai failli conclure que le gain ne valait pas la complexité.
+Sur trois essais, la médiane dit **13,50 → 10,24 s**, soit −24 %. Le premier
+chiffre était du bruit. Un gain de 6 % et un gain de 24 % n'appellent pas la
+même décision, et rien ne les distinguait sans répétition.
+
+#### Le compte total
+
+| | début de session | maintenant |
+|---|---:|---:|
+| 48×64 | ~13 s | **4,79 s** |
+| 96×128 | ~33 s | **10,24 s** |
+
+Soit **−63 %** et **−69 %**, à résultat identique au bit près dans les deux cas.
 
 
 ---

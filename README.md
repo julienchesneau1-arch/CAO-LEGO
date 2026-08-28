@@ -819,16 +819,19 @@ celles du noyau : exact sur les 24 rotations.
 
 ## Ce que coûte une mosaïque, mesuré
 
-| format | pièces | contrôle des invariants | total |
-|---|---:|---:|---:|
-| 48×64 | ~1 600 | 0,72 s | **5,4 s** |
-| 96×128 | ~5 200 | 3,26 s | **13,1 s** |
+| format | pièces | total (médiane sur 3) |
+|---|---:|---:|
+| 48×64 | ~1 600 | **4,8 s** |
+| 96×128 | ~5 200 | **10,2 s** |
 
-Le contrôle des six invariants pesait 45 % de la chaîne ; trois gaspillages
-exacts en ont été retirés — 91 % de découpes qui ne touchaient rien, huit coins
-transformés là où deux suffisent, et un calcul d'intervalles fait deux fois.
-Résultat **identique au bit près**, vérifié par 74 empreintes SHA-256 sur six
-configurations. Détail au § 5.73 du registre.
+Contre 13 s et 33 s auparavant, soit **−63 %** et **−69 %** — à résultat
+**identique au bit près**, vérifié par 74 empreintes SHA-256 sur six
+configurations à chaque étape.
+
+Quatre gaspillages retirés, tous du même genre : du travail refait. 91 % de
+découpes qui ne touchaient rien, huit coins transformés là où deux suffisent,
+un calcul d'intervalles fait deux fois, et la notice qui redessinait treize fois
+la même pièce. Détail aux § 5.73 du registre.
 
 C'est ce qui rend 96 tenons confortable — et 96 tenons, c'est le seul levier
 réel contre l'effet de pixels.

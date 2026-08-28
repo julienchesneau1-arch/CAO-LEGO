@@ -789,3 +789,69 @@ class TestLaNoticeDitVrai(unittest.TestCase):
                 total += sum(annonce.values())
             # Et la somme de tous les encarts, c'est toute l'oeuvre.
             self.assertEqual(total, len(mosaique.tiles), etiquette)
+
+
+class TestLeCacheDesDessins(unittest.TestCase):
+    """`render_piece` est PURE : la memoiser est exact. Encore faut-il le tenir.
+
+    La notice redessine sans cesse les memes pieces — chaque etape rappelle
+    « ce qu'il faut sortir du sachet » — et la redondance CROIT avec la
+    resolution : 6,9x a 48x64 tenons, 13,2x a 96x128, c'est-a-dire exactement
+    la ou le temps compte. Mediane sur trois mesures : 13,50 -> 10,24 s.
+
+    Le risque d'un cache n'est pas la lenteur, c'est de rendre le MAUVAIS
+    dessin. D'ou ces tests, qui verifient qu'il distingue ce qui doit l'etre.
+    """
+
+    ROUGE = (200, 40, 40)
+
+    def setUp(self):
+        bk._MEMO_PIECES.clear()
+
+    def test_deux_appels_identiques_rendent_le_meme_objet(self):
+        a = bk.render_piece("3070b", self.ROUGE, 8.0)
+        b = bk.render_piece("3070b", self.ROUGE, 8.0)
+        self.assertIs(a, b, "le second appel doit venir du cache")
+
+    def test_le_cache_distingue_chacun_des_quatre_arguments(self):
+        reference = bk.render_piece("3070b", self.ROUGE, 8.0, (255, 255, 255))
+        variantes = (
+            ("reference", bk.render_piece("3069b", self.ROUGE, 8.0, (255, 255, 255))),
+            ("couleur", bk.render_piece("3070b", (40, 200, 40), 8.0, (255, 255, 255))),
+            ("echelle", bk.render_piece("3070b", self.ROUGE, 12.0, (255, 255, 255))),
+            ("fond", bk.render_piece("3070b", self.ROUGE, 8.0, (0, 0, 0))),
+        )
+        for nom, autre in variantes:
+            self.assertIsNot(reference, autre, f"{nom} doit donner un autre dessin")
+            self.assertNotEqual(reference.data, autre.data,
+                                f"{nom} doit changer le dessin")
+
+    def test_l_echelle_entre_dans_la_cle_sans_arrondi(self):
+        # Arrondir la cle rendrait le cache approximatif : deux echelles
+        # proches mais distinctes doivent donner deux dessins calcules.
+        a = bk.render_piece("3070b", self.ROUGE, 8.0)
+        b = bk.render_piece("3070b", self.ROUGE, 8.000001)
+        self.assertIsNot(a, b)
+
+    def test_le_cache_est_borne(self):
+        # Un cache non borne est une fuite : rien n'interdit a un appelant de
+        # balayer mille echelles.
+        for i in range(bk.MEMO_DESSINS + 60):
+            bk.render_piece("3070b", self.ROUGE, 2.0 + i * 0.01)
+        self.assertLessEqual(len(bk._MEMO_PIECES), bk.MEMO_DESSINS)
+
+    def test_le_dessin_rendu_est_le_meme_qu_sans_cache(self):
+        # La seule chose qui compte vraiment : le contenu.
+        attendu = bk.render_piece("2431", self.ROUGE, 9.0).data
+        bk._MEMO_PIECES.clear()
+        self.assertEqual(bk.render_piece("2431", self.ROUGE, 9.0).data, attendu)
+
+    def test_un_dessin_partage_ne_peut_pas_etre_abime(self):
+        # Le cache rend le MEME objet a tous les appelants : il ne serait sur
+        # que si l'objet est immuable. `Image` est un value object gele.
+        import dataclasses
+        image = bk.render_piece("3070b", self.ROUGE, 8.0)
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            image.width = 99
+        with self.assertRaises(TypeError):
+            image.data[0] = 1
