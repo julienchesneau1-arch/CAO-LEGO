@@ -3580,6 +3580,82 @@ mesurée et non par prudence : rien de ce que j'ai essayé ne sépare les cas. C
 qui change, c'est que le lecteur voit enfin les deux nombres.
 
 
+### 5.70 Passe méticuleuse : neuf audits verts, et trois bombes dans le décodeur
+
+Demande d'une passe complète « pour ne laisser aucun doute ». Neuf audits écrits
+et exécutés en dehors de la suite, sur les six photographies réelles. **Cinq
+fois sur neuf, le premier verdict rouge venait de mon instrument, pas du code.**
+
+| audit | ce qui a été vérifié | verdict |
+|---|---|---|
+| 1 | déterminisme : 3 photos × 9 fichiers, deux fabrications | identique à l'octet |
+| 2 | liste de course vs LDraw, **pièce par pièce et couleur par couleur** | exact |
+| 3 | export BrickLink : 51 lots, 845 pièces | exact |
+| 4 | **le `modele.json` livré, rechargé et repassé aux six invariants** | 0 violation ×4 |
+| 5 | notice vs liste, par pièce, sur 5 configurations | exact |
+| 6 | ordre de montage : chaque prérequis posé avant d'être invoqué | exact |
+| 7 | LDraw : coordonnées entières, rotations droites, aucun doublon | exact |
+| 8 | route de fichiers, **vrai serveur HTTP** : 6 traversées | 404, aucune fuite |
+| 9 | matrice de 28 combinaisons d'options, chacune vérifiée à fond | 27 bâties, 1 refusée |
+
+Le quatrième est le plus fort de tous : ce n'est pas le modèle en mémoire qui
+passe les invariants, c'est **le fichier tel qu'il est écrit sur le disque**,
+rechargé, ses liaisons ré-émises par l'oracle. Relief 3, sans cadre, tuiles
+minimales : zéro violation.
+
+#### Les instruments faux, listés parce qu'ils instruisent
+
+`design` au lieu de `design_id` ; `dumps_wanted_list(table=…)` qui n'existe pas ;
+un `^(\d+)\s*x` qui attrapait le numéro d'étape ; « provisoire » cherché en
+minuscules quand le journal crie `PROVISOIRE` ; des noms de modules cités en
+prose pris pour des chemins. **Le total concordait à chaque fois** — 845 = 845 —
+et seul le groupement divergeait : la signature d'une erreur de mesure, pas de
+calcul. C'est la troisième fois dans ce dépôt qu'une symétrie trop propre dans
+un écart accuse l'instrument.
+
+#### Trois bombes, au seul endroit qui lit des octets d'un inconnu
+
+Treize octets d'en-tête décident de tout ce qu'un décodeur alloue, et rien
+n'oblige ces treize octets à dire la vérité.
+
+| attaque | avant | après |
+|---|---|---|
+| PNG annonçant 2³¹−1 × 2³¹−1 | `zlib.error` hors contrat, **connexion coupée sans un mot** | 400, message clair |
+| PNG, 204 Ko → 200 Mo décompressés | **200 OK**, mosaïque bâtie dessus | 400, refusé à 50 Mo |
+| JPEG de **171 octets** annonçant 32000×32000 | **plusieurs minutes** de processeur | refusé en 0,000 s |
+
+La parade existait déjà dans ce dépôt — `pickabrick._lire_borne`, plafond à
+128 Mo — et n'avait jamais été appliquée au décodeur d'images, c'est-à-dire au
+seul endroit qui lit des octets venus du réseau. Le catalogue d'éléments, qu'on
+va chercher soi-même, était protégé ; la photo qu'un inconnu dépose ne l'était
+pas.
+
+La borne n'est pas un chiffre de confort. Elle est calée sur ce que le décodeur
+alloue **vraiment**, mesuré :
+
+| image | pixels | pic mémoire | octets par pixel |
+|---|---:|---:|---:|
+| 1000×1000 | 1,0 Mpx | 9,0 Mo | 9,0 |
+| 2000×2000 | 4,0 Mpx | 36,0 Mo | 9,0 |
+| 3000×4000 | 12,0 Mpx | 108,0 Mo | 9,0 |
+
+Neuf octets par pixel. `PIXELS_MAXIMUM = 80_000_000` plafonne donc l'allocation
+vers 720 Mo et reste **au-dessus du plus gros capteur grand public** — 61 Mpx en
+plein format, 48 Mpx sur un téléphone. Aucune photographie réelle n'est refusée ;
+un en-tête menteur l'est immédiatement. Les cinq photos réelles se décodent au
+**bit près** comme avant (SHA-256 identiques).
+
+#### Ce qui reste ouvert
+
+La combinaison `sections=12` **avec** relief est refusée par un message dont le
+conseil est faux : « choisissez un côté de section multiple de 4 » — or 12 en
+est un. Le vrai obstacle est un joint qui ne se trouve pas enjambé à `y=24`,
+ce qui dépend du pavage réel et non d'une divisibilité. `sections=12` seul
+passe. Le refus est légitime (il empêche un assemblage non connexe) ; c'est le
+conseil qui ment, et il n'est pas corrigé ici faute d'avoir établi la règle
+vraie. Noté plutôt que réparé à l'aveugle.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter

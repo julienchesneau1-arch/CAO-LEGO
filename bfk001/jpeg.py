@@ -38,7 +38,7 @@ from __future__ import annotations
 import struct
 from typing import Dict, List, Tuple
 
-from .imaging import Image
+from .imaging import Image, _bornes_de_l_image
 
 __all__ = ["read_jpeg_eighth", "exif_orientation", "apply_orientation"]
 
@@ -359,8 +359,13 @@ def read_jpeg_eighth(data: bytes) -> Image:
                         "q": payload[8 + c * 3],
                     }
                 )
-            if not width or not height or not components:
+            if not components:
                 raise ValueError("JPEG invalide : cadre vide")
+            # Le cadre annonce la taille, et rien ne l'oblige a dire vrai : un
+            # fichier de 171 octets annoncant 32000x32000 faisait tourner ce
+            # decodeur pendant des MINUTES. La borne se pose ici, avant la
+            # moindre allocation.
+            _bornes_de_l_image(width, height, "JPEG")
             preparer_les_plans()
         elif marker in (0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD,
                         0xCE, 0xCF):

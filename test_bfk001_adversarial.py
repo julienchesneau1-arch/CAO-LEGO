@@ -894,3 +894,101 @@ def test_collision_status_refuses_incoherent_input():
         bfk.collision_status(bfk.GeometricRelation.OVERLAPPING, piece)
         is bfk.CollisionStatus.PENETRATION
     )
+
+
+# =============================================================================
+# Les decodeurs d'images sont le SEUL endroit qui lit des octets non fiables
+# =============================================================================
+
+import unittest
+
+
+def _png_brut(largeur, hauteur, idat, profondeur=8, type_couleur=2):
+    """Un PNG dont l'en-tete et la charge se contredisent librement."""
+    import struct as _s
+    return (b"\x89PNG\r\n\x1a\n"
+            + _s.pack(">I", 13) + b"IHDR"
+            + _s.pack(">IIBBBBB", largeur, hauteur, profondeur, type_couleur,
+                      0, 0, 0) + b"\x00\x00\x00\x00"
+            + _s.pack(">I", len(idat)) + b"IDAT" + idat + b"\x00\x00\x00\x00"
+            + _s.pack(">I", 0) + b"IEND" + b"\x00\x00\x00\x00")
+
+
+class TestUnEnTeteNeSeCroitPas(unittest.TestCase):
+    """Treize octets d'en-tete decident de tout ce que le decodeur alloue.
+
+    Rien n'oblige ces treize octets a dire la verite, et ce sont les SEULS
+    octets de toute la chaine qui viennent d'un inconnu par le reseau. Avant
+    cette borne : un PNG de deux cents octets annoncant 2147483647 carre
+    faisait remonter une `zlib.error` hors contrat — dans le serveur, la
+    connexion tombait sans un mot — et un JPEG de 171 octets annoncant
+    32000x32000 occupait le processeur pendant des MINUTES.
+    """
+
+    def test_un_png_aux_dimensions_impossibles_est_refuse(self):
+        import zlib as _z
+        faux = _png_brut(2 ** 31 - 1, 2 ** 31 - 1, _z.compress(b"\x00" * 16))
+        with self.assertRaises(ValueError) as capture:
+            bfk.read_png(faux)
+        self.assertIn("millions de pixels", str(capture.exception))
+
+    def test_un_jpeg_aux_dimensions_impossibles_est_refuse_TOUT_DE_SUITE(self):
+        import struct as _s
+        import time as _t
+
+        def segment(marqueur, charge):
+            return (b"\xff" + bytes([marqueur])
+                    + _s.pack(">H", len(charge) + 2) + charge)
+
+        sof = _s.pack(">BHHB", 8, 32000, 32000, 1) + bytes([1, 0x11, 0])
+        faux = (b"\xff\xd8"
+                + segment(0xDB, b"\x00" + bytes([1] * 64))
+                + segment(0xC0, sof)
+                + segment(0xC4, b"\x00" + bytes([0, 0, 0, 12] + [0] * 12)
+                          + bytes(range(12)))
+                + segment(0xC4, b"\x10" + bytes([1] + [0] * 15) + bytes([0]))
+                + segment(0xDA, bytes([1, 1, 0x00, 0, 63, 0]))
+                + b"\x00" * 20 + b"\xff\xd9")
+        depart = _t.perf_counter()
+        with self.assertRaises(ValueError) as capture:
+            bfk.read_jpeg_eighth(faux)
+        # Le refus doit etre IMMEDIAT : c'est tout l'interet de le poser avant
+        # l'allocation. Une seconde est deja mille fois trop.
+        self.assertLess(_t.perf_counter() - depart, 1.0)
+        self.assertIn("millions de pixels", str(capture.exception))
+
+    def test_une_bombe_de_decompression_est_refusee(self):
+        import zlib as _z
+        # 50 Mo de zeros en quelques kilo-octets, dans un PNG qui n'annonce
+        # que 64x64. Avant : decompresse en entier, puis accepte.
+        charge = _z.compress(b"\x00" * (50 * 1024 * 1024), 9)
+        self.assertLess(len(charge), 100_000, "la bombe doit etre petite")
+        with self.assertRaises(ValueError) as capture:
+            bfk.read_png(_png_brut(64, 64, charge))
+        self.assertIn("depasse", str(capture.exception))
+
+    def test_un_flux_zlib_corrompu_reste_dans_le_contrat(self):
+        # `zlib.error` n'est pas une `ValueError` : elle traversait le module.
+        with self.assertRaises(ValueError):
+            bfk.read_png(_png_brut(8, 8, b"ceci n'est pas du zlib"))
+
+    def test_les_dimensions_nulles_sont_refusees(self):
+        import zlib as _z
+        for largeur, hauteur in ((0, 8), (8, 0), (0, 0)):
+            with self.assertRaises(ValueError):
+                bfk.read_png(_png_brut(largeur, hauteur,
+                                       _z.compress(b"\x00" * 16)))
+
+    def test_une_photo_ordinaire_passe_toujours(self):
+        # La borne ne doit refuser AUCUN appareil reel : 61 Mpx est le plus gros
+        # capteur grand public, et il reste sous le plafond.
+        from bfk001.imaging import PIXELS_MAXIMUM, _bornes_de_l_image
+        self.assertGreater(PIXELS_MAXIMUM, 9504 * 6336,
+                           "un plein format 61 Mpx doit passer")
+        self.assertGreater(PIXELS_MAXIMUM, 8064 * 6048,
+                           "un telephone 48 Mpx doit passer")
+        _bornes_de_l_image(9504, 6336, "PNG")   # ne leve pas
+        image = bfk.Image(6, 4, bytes([120, 30, 200] * 24))
+        relu = bfk.read_png(bfk.write_png(image))
+        self.assertEqual(relu.data, image.data,
+                         "une image ordinaire traverse la borne inchangee")

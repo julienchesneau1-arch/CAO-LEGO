@@ -87,6 +87,71 @@ def _paeth(a: int, b: int, c: int) -> int:
     return b if pb <= pc else c
 
 
+PIXELS_MAXIMUM = 80_000_000
+"""Pixels au-dela desquels une image n'est plus une photographie.
+
+Ce n'est pas un chiffre de confort : c'est la seule chose qui separe un fichier
+d'un DENI DE SERVICE. Les dimensions vivent dans un en-tete de treize octets, et
+rien n'oblige cet en-tete a dire la verite. Un PNG de deux cents octets peut
+annoncer 2147483647 x 2147483647.
+
+La borne est calee sur ce que le decodeur ALLOUE VRAIMENT, mesure et non estime :
+
+    image        pixels    pic memoire   octets par pixel
+    1000x1000     1,0 Mpx        9,0 Mo               9,0
+    2000x2000     4,0 Mpx       36,0 Mo               9,0
+    3000x4000    12,0 Mpx      108,0 Mo               9,0
+
+Neuf octets par pixel — la ligne decompressee, la ligne precedente et la sortie
+RVB. Quatre-vingts millions de pixels plafonnent donc l'allocation aux environs
+de 720 Mo, et restent AU-DESSUS du plus gros capteur grand public (61 Mpx sur un
+plein format, 48 Mpx sur un telephone). Aucune photographie reelle n'est
+refusee ; un en-tete menteur l'est tout de suite.
+"""
+
+
+def _bornes_de_l_image(largeur: int, hauteur: int, format_: str) -> None:
+    """Refuse une taille que le decodeur ne doit meme pas tenter d'allouer.
+
+    Verifie AVANT toute allocation. Verifier apres, c'est verifier une fois que
+    le mal est fait — et le mal, ici, est une machine qui se fige.
+    """
+    if largeur <= 0 or hauteur <= 0:
+        raise ValueError(
+            f"{format_} : dimensions invalides ({largeur}x{hauteur})")
+    if largeur * hauteur > PIXELS_MAXIMUM:
+        raise ValueError(
+            f"{format_} : {largeur}x{hauteur} fait "
+            f"{largeur * hauteur // 1_000_000} millions de pixels, au-dela des "
+            f"{PIXELS_MAXIMUM // 1_000_000} que ce decodeur accepte. Un "
+            "en-tete peut annoncer n'importe quelle taille ; celle-ci ne "
+            "correspond a aucun appareil photo."
+        )
+
+
+def _decompresser_borne(charge: bytes, plafond: int, format_: str) -> bytes:
+    """Decompresse en s'arretant au plafond, plutot qu'en allouant d'abord.
+
+    `zlib.decompress` sur un flux hostile alloue tout avant qu'on puisse dire
+    non : deux cents kilo-octets deviennent deux cents mega-octets, et la chaine
+    les accepte sans broncher. Meme parade que `pickabrick._lire_borne`, au seul
+    autre endroit qui lit des octets venus du reseau.
+    """
+    decompresseur = zlib.decompressobj()
+    try:
+        sortie = decompresseur.decompress(charge, plafond + 1)
+    except zlib.error as raison:
+        # Une erreur de zlib qui remonte telle quelle sort du contrat de ce
+        # module — et, dans le serveur, coupe la connexion sans un mot.
+        raise ValueError(f"{format_} : flux compresse illisible ({raison})") from None
+    if len(sortie) > plafond:
+        raise ValueError(
+            f"{format_} : le flux compresse depasse les {plafond} octets que "
+            "ses propres dimensions annoncent. Fichier incoherent ou hostile."
+        )
+    return sortie
+
+
 def read_png(data: bytes) -> Image:
     """Decode un PNG 8 bits non entrelace."""
     if data[:8] != b"\x89PNG\r\n\x1a\n":
@@ -121,7 +186,12 @@ def read_png(data: bytes) -> Image:
     if channels is None:
         raise ValueError(f"type de couleur PNG inconnu : {color_type}")
 
-    raw = zlib.decompress(b"".join(idat))
+    _bornes_de_l_image(width, height, "PNG")
+    # La taille decompressee EXACTE se deduit de l'en-tete : une ligne par
+    # rangee, un octet de filtre devant chacune. Tout ce qui depasse est un
+    # mensonge du flux, pas une image.
+    raw = _decompresser_borne(
+        b"".join(idat), height * (1 + width * channels), "PNG")
     stride = width * channels
     previous = bytearray(stride)
     data = bytearray(width * height * 3)
