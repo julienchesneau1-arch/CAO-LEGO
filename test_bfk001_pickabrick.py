@@ -9,6 +9,7 @@ qui comptent ici sont ceux qui empechent la seconde.
 import unittest
 
 import bfk001 as bfk
+from bfk001 import pickabrick
 from bfk001.catalog import BomLine
 from bfk001.palette import LegoColor, Palette
 from bfk001.pickabrick import (ELEMENTS_PAR_ENVOI, ElementsIllisibles,
@@ -416,3 +417,154 @@ class TestApiPublique(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# =============================================================================
+# Le catalogue decide quelles couleurs existent — au lieu de la finition
+# =============================================================================
+
+
+def _catalogue(couleurs, designs=("3070b", "3069b", "2431")):
+    """Catalogue de synthese : ces couleurs, dans ces references."""
+    lignes = ["Element ID,Design ID,Color Name"]
+    numero = 6000000
+    for nom in couleurs:
+        for design in designs:
+            numero += 1
+            lignes.append(f"{numero},{design},{nom}")
+    return pickabrick.read_elements("\n".join(lignes))
+
+
+class TestLeCatalogueProuveAuLieuDeSupposer(unittest.TestCase):
+    """La regle par defaut est fausse dans les DEUX sens.
+
+    Trop large : une couleur mate obsolete reste retenue alors qu'aucune tuile
+    n'existe plus dedans, et l'utilisateur ne l'apprend qu'en commandant. Trop
+    etroite : les nacrees existent bel et bien en tuile 1x1, et les ecarter
+    coute 0,7 delta E sur une photo reelle — autant que doubler la resolution.
+    """
+
+    def palette(self):
+        return bfk.PROVISIONAL_PALETTE
+
+    def test_une_couleur_sans_tuile_est_ecartee_meme_si_elle_est_mate(self):
+        noms = [c.name for c in self.palette() if c.is_solid]
+        table = _catalogue(noms[:2])
+        dispo, ecartees = pickabrick.couleurs_prouvees(
+            self.palette(), table, ("3070b", "3069b", "2431"))
+        self.assertEqual(sorted(c.name for c in dispo), sorted(noms[:2]))
+        self.assertTrue(ecartees, "tout le reste doit etre ecarte")
+        for couleur in ecartees:
+            self.assertNotIn(couleur.name, noms[:2])
+
+    def test_une_couleur_non_mate_est_RETENUE_si_le_catalogue_la_prouve(self):
+        # Le coeur du renversement : la finition ne decide plus.
+        nacree = LegoColor(297, "Pearl Gold", (0xAA, 0x7F, 0x2E),
+                           finish="pearl", lego_id=297)
+        palette = Palette(list(self.palette()) + [nacree])
+        self.assertFalse(nacree.is_solid, "la couleur d'essai n'est pas mate")
+        table = _catalogue(["Pearl Gold"])
+        dispo, _ = pickabrick.couleurs_prouvees(
+            palette, table, ("3070b", "3069b", "2431"))
+        self.assertIn("Pearl Gold", [c.name for c in dispo],
+                      "prouvee par le catalogue, donc retenue")
+
+    def test_il_faut_TOUTES_les_references_pas_seulement_la_1x1(self):
+        # La fusion des tuiles est automatique : une couleur qui n'a pas la
+        # 1x4 rendrait la liste incommandable des que la fusion s'en sert.
+        noms = [c.name for c in self.palette() if c.is_solid][:1]
+        partiel = _catalogue(noms, designs=("3070b",))
+        exigeant, _ = pickabrick.couleurs_prouvees(
+            self.palette(), partiel, ("3070b", "3069b", "2431"))
+        indulgent, _ = pickabrick.couleurs_prouvees(
+            self.palette(), partiel, ("3070b",))
+        self.assertEqual(exigeant, [])
+        self.assertEqual([c.name for c in indulgent], noms)
+
+    def test_les_marqueurs_ldraw_ne_passent_jamais(self):
+        # 16 et 24 ne sont pas des couleurs. Un catalogue qui les nommerait
+        # ne doit pas les faire entrer.
+        table = _catalogue(["Main Colour", "Edge Colour"])
+        dispo, _ = pickabrick.couleurs_prouvees(
+            self.palette(), table, ("3070b",))
+        self.assertEqual([c.code for c in dispo if c.code in (16, 24)], [])
+
+
+class TestLaChaineAdopteLeCatalogue(unittest.TestCase):
+    def photo(self):
+        pixels = bytearray()
+        for y in range(80):
+            for x in range(80):
+                pixels += bytes(((x * 3) % 256, (y * 3) % 256,
+                                 ((x + y) * 2) % 256))
+        return bfk.write_png(bfk.Image(80, 80, bytes(pixels)))
+
+    def fabriquer(self, table):
+        from bfk001 import pipeline
+
+        return pipeline.run(
+            self.photo(), pipeline.Reglages(studs=16, hauteur=16, titre="c"),
+            palette=bfk.PROVISIONAL_PALETTE.solids_only(),
+            palette_complete=bfk.PROVISIONAL_PALETTE,
+            table_elements=table, note_palette=("info", "essai"))
+
+    def test_un_catalogue_complet_est_adopte_et_annonce(self):
+        from bfk001 import pipeline
+
+        noms = [c.name for c in bfk.PROVISIONAL_PALETTE
+                if c.is_solid and c.code not in (16, 24)]
+        # Assez de couleurs pour depasser le plancher.
+        table = _catalogue(noms * 1)
+        resultat = self.fabriquer(table)
+        texte = "\n".join(t for _, t in resultat.journal)
+        if len(noms) >= pipeline.COULEURS_PROUVEES_MINIMUM:
+            self.assertIn("PROUVEES par le catalogue", texte)
+        else:
+            # La palette provisoire est trop petite : la chaine doit le DIRE
+            # et garder la palette de finition, pas livrer trois couleurs.
+            self.assertIn("catalogue PARTIEL", texte)
+
+    def test_un_catalogue_partiel_est_refuse_en_le_disant(self):
+        table = _catalogue(["Black", "White"])
+        resultat = self.fabriquer(table)
+        texte = "\n".join(t for _, t in resultat.journal)
+        self.assertIn("catalogue PARTIEL", texte)
+        self.assertIn("verifiez que le fichier est complet", texte)
+        # Et surtout : la mosaique n'est PAS livree en deux couleurs.
+        self.assertGreater(resultat.mesures["lots"], 2)
+
+    def test_un_catalogue_maigre_est_adopte_mais_en_ALERTE(self):
+        """Correct sur le fond, jamais en silence.
+
+        Un catalogue nettement plus etroit que la regle de finition est presque
+        toujours un fichier incomplet. On l'adopte — on ne commande pas des
+        tuiles qui n'existent pas — mais degrader le rendu sans le dire serait
+        le pire des deux : mesure sur une photo reelle, 6,7 -> 9,2 delta E.
+        """
+        from bfk001 import pipeline
+
+        # La palette provisoire ne compte que douze couleurs : trop peu pour
+        # que « la moitie » veuille dire quelque chose. On en fabrique une
+        # assez grande ici — un test qui se saute ne prouve rien.
+        large = Palette(
+            [LegoColor(900 + i, f"Essai {i}",
+                       ((i * 37) % 256, (i * 91) % 256, (i * 53) % 256))
+             for i in range(60)])
+        noms = [c.name for c in large]
+        seuil = pipeline.COULEURS_PROUVEES_MINIMUM
+        table = _catalogue(noms[:seuil])
+        resultat = pipeline.run(
+            self.photo(), pipeline.Reglages(studs=16, hauteur=16, titre="c"),
+            palette=large, palette_complete=large,
+            table_elements=table, note_palette=("info", "essai"))
+        niveaux = [n for n, t in resultat.journal if "couleurs:" in t]
+        self.assertEqual(niveaux, ["alerte"],
+                         "un catalogue maigre doit ALERTER, pas informer")
+        texte = "\n".join(t for _, t in resultat.journal)
+        self.assertIn("catalogue INCOMPLET", texte)
+
+    def test_sans_catalogue_rien_ne_change(self):
+        resultat = self.fabriquer(None)
+        texte = "\n".join(t for _, t in resultat.journal)
+        self.assertNotIn("PROUVEES par le catalogue", texte)
+        self.assertNotIn("catalogue PARTIEL", texte)

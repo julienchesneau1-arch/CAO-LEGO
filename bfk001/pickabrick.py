@@ -60,10 +60,11 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 # ici et pas la, sans qu'aucun test de l'un ou l'autre module ne le voie.
 from .bricklink import _decouper, _normaliser
 from .catalog import BomLine
+from .palette import LDRAW_INTERNAL_CODES
 
 __all__ = ["TableElements", "ELEMENTS_PAR_ENVOI", "PIECES_UTILES",
            "read_elements", "read_color_names", "elements_for_bom",
-           "dumps_upload", "element_pour", "missing_report", "decompresser", "TAILLE_DECOMPRESSEE_MAXIMALE",
+           "dumps_upload", "element_pour", "couleurs_prouvees", "missing_report", "decompresser", "TAILLE_DECOMPRESSEE_MAXIMALE",
            "ElementsIllisibles"]
 
 
@@ -435,6 +436,51 @@ def elements_for_bom(bom: Iterable[BomLine], table: TableElements, palette
             trouves.append((element, ligne.quantity))
             replis += 1 if replie else 0
     return trouves, manquants, replis
+
+
+def couleurs_prouvees(palette, table: TableElements,
+                      designs: Sequence[str]) -> Tuple[List, List]:
+    """(couleurs disponibles, couleurs ecartees) selon le CATALOGUE.
+
+    Renverse la regle par defaut, et c'est tout l'interet.
+
+    Sans catalogue, la chaine ecarte les couleurs par FINITION : transparent,
+    chrome, nacre, metallise, caoutchouc, paillete. C'est prudent et c'est
+    faux dans les deux sens. Trop large d'abord : une couleur mate obsolete
+    reste retenue alors qu'aucune tuile n'existe plus dedans, et l'utilisateur
+    ne l'apprend qu'au moment de commander. Trop etroit ensuite : les couleurs
+    NACREES existent bel et bien en tuile 1x1, et les ecarter coute cher —
+    mesure sur trois photographies, a 48x64 tenons :
+
+        jeu de couleurs        n    velo   cavalier   lievre
+        solides seuls         82    5,03       4,78     7,07
+        + nacrees             93    4,33       4,21     6,85
+        + nacrees + metal    102    4,29       4,29     6,72
+
+    Sept dixiemes de delta E sur le velo, pour zero piece de plus. C'est autant
+    que doubler le nombre de tenons.
+
+    Avec un catalogue, la question cesse d'etre une supposition : une couleur
+    est retenue si le fichier PROUVE que chacune des references demandees
+    existe dedans. Toutes les references, pas seulement la 1x1 : la fusion des
+    tuiles est automatique, et une couleur qui n'aurait pas la 1x4 rendrait la
+    liste incommandable des que la fusion s'en sert.
+
+    Ne devine rien, n'invente rien : le catalogue est la seule autorite.
+    """
+    disponibles, ecartees = [], []
+    for couleur in palette:
+        if couleur.code in LDRAW_INTERNAL_CODES:
+            # 16 et 24 ne sont pas des couleurs mais des marqueurs LDraw.
+            ecartees.append(couleur)
+            continue
+        manque = any(
+            element_pour(BomLine(design, design, couleur.code, 1),
+                         table, couleur)[0] is None
+            for design in designs
+        )
+        (ecartees if manque else disponibles).append(couleur)
+    return disponibles, ecartees
 
 
 def element_pour(ligne: BomLine, table: TableElements, couleur

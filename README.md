@@ -817,6 +817,76 @@ celles du noyau : exact sur les 24 rotations.
 
 ---
 
+## Plus de pièces ne réduit **pas** l'effet de pixels
+
+C'est la première chose à dire, parce que c'est la première chose qu'on croit.
+Les quatre jeux de tuiles produisent une grille de couleurs **identique** :
+
+| jeu | pièces posées | grille identique ? |
+|---|---:|---|
+| minimal (1×1 seule) | 3072 | référence |
+| standard (1×1, 1×2, 1×4) | 1327 | **oui** |
+| large (jusqu'à 1×8) | 1001 | **oui** |
+| art (rondes 1×1) | 3072 | **oui** |
+
+Les tuiles 1×N sont des **fusions** de cases de même couleur : elles divisent le
+nombre de pièces par trois et ne changent pas un pixel de l'image. Le pas de
+8 mm est celui du tenon, et rien dans le catalogue LEGO n'est plus petit.
+
+**Les deux leviers réels**, mesurés sur une photo de chien à 48×64 :
+
+| levier | écart par tuile | effet sur la grille |
+|---|---:|---|
+| 82 couleurs (finition) | 4,83 | — |
+| 100 couleurs (catalogue) | **4,35** | aucun : même grille, meilleures couleurs |
+| 96 tenons au lieu de 48 | — | **quatre fois plus fine** : les pixels disparaissent |
+
+---
+
+## Les couleurs se **prouvent**, elles ne se supposent plus
+
+Sans catalogue d'éléments, les couleurs sont retenues sur leur **finition** :
+opaques et mates seulement. C'est prudent, et c'est faux **dans les deux sens**.
+
+- **Trop large** : une couleur mate obsolète reste retenue alors qu'aucune tuile
+  n'existe plus dedans. La liste de course est incommandable, et on ne
+  l'apprend qu'au moment de payer.
+- **Trop étroite** : les couleurs **nacrées** existent bel et bien en tuile 1×1,
+  et les écarter coûte cher. Mesuré à 48×64 tenons :
+
+| jeu de couleurs | n | vélo | cavalier | lièvre |
+|---|---:|---:|---:|---:|
+| solides seuls | 82 | 5,03 | 4,78 | 7,07 |
+| + nacrées | 93 | **4,33** | **4,21** | 6,85 |
+| + nacrées + métallisées | 102 | 4,29 | 4,29 | **6,72** |
+
+Sept dixièmes de ΔE sur le vélo, pour zéro pièce de plus — autant que doubler
+le nombre de tenons.
+
+**Avec `--elements catalogue.csv`, la question cesse d'être une supposition.**
+Une couleur est retenue si le fichier **prouve** que chacune des références
+demandées existe dedans — toutes, pas seulement la 1×1 : la fusion des tuiles
+est automatique, et une couleur sans 1×4 rendrait la liste incommandable dès
+que la fusion s'en sert.
+
+```
+  couleurs: 100 PROUVEES par le catalogue d'elements (au lieu de 82 retenues
+            sur leur finition)
+            +20 debloquees — nacrees et metallisees existent bel et bien en tuile
+            -2 ecartees — aucune tuile n'existe dans ces couleurs, la liste
+            serait incommandable
+  fidelite: 5.7 delta E par tuile (excellent)
+```
+
+Contre 7,4 ΔE et « correct » sans le catalogue, sur la même photo.
+
+Un catalogue qui prouve moins de **24 couleurs** — le nombre d'un set LEGO Art
+officiel — est jugé **partiel** : la chaîne le dit et garde la palette de
+finition, plutôt que de livrer une mosaïque en trois couleurs sans que personne
+comprenne pourquoi.
+
+---
+
 ## Le tramage : écarté par défaut, et chiffré quand même
 
 **`--tramage aucun` est le défaut**, et c'est une décision mesurée, pas un goût.

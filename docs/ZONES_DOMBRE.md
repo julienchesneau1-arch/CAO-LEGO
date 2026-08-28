@@ -3742,6 +3742,98 @@ chaque tuile de 8 mm **à toute distance de lecture**. Le fondu optique sur lequ
 repose le tramage n'a jamais lieu ; le grain, lui, se voit toujours.
 
 
+### 5.72 « Ajoute plus de pièces » — la demande était fausse, l'intuition juste
+
+Demande : ajouter des pièces à la collection pour réduire l'effet de pixels et
+la trame mal faite.
+
+#### La première moitié ne pouvait pas marcher, et ça se mesure
+
+Les quatre jeux de tuiles produisent une grille de couleurs **identique** :
+
+| jeu | tuiles posées | grille identique |
+|---|---:|---|
+| minimal (1×1) | 3072 | référence |
+| standard | 1327 | oui |
+| large (jusqu'à 1×8) | 1001 | oui |
+| art (rondes) | 3072 | oui |
+
+Les tuiles 1×N sont des **fusions** de cases de même couleur. Elles divisent le
+nombre de pièces par trois et ne changent pas un pixel. Le pas de 8 mm est celui
+du tenon ; le catalogue LEGO n'a rien de plus petit dans le plan, et la
+géométrie de ce dépôt ne modélise que des boîtes alignées sur la grille — une
+tuile diagonale demanderait une primitive de collision que le noyau n'a pas.
+
+Le seul levier géométrique est donc la **résolution**, déjà disponible
+(`--studs`), et c'est elle qui fait disparaître les pixels : à 96 tenons au lieu
+de 48, la grille est quatre fois plus fine.
+
+#### La seconde moitié cachait un vrai gisement, et un vrai défaut
+
+Les couleurs étaient retenues sur leur **finition** : opaques et mates. Prudent,
+et faux **dans les deux sens**.
+
+**Trop large.** Une couleur mate obsolète reste retenue alors qu'aucune tuile
+n'existe plus dedans. La chaîne construisait donc des mosaïques avec des
+couleurs qu'elle ne pouvait pas prouver commandables, et l'utilisateur ne
+l'apprenait qu'au rapport des manquants, après coup.
+
+**Trop étroite.** Les nacrées existent bel et bien en tuile 1×1. Mesuré à 48×64 :
+
+| jeu de couleurs | n | vélo | cavalier | lièvre |
+|---|---:|---:|---:|---:|
+| solides seuls | 82 | 5,03 | 4,78 | 7,07 |
+| + nacrées | 93 | **4,33** | **4,21** | 6,85 |
+| + nacrées + métallisées | 102 | 4,29 | 4,29 | **6,72** |
+
+Sept dixièmes de ΔE pour zéro pièce de plus — autant que doubler la résolution.
+
+#### Livré : `couleurs_prouvees`
+
+La règle est renversée. Avec un catalogue d'éléments, une couleur est retenue
+si le fichier **prouve** que chacune des références demandées existe dedans.
+Toutes les références, pas seulement la 1×1 : la fusion est automatique, et une
+couleur sans 1×4 rendrait la liste incommandable dès que la fusion s'en sert —
+un test le vérifie en fournissant un catalogue qui n'a que la 1×1.
+
+Sur le vélo, avec un catalogue couvrant les couleurs opaques : **7,4 → 5,7 ΔE
+par tuile**, pire écart tonal 12,4 → 8,6, +20 couleurs débloquées, −2 écartées.
+
+Le plancher `COULEURS_PROUVEES_MINIMUM = 24` — le nombre de couleurs d'un set
+LEGO Art officiel — refuse un catalogue partiel **en le disant**, plutôt que de
+livrer une mosaïque en trois couleurs sans que personne comprenne pourquoi.
+
+#### Un défaut dans ce que je venais d'écrire
+
+Vérification systématique des cas dégradés, et le mécanisme s'est fait prendre :
+un catalogue de 24 couleurs — juste au-dessus du plancher — était **adopté avec
+une simple ligne d'information**, et faisait passer l'écart de **6,7 à 9,2 ΔE**.
+
+Adopter reste juste sur le fond : on ne commande pas des tuiles qui n'existent
+pas. Mais un catalogue nettement plus étroit que la règle de finition est
+presque toujours un fichier **incomplet**, pas un catalogue LEGO réduit — et
+dégrader le rendu sans le dire aurait été le pire des deux comportements.
+
+En dessous de la moitié de la palette, la ligne passe donc en **alerte** et
+nomme le remède : vérifier le fichier, ou le retirer pour revenir à la règle de
+finition. Trois cas, trois comportements distincts, chacun sous test :
+
+| catalogue prouve | comportement |
+|---|---|
+| moins de 24 couleurs | **refusé**, palette de finition conservée |
+| moins de la moitié | adopté, **en alerte**, avec le remède |
+| au-delà | adopté, en information |
+
+#### Ce qui reste une supposition, et il faut le dire
+
+Le gain ci-dessus est mesuré avec un catalogue **de synthèse** qui affirme que
+les nacrées existent dans les trois références. Je n'ai aucun moyen de le
+vérifier ici, et ce dépôt n'invente pas de données catalogue. Le mécanisme est
+livré et testé ; **la vérité vient du fichier de l'utilisateur**. Sans
+catalogue, rien ne change — la règle de finition reste, et le journal reste
+muet.
+
+
 ---
 
 ## 7. Ce qu'un solveur devra respecter

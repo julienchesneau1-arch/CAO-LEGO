@@ -320,6 +320,17 @@ def palette_utilisable(chemins: Optional[Sequence[str]] = None):
     )
 
 
+COULEURS_PROUVEES_MINIMUM = 24
+"""En deca, un catalogue d'elements est juge PARTIEL et n'est pas adopte.
+
+Le catalogue est l'autorite sur ce qui existe — mais un fichier tronque, ou
+filtre sur une poignee de references, prouverait « trois couleurs » et la chaine
+livrerait une mosaique en trois couleurs sans que personne comprenne pourquoi.
+Vingt-quatre est le nombre de couleurs d'un set LEGO Art officiel : en dessous,
+ce n'est pas une palette, c'est un extrait.
+"""
+
+
 RELIEF_PAR_CONVENTION = "CONVENTION du bas-relief"
 """Debut de la provenance quand le relief vient de la CLARTE et non d'une mesure.
 
@@ -550,6 +561,54 @@ def run(
         journal.append(note_palette)
     if palette_complete is None:
         palette_complete = palette
+
+    # Le catalogue d'elements RENVERSE la regle par defaut. Sans lui, les
+    # couleurs se retiennent par finition — prudent, et faux dans les deux
+    # sens : une couleur mate obsolete reste retenue alors qu'aucune tuile
+    # n'existe plus dedans, et les nacrees sont ecartees alors qu'elles
+    # existent. Avec lui, une couleur est retenue si le fichier PROUVE que
+    # chacune des references demandees existe dedans.
+    if table_elements is not None:
+        disponibles, _ = pickabrick.couleurs_prouvees(
+            palette_complete, table_elements, JEUX_DE_TUILES[reglages.references])
+        avant = len(palette)
+        if len(disponibles) >= COULEURS_PROUVEES_MINIMUM:
+            gagnees = sorted(
+                {c.code for c in disponibles} - {c.code for c in palette})
+            perdues = sorted(
+                {c.code for c in palette} - {c.code for c in disponibles})
+            palette = Palette(disponibles)
+            # Un catalogue nettement plus etroit que la regle de finition est
+            # presque toujours un fichier INCOMPLET, pas un catalogue LEGO
+            # reduit. On l'adopte quand meme — on ne commande pas des tuiles
+            # qui n'existent pas — mais jamais en silence : mesure sur une
+            # photo reelle, un catalogue de 24 couleurs fait passer l'ecart de
+            # 6,7 a 9,2 delta E. Degrader sans le dire serait le pire des deux.
+            maigre = len(disponibles) < avant // 2
+            journal.append((
+                "alerte" if maigre else "info",
+                f"  couleurs: {len(palette)} PROUVEES par le catalogue "
+                f"d'elements (au lieu de {avant} retenues sur leur finition)"
+                + (f"\n            +{len(gagnees)} debloquees — nacrees et "
+                   "metallisees existent bel et bien en tuile"
+                   if gagnees else "")
+                + (f"\n            -{len(perdues)} ecartees — aucune tuile "
+                   "n'existe dans ces couleurs, la liste serait incommandable"
+                   if perdues else "")
+                + ("\n            ATTENTION : moins de la moitie des couleurs "
+                   "de la palette. C'est\n            presque toujours un "
+                   "catalogue INCOMPLET, et le rendu en souffrira.\n"
+                   "            Verifiez le fichier, ou retirez-le pour "
+                   "revenir a la regle de finition." if maigre else ""),
+            ))
+        else:
+            journal.append((
+                "alerte",
+                f"  couleurs: catalogue PARTIEL — il ne prouve que "
+                f"{len(disponibles)} couleurs, moins que les "
+                f"{COULEURS_PROUVEES_MINIMUM} d'un set officiel. Palette de "
+                "finition conservee ; verifiez que le fichier est complet.",
+            ))
 
     # Sans consigne, la hauteur suit les PROPORTIONS DE LA PHOTO : rien n'est
     # rogne, rien n'est etire. Demander une hauteur, c'est demander un cadrage.

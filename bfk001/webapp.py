@@ -513,7 +513,12 @@ PAGE = r"""<!doctype html>
         <span class="aide">Le numero d'une piece <em>dans une couleur</em>.
           <a href="https://rebrickable.com/downloads/" target="_blank"
              rel="noopener noreferrer">elements.csv chez Rebrickable</a> —
-          le .gz se depose tel quel.</span>
+          le .gz se depose tel quel.<br>
+          Il sert aussi a <strong>choisir les couleurs</strong> : au lieu de les
+          retenir sur leur finition, la chaine ne garde que celles dont il
+          prouve que les tuiles existent — nacrees comprises. Sur une photo
+          reelle : 100 couleurs au lieu de 82, et 7,4 → 5,7 &Delta;E par
+          tuile.</span>
       </label>
       <input type="file" id="cat_elements" accept=".csv,.tsv,.txt,.gz,.zip">
 
