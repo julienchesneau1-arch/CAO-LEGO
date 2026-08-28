@@ -206,6 +206,100 @@ l'application.
 
 ---
 
+## Héberger l'atelier
+
+`app_lego_art.py` sert l'atelier sur la boucle locale : un utilisateur, qui
+répond de sa machine, et rien à authentifier. `heberger_lego_art.py` sert le
+même atelier à des gens qu'on ne connaît pas — ce qui n'est pas le même
+programme, et ne s'obtient pas en changeant `--adresse`.
+
+```bash
+docker build -t brickforge .
+docker run --rm -p 8000:8000 --memory 1g \
+  -e BFK_CLE="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" \
+  -e BFK_SANS_TLS=1 brickforge
+```
+
+Le démarrage imprime le lien à suivre. `docs/HEBERGEMENT.md` détaille le
+déploiement chez un hébergeur, les variables et ce qui reste à la charge de
+qui installe.
+
+### Le chiffre qui décide de tout
+
+Avant de choisir un hébergeur, il fallait savoir ce qu'une **seule** requête
+peut coûter. Chaîne complète, photo 512 × 512, temps processeur et pointe de
+mémoire du processus :
+
+| Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
+|---:|---:|---:|---:|---:|
+| 32 × 32 | 1 024 | 1,2 s | 39 Mo | 0,8 Mo |
+| 64 × 64 | 4 096 | 4,2 s | 75 Mo | 2,7 Mo |
+| 96 × 96 | 9 216 | 7,6 s | 135 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 14,5 s | 217 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 39,8 s | 470 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **388,7 s** | **3 439 Mo** | **104,2 Mo** |
+
+La dernière ligne est le plafond que la chaîne accepte, et elle a été
+**mesurée**, pas déduite : une droite ajustée sur les cinq premières annonce
+250 s et 2,9 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
+où il reste le moins de marge.
+
+**Une seule de ces deux colonnes est une propriété du logiciel.** Le tableau
+refait sur une seconde machine du même environnement a redonné la mémoire *à
+l'octet près* — 135 Mo, 217 Mo, identiques — et le temps **multiplié par 1,8**.
+Un plafond de durée posé sur une constante serait donc faux de 80 % chez qui
+héberge. L'atelier hébergé **s'étalonne au démarrage** : il fabrique une
+mosaïque de 32 × 32, la chronomètre, et corrige par le rapport mesuré une fois
+ici entre ce régime et celui du plafond. Deux secondes de démarrage, contre un
+plafond faux pendant toute la vie du service.
+
+Une requête de quelques kilo-octets peut donc demander **six minutes et demie
+de calcul et trois giga-octets et demi de mémoire**. Trois conséquences, et
+aucune n'est un réglage :
+
+1. **Le sans-serveur est exclu.** Aucune fonction hébergée ne tient six
+   minutes ni trois giga-octets. Un conteneur, oui.
+2. **Le plafond local n'est pas transposable.** Hébergé, il est recalculé sur
+   la mémoire que le conteneur a *réellement* le droit de prendre — lue dans
+   le cgroup, pas dans `/proc/meminfo`, qui parle de la machine entière — et
+   sur le temps qu'une page web a le droit de mettre à répondre, à la vitesse
+   étalonnée de la machine. Sur un giga-octet il tombe vers 190 tenons de
+   côté, soit quatre fois la surface d'un set LEGO Art officiel.
+3. **Sans clé, le premier venu prend la machine.** L'atelier hébergé ne
+   démarre pas sans `BFK_CLE`.
+
+### Paralléliser n'apporte rien — mesuré
+
+| En parallèle | Durée de chacune | Débit total |
+|---:|---:|---:|
+| 1 | 8,3 s | 0,120 mosaïque/s |
+| 2 | 17,8 s | 0,112 mosaïque/s |
+| 4 | 37,2 s | 0,107 mosaïque/s |
+
+Le débit **baisse**. La chaîne est du Python pur : le verrou global la
+sérialise, et les fils n'ajoutent que du changement de contexte. Une deuxième
+place de fabrication ne servirait pas deux visiteurs deux fois plus vite ;
+elle tiendrait deux pointes de mémoire en même temps pour rendre les deux
+réponses deux fois plus tard. L'atelier hébergé fabrique donc **une mosaïque à
+la fois**, et refuse la seconde tout de suite en disant quand revenir — ce qui
+vaut mieux qu'une attente muette. Un refus immédiat coûte 0,1 s ; l'attente
+aurait coûté une minute.
+
+### Un atelier par visiteur
+
+Les catalogues de commande sont une propriété de l'installation tant qu'il n'y
+a qu'un utilisateur. Dès qu'il y en a deux, le catalogue déposé par l'un
+changerait la liste de course de l'autre, et un catalogue partiel la
+dégraderait sans que personne comprenne pourquoi. Chaque session a donc le
+sien, parti de celui de l'exploitant, et rien n'est écrit sur le disque.
+
+Le magasin de résultats, lui, reste **partagé et borné en octets** : les jetons
+sont imprévisibles, donc partager le magasin ne partage pas la lecture — mais
+un magasin par visiteur multiplierait la borne par le nombre de visiteurs,
+c'est-à-dire ne bornerait plus rien.
+
+---
+
 ## Exécution
 
 ```bash
@@ -265,6 +359,7 @@ page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
 | `bfk001/depth.py` | — | Profondeur **mesurée** : cartes externes, et extraction de la carte embarquée par les appareils en mode portrait (**hors contrat**) |
 | `bfk001/pipeline.py` | — | **La chaîne** : photo → fichiers livrables, en mémoire. Une seule, appelée à l'identique par la commande et par l'interface (**hors contrat**) |
 | `bfk001/webapp.py` | — | L'atelier dans le navigateur : serveur local, page autonome sans ressource externe, catalogues de commande déposés et retenus (**hors contrat**) |
+| `bfk001/heberge.py` | — | La politique posée devant l'atelier quand il est **hébergé** : clé, plafond calculé sur la mémoire réelle du conteneur, un atelier par visiteur, une fabrication à la fois (**hors contrat**) |
 | `bfk001/panels.py` | — | Découpe en sections bâties séparément, et la couche de plates qui les réunit (**hors contrat**) |
 
 DAG des imports (Section O) : `geometry → connectors → {oracle, collision,

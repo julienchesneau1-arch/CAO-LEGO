@@ -22,10 +22,9 @@ import pathlib
 import sys
 import webbrowser
 
-from bfk001 import bricklink, pickabrick
 from bfk001.palette import PaletteRefusee, installer_palette
-from bfk001.pipeline import palette_utilisable
-from bfk001.webapp import DOSSIER_DEFAUT, Atelier, creer_serveur
+from bfk001.webapp import (DOSSIER_DEFAUT, Atelier, charger_installation,
+                           creer_serveur)
 
 
 def main() -> int:
@@ -72,28 +71,14 @@ def main() -> int:
             print(raison, file=sys.stderr)
             return 3
 
-    complete, note = palette_utilisable(
-        [str(options.ldconfig)] if options.ldconfig else None
-    )
-    print(note[1], file=sys.stderr if note[0] == "alerte" else sys.stdout)
-    palette = complete if note[0] == "alerte" else complete.solids_only()
-    # Les catalogues de commande sont ceux de l'installation. Une erreur ici
-    # arrete le lanceur : mieux vaut la voir au demarrage que decouvrir, apres
-    # avoir fabrique une oeuvre, qu'aucune commande n'en sort.
-    table = None
-    if options.bricklink:
-        table, orphelines = bricklink.read_color_map(
-            options.bricklink.read_text(), complete)
-        print(f"couleurs : {len(table)} correspondances BrickLink"
-              + (f", {len(orphelines)} sans equivalent" if orphelines else ""))
-    elements = None
-    if options.elements:
-        noms = (pickabrick.read_color_names(pickabrick.decompresser(
-            options.elements_couleurs.read_bytes()))
-            if options.elements_couleurs else None)
-        elements = pickabrick.read_elements(
-            pickabrick.decompresser(options.elements.read_bytes()), noms,
-            pieces=pickabrick.PIECES_UTILES)
+    # Palette et catalogues sont ceux de l'INSTALLATION, et le lanceur heberge
+    # les charge exactement de la meme facon : la lecture est donc ecrite une
+    # seule fois, dans `webapp.charger_installation`.
+    palette, complete, note, table, elements, lignes = charger_installation(
+        options.ldconfig, options.bricklink, options.elements,
+        options.elements_couleurs)
+    for flux, texte in lignes:
+        print(texte, file=sys.stderr if flux == "alerte" else sys.stdout)
 
     atelier = Atelier(palette=palette, palette_complete=complete,
                       note_palette=note,

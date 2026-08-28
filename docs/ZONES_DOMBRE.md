@@ -3945,3 +3945,115 @@ Pour que la couche 2 se branche sans rouvrir le noyau :
 3. Passer une `ConnectorTolerance` explicite à chaque appel — il n'existe aucune valeur par défaut, et c'est voulu.
 4. Utiliser `LatticeSearchApproximation` en production, la référence O(n²) en test de conformité — et vérifier P ⊆ C_fast, jamais C_ref ⊆ C_fast.
 5. Ne pas sérialiser de liaisons : un document porte des pièces, l'oracle porte le jugement.
+
+---
+
+### 5.74 « Hébergée » n'était pas un réglage — c'était trois hypothèses fausses
+
+La demande : *« j'aimerais qu'on puisse utiliser l'ensemble sur une app
+hébergée »*. La tentation était de répondre `--adresse 0.0.0.0` et un
+`Dockerfile`. Trois hypothèses tenaient silencieusement dans `webapp.py`, et
+aucune ne survit à un deuxième utilisateur.
+
+**Ce qu'il fallait mesurer d'abord.** Le chiffre qui décide de tout est le pire
+coût qu'une seule requête peut imposer. Extrapolé linéairement depuis
+40 000 tenons, le plafond de la chaîne (250 000) annonçait 250 s et 2,9 Go.
+Mesuré : **388,7 s et 3 439 Mo**. Le coût est linéaire *plus quelque chose*, et
+ce quelque chose se paie exactement là où il ne reste plus de marge. Un plafond
+calculé sur la pente du milieu du tableau aurait autorisé un tiers de tenons de
+trop — et un tiers de trop ne donne pas une erreur lisible, il donne un
+processus tué en plein calcul.
+
+Cette mesure a tranché seule ce qui aurait pu être un débat d'architecture :
+aucune fonction sans serveur ne tient six minutes et demie ni trois giga-octets
+et demi. **Conteneur.** Sans mesure, c'était un avis ; avec, c'est une donnée.
+
+**Ce que la parallélisation n'apporte pas.** Deuxième mesure, contre
+l'intuition : deux fabrications en parallèle prennent chacune **2,15 fois** plus
+longtemps, et le débit total *baisse* (0,120 → 0,112 → 0,107 mosaïque/s à
+1, 2 et 4 fils). La chaîne est du Python pur ; le verrou global la sérialise et
+les fils n'ajoutent que du changement de contexte. Une deuxième place de
+fabrication aurait donc tenu deux pointes de mémoire en même temps pour rendre
+les deux réponses deux fois plus tard. **Une seule place** — et le refus
+immédiat qui en découle (0,1 s, avec `Retry-After`) vaut mieux qu'une attente
+muette d'une minute. Refuser la concurrence rend en prime chaque mosaïque
+autorisée plus grande, puisque le budget mémoire n'est plus divisé.
+
+**Le défaut de fond, celui qu'aucun test local ne pouvait montrer.** L'`Atelier`
+portait un état d'**installation** : palette, catalogues de commande. C'est
+juste tant qu'il n'y a qu'un utilisateur, qui est aussi celui qui répond de la
+machine. Hébergé, le catalogue déposé par un visiteur changeait la liste de
+course de tous les autres — et un catalogue partiel l'aurait *dégradée* sans
+que personne comprenne pourquoi. Un atelier par session le ferme ; mais un
+magasin de résultats par session aurait multiplié la borne par le nombre de
+visiteurs, c'est-à-dire ne l'aurait plus bornée du tout. D'où la séparation :
+**catalogues par visiteur, magasin unique borné en octets** — les jetons étant
+imprévisibles, le partager ne partage pas la lecture.
+
+Au passage, `RESULTATS_GARDES = 8` s'est révélé ne rien borner : huit mosaïques
+de 24 × 32 pèsent trois mega-octets, huit de 200 × 200 en pèsent cent soixante.
+Compter les objets n'est pas une borne quand leur taille varie d'un facteur
+cinquante.
+
+**Une constante que je venais d'écrire n'en était pas une.** La machine de
+travail a redémarré au milieu de ce chantier, et la suite de tests est passée
+de 116 s à 190 s **sans qu'une seule ligne de production n'ait changé** — le
+`--durations` ne montrait aucun test neuf en cause. En refaisant deux points du
+tableau sur cette seconde machine : la colonne **mémoire identique à l'octet
+près** (135 Mo, 217 Mo), la colonne **temps multipliée par 1,8**.
+
+C'est-à-dire que `MEMOIRE_PAR_TENON` est une propriété du logiciel et que
+`CPU_PAR_TENON` n'en est pas une. Le plafond de durée que je venais de livrer
+aurait été faux de 80 % chez qui héberge, et faux dans le mauvais sens :
+autorisant des fabrications que la passerelle de l'hébergeur aurait coupées.
+
+La correction n'est pas de rendre la constante réglable — personne ne saurait
+quoi y mettre — mais de **mesurer la machine au démarrage** : une mosaïque de
+32 × 32, chronométrée, corrigée par le rapport entre ce régime et celui du
+plafond. Ce rapport-là, lui, est bien une propriété du logiciel : c'est la
+forme de la courbe, pas sa hauteur. On mesure la hauteur là où le service
+tourne, on applique la forme mesurée une fois ici. Coût : 1,9 s au démarrage,
+imprimées. Sur cette machine, le plafond est passé de 37 500 à 23 942 tenons —
+et c'est le bon chiffre.
+
+Le défaut n'a pas été trouvé par une relecture ni par un test, mais par une
+anomalie que j'aurais pu attribuer au bruit : *« la suite est plus lente »*.
+Elle l'était pour une raison, et la raison invalidait une constante.
+
+**Quatre défauts trouvés dans mon propre code neuf, avant de le livrer.**
+
+1. La page de refus recopiait l'en-tête `Host` du client dans du HTML. Une
+   page qui reflète ce que le client envoie offre au premier venu d'écrire ce
+   que lira le visiteur suivant. Le lien, celui qui le détient l'a déjà : rien
+   à recopier.
+2. Le seau à jetons ne purgeait son dictionnaire qu'au moment d'**accorder**.
+   Un client changeant de clé à chaque requête était donc toujours refusé — et
+   faisait grossir le dictionnaire sans borne, c'est-à-dire exactement pendant
+   une attaque, exactement quand il fallait qu'il tienne. Le limiteur devenait
+   l'attaque.
+3. Le seau anti-force-brute comptait aussi les **réussites**. Une famille ou un
+   bureau — une seule adresse pour tout le monde — se serait retrouvé
+   verrouillé dehors dès le sixième visiteur muni du bon lien. C'est un test
+   qui l'a montré, en échouant sur une raison que je n'avais pas prévue.
+4. La borne de sessions était appliquée *avant* l'insertion : la limite
+   annoncée valait toujours `MAXIMUM + 1`.
+
+Aucun de ces quatre n'aurait été trouvé par relecture. Trois l'ont été en
+écrivant les tests, un en regardant le code neuf comme s'il venait de
+quelqu'un d'autre.
+
+**Ce qui reste ouvert, et qui est dit dans `docs/HEBERGEMENT.md` plutôt que
+caché :** une seule instance (les sessions vivent dans le processus ; deux
+instances derrière un répartiteur renverraient le visiteur à la page « atelier
+privé » au milieu de son travail), une seule clé pour tout le monde, aucun
+journal de qui a fabriqué quoi, et des résultats qui ne survivent pas à un
+redémarrage. Aller au-delà demanderait un témoin signé et un magasin hors du
+processus — deux chantiers, pas un réglage.
+
+**Ce qui n'a pas pu être vérifié ici.** Le `Dockerfile` n'a pas été construit :
+il n'y a pas de démon Docker dans cet environnement. Chacune de ses étapes a
+été exécutée telle quelle à la main — installation de la palette dans
+`/usr/share/ldraw`, `compileall`, import des modules, démarrage du lanceur
+depuis une copie ne contenant *que* les fichiers que `COPY` prend, avec un
+`HOME` étranger — et le trajet complet a été vérifié en vrai HTTP. Mais la
+mécanique de Docker elle-même reste à essayer par qui hébergera.

@@ -22,6 +22,7 @@ retire d'un coup toute la famille des traversees de chemin.
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import pathlib
@@ -33,14 +34,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 from typing import Dict, Mapping, Optional, Tuple
 
-from . import bricklink, pickabrick
+from . import bricklink, heberge, pickabrick
 from . import palette as palette_module
 from .palette import Palette
 from .pipeline import (ModeleRefuse, Reglages, conseil_de_format,
                        lire_image, palette_utilisable, run)
 
-__all__ = ["PAGE", "Atelier", "servir", "creer_serveur", "TAILLE_MAXIMALE",
-           "DOSSIER_DEFAUT", "CATALOGUES"]
+__all__ = ["PAGE", "Atelier", "Resultats", "servir", "creer_serveur",
+           "TAILLE_MAXIMALE", "OCTETS_GARDES", "DOSSIER_DEFAUT", "CATALOGUES",
+           "charger_installation",
+           "DELAI_DE_SOCKET"]
 
 TAILLE_MAXIMALE = 64 * 1024 * 1024
 """Corps de requete accepte, en octets. Une photo de telephone en base64 pese
@@ -51,6 +54,15 @@ RESULTATS_GARDES = 8
 """Nombre de resultats gardes en memoire pour le telechargement. Au-dela, le
 plus ancien est oublie : un atelier ouvert une journee ne doit pas accumuler
 des dizaines de mosaiques de plusieurs mega-octets."""
+
+OCTETS_GARDES = 512 * 1024 * 1024
+"""Poids total des resultats gardes, en octets.
+
+Compter les resultats ne borne rien : huit mosaiques de 24 x 32 pesent trois
+mega-octets, huit de 200 x 200 en pesent cent soixante. Les deux bornes
+s'appliquent, et c'est la premiere atteinte qui fait oublier le plus ancien.
+Hebergee, cette valeur est recalculee sur la memoire du conteneur.
+"""
 
 
 DOSSIER_DEFAUT = pathlib.Path.home() / ".brickforge"
@@ -1212,6 +1224,58 @@ PAGE = r"""<!doctype html>
 </html>
 """
 
+class Resultats:
+    """Ce qui a ete fabrique et attend d'etre telecharge.
+
+    Sorti de l'atelier pour une raison qui n'apparait qu'une fois hebergee :
+    chaque visiteur a son atelier, pour que le catalogue depose par l'un ne
+    change pas la liste de course de l'autre — mais si chacun avait AUSSI son
+    magasin de resultats, la borne serait multipliee par le nombre de
+    visiteurs, c'est-a-dire ne bornerait plus rien. Un seul magasin, partage,
+    borne une fois.
+
+    Les jetons sont imprevisibles : partager le magasin ne partage donc pas la
+    lecture. Un visiteur ne peut nommer que ce qu'on lui a rendu.
+    """
+
+    def __init__(self, gardes: int = RESULTATS_GARDES,
+                 octets: int = OCTETS_GARDES):
+        self.gardes = max(1, gardes)
+        self.octets = max(1, octets)
+        self._entrees: "OrderedDict[str, Dict[str, bytes]]" = OrderedDict()
+        self._poids = 0
+        self._verrou = threading.Lock()
+
+    def poser(self, fichiers: Mapping[str, bytes]) -> str:
+        """Range un resultat et rend le jeton qui le nomme."""
+        fichiers = dict(fichiers)
+        poids = sum(len(contenu) for contenu in fichiers.values())
+        jeton = secrets.token_urlsafe(16)
+        with self._verrou:
+            self._entrees[jeton] = fichiers
+            self._poids += poids
+            while len(self._entrees) > self.gardes or (
+                    self._poids > self.octets and len(self._entrees) > 1):
+                _, vieux = self._entrees.popitem(last=False)
+                self._poids -= sum(len(contenu) for contenu in vieux.values())
+        return jeton
+
+    def tous(self, jeton: str) -> Dict[str, bytes]:
+        """Les fichiers de ce resultat. Leve KeyError s'il a expire."""
+        with self._verrou:
+            return self._entrees[jeton]
+
+    def un(self, jeton: str, nom: str) -> bytes:
+        """Un seul fichier. Le nom n'est JAMAIS employe comme chemin : il est
+        cherche dans le dictionnaire, il ne peut donc designer que ce qui a
+        ete fabrique."""
+        return self.tous(jeton)[nom]
+
+    def __len__(self) -> int:
+        with self._verrou:
+            return len(self._entrees)
+
+
 class Atelier:
     """L'etat du serveur : la palette chargee une fois, les resultats recents.
 
@@ -1225,7 +1289,9 @@ class Atelier:
                  table_bricklink: Optional[Mapping[int, int]] = None,
                  table_elements=None,
                  dossier: Optional[pathlib.Path] = None,
-                 memoire: Optional[bool] = None):
+                 memoire: Optional[bool] = None,
+                 plafond_tenons: Optional[int] = None,
+                 resultats: Optional[Resultats] = None):
         if palette is None:
             complete, note_palette = palette_utilisable()
             palette_complete = complete
@@ -1253,7 +1319,11 @@ class Atelier:
         self._notes: Dict[str, str] = {}
         if self.memoire:
             self._relire()
-        self._resultats: "OrderedDict[str, Dict[str, bytes]]" = OrderedDict()
+        # Le plafond n'est pas une qualite de l'oeuvre mais de la MACHINE qui
+        # la fabrique : local, celui du noyau suffit ; hebergee, il est
+        # recalcule sur la memoire du conteneur (voir `heberge`).
+        self.plafond_tenons = plafond_tenons
+        self.resultats = resultats if resultats is not None else Resultats()
         self._verrou = threading.Lock()
 
     def fabriquer(self, requete: dict) -> dict:
@@ -1267,6 +1337,7 @@ class Atelier:
             raise ValueError("aucune photo")
         carte = _decoder(requete.get("carte_profondeur"), "carte de profondeur")
         reglages = _reglages(requete.get("reglages") or {})
+        self._verifier_le_plafond(reglages, photo)
 
         # Les deux catalogues sont pris ENSEMBLE : sans cela, une fabrication
         # qui tombe pile pendant un remplacement pourrait employer le nouveau
@@ -1285,11 +1356,7 @@ class Atelier:
             note_palette=self.note_palette,
         )
 
-        jeton = secrets.token_urlsafe(16)
-        with self._verrou:
-            self._resultats[jeton] = dict(resultat.fichiers)
-            while len(self._resultats) > RESULTATS_GARDES:
-                self._resultats.popitem(last=False)
+        jeton = self.resultats.poser(resultat.fichiers)
 
         apercus = {
             nom: "data:image/png;base64," + base64.b64encode(contenu).decode()
@@ -1304,6 +1371,37 @@ class Atelier:
             "apercus": apercus,
             "fichiers": sorted(resultat.fichiers),
         }
+
+    def _verifier_le_plafond(self, reglages, photo: bytes) -> None:
+        """Refuse ce que CETTE machine ne peut pas fabriquer. Leve ValueError.
+
+        Le noyau a deja son plafond, qui dit ce que la chaine tient en memoire
+        sur une machine de developpement. Celui-ci dit autre chose : ce que le
+        conteneur qui heberge a le droit de prendre, et en combien de temps une
+        page web doit repondre. Il n'existe qu'hebergee.
+
+        La hauteur est celle de la PHOTO quand elle n'est pas donnee, pas le
+        carre : un portrait demande a 48 tenons de large en fait 64 de haut,
+        et verifier 48 x 48 laisserait passer un tiers de surface de plus.
+        Cela coute un decodage de plus — quelques dixiemes de seconde devant
+        une fabrication qui en prend des dizaines — et seulement hebergee.
+        """
+        if self.plafond_tenons is None:
+            return
+        hauteur = reglages.hauteur
+        if hauteur is None:
+            image = lire_image(photo)
+            hauteur = max(1, round(reglages.studs * image.height / image.width))
+        surface = reglages.studs * hauteur
+        if surface > self.plafond_tenons:
+            cote = int(self.plafond_tenons ** 0.5)
+            raise ValueError(
+                f"{reglages.studs} x {hauteur} fait {surface} tenons. Cet "
+                f"atelier en accepte {self.plafond_tenons}, soit environ "
+                f"{cote} x {cote} : au-dela, la fabrication depasse la memoire "
+                "ou le temps de reponse de la machine qui l'heberge. "
+                "En local, la meme chaine va bien plus loin."
+            )
 
     # ---------------------------------------------------------------- #
     # Les catalogues de commande
@@ -1340,6 +1438,7 @@ class Atelier:
         etat = {
             "palette": self.etat_palette(),
             "dossier": str(self.dossier) if self.memoire else None,
+            "plafond": self.plafond_tenons,
             "elements": None,
             "bricklink": None,
         }
@@ -1481,13 +1580,8 @@ class Atelier:
                 pass
 
     def fichier(self, jeton: str, nom: str) -> bytes:
-        """Un seul fichier d'un resultat. Leve KeyError.
-
-        Le nom est cherche dans le dictionnaire du resultat, jamais employe
-        comme chemin : il ne peut designer que ce qui a ete fabrique.
-        """
-        with self._verrou:
-            return self._resultats[jeton][nom]
+        """Un seul fichier d'un resultat. Leve KeyError."""
+        return self.resultats.un(jeton, nom)
 
     def conseiller(self, requete: dict) -> dict:
         """Met quatre formats en balance sur CETTE photo. Leve ValueError.
@@ -1504,6 +1598,16 @@ class Atelier:
             1, round(reglages.studs * image.height / image.width))
         with self._verrou:
             palette = self.palette
+        # Le conseil met QUATRE formats en balance : il coute plus cher qu'une
+        # fabrication de la meme taille, pas moins. Le plafond vaut ici aussi.
+        if self.plafond_tenons is not None:
+            surface = reglages.studs * hauteur
+            if surface > self.plafond_tenons:
+                cote = int(self.plafond_tenons ** 0.5)
+                raise ValueError(
+                    f"{reglages.studs} x {hauteur} fait {surface} tenons, "
+                    f"au-dela des {self.plafond_tenons} (environ {cote} x "
+                    f"{cote}) que cet atelier heberge accepte.")
         conseils = conseil_de_format(image, reglages.studs, hauteur, palette,
                                      reglages)
         return {"formats": [
@@ -1518,8 +1622,7 @@ class Atelier:
 
     def archive(self, jeton: str) -> bytes:
         """Le dossier complet, en ZIP. Leve KeyError si le jeton a expire."""
-        with self._verrou:
-            fichiers = self._resultats[jeton]
+        fichiers = self.resultats.tous(jeton)
         tampon = io.BytesIO()
         with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as archive:
             for nom, contenu in sorted(fichiers.items()):
@@ -1607,7 +1710,8 @@ def _type_mime(nom: str) -> str:
 class _Gestionnaire(BaseHTTPRequestHandler):
     """Le transport, et rien d'autre. Toute la logique est dans `Atelier`."""
 
-    atelier: Atelier = None  # pose par `creer_serveur`
+    atelier: Atelier = None       # pose par `creer_serveur`
+    hebergement = None            # None = usage local : un atelier, tout passe
     server_version = "BrickForge"
     sys_version = ""
 
@@ -1636,25 +1740,70 @@ class _Gestionnaire(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(corps)
 
-    def _erreur(self, code: int, message: str):
+    def _erreur(self, code: int, message: str,
+                entetes: Tuple[Tuple[str, str], ...] = ()):
         self._repondre(code, "application/json; charset=utf-8",
-                       json.dumps({"erreur": message}).encode("utf-8"))
+                       json.dumps({"erreur": message}).encode("utf-8"),
+                       entetes)
+
+    # ------------------------------------------------------------------ #
+    # L'accueil : qui appelle, et quel atelier est le sien
+    # ------------------------------------------------------------------ #
+
+    def _accueil(self) -> Optional[Atelier]:
+        """L'atelier a servir, ou None quand la reponse est deja ecrite.
+
+        En local, il n'y a rien a decider : un atelier, et tout passe. C'est
+        l'ABSENCE d'hebergement qui fait ce cas, pas un reglage par defaut —
+        la politique n'existe alors pas du tout, et le trajet est le meme
+        qu'avant qu'elle existe.
+        """
+        if self.hebergement is None:
+            return self.atelier
+        chemin, _, requete = self.path.partition("?")
+        visite = heberge.Visite(chemin=chemin, methode=self.command,
+                                pair=self.client_address[0],
+                                entetes=self.headers, requete=requete)
+        accueil = self.hebergement.accueillir(visite)
+        if not accueil.termine:
+            return accueil.atelier
+        if accueil.corps_html is not None:
+            self._repondre(accueil.code, "text/html; charset=utf-8",
+                           accueil.corps_html.encode("utf-8"), accueil.entetes)
+        elif accueil.code == 303:
+            self._repondre(303, "text/plain; charset=utf-8", b"",
+                           accueil.entetes)
+        else:
+            self._erreur(accueil.code, accueil.message, accueil.entetes)
+        return None
 
     def do_GET(self):
+        # Avant l'accueil, et deliberement : un hebergeur verifie qu'un service
+        # est vivant en appelant une adresse, et il attend un 200. La page,
+        # elle, repond 401 sans la cle — un controle de sante branche dessus
+        # ferait redemarrer en boucle un atelier qui va tres bien. Cette route
+        # ne dit rien d'autre que « le processus repond ».
+        if self.path.split("?", 1)[0] == "/sante":
+            self._repondre(200, "application/json; charset=utf-8",
+                           b'{"etat":"ok"}')
+            return
+        atelier = self._accueil()
+        if atelier is None:
+            return
         chemin = self.path.split("?", 1)[0]
         if chemin in ("/", "/index.html"):
             self._repondre(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
             return
         if chemin == "/catalogues":
             self._repondre(200, "application/json; charset=utf-8",
-                           json.dumps(self.atelier.etat_catalogues())
+                           json.dumps(atelier.etat_catalogues())
                            .encode("utf-8"))
             return
         if chemin.startswith("/fichier/"):
             reste = unquote(chemin[len("/fichier/"):])
             jeton, _, nom = reste.partition("/")
             try:
-                contenu = self.atelier.fichier(jeton, nom)
+                contenu = atelier.fichier(jeton, nom)
             except KeyError:
                 self._erreur(404, "fichier inconnu ou resultat expire")
                 return
@@ -1667,7 +1816,7 @@ class _Gestionnaire(BaseHTTPRequestHandler):
         if chemin.startswith("/telecharger/") and chemin.endswith(".zip"):
             jeton = chemin[len("/telecharger/"):-len(".zip")]
             try:
-                archive = self.atelier.archive(jeton)
+                archive = atelier.archive(jeton)
             except KeyError:
                 self._erreur(404, "resultat expire : refabriquez la mosaique")
                 return
@@ -1681,11 +1830,42 @@ class _Gestionnaire(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET
 
+    def _permission_de_calculer(self) -> bool:
+        """Vrai quand le refus a deja ete ecrit et qu'il faut s'arreter."""
+        if self.hebergement is None:
+            return False
+        chemin, _, requete = self.path.partition("?")
+        visite = heberge.Visite(chemin=chemin, methode=self.command,
+                                pair=self.client_address[0],
+                                entetes=self.headers, requete=requete)
+        refus = self.hebergement.autoriser_fabrication(visite)
+        if refus is None:
+            return False
+        self._erreur(refus.code, refus.message, refus.entetes)
+        return True
+
+    def _chantier(self):
+        if self.hebergement is None:
+            return contextlib.nullcontext()
+        return self.hebergement.chantier()
+
     def do_POST(self):
+        atelier = self._accueil()
+        if atelier is None:
+            return
         chemin = self.path.split("?", 1)[0]
         if chemin == "/palette":
+            # Hebergee, cette route ferait sortir une requete de la machine de
+            # qui heberge, a la demande d'un visiteur, et changerait la palette
+            # de tout le monde. L'exploitant installe la palette au moment de
+            # construire l'image, une fois, en connaissance de cause.
+            if self.hebergement is not None:
+                self._erreur(403, "la palette de cet atelier est celle de "
+                                  "l'installation ; elle ne se change pas "
+                                  "depuis la page.")
+                return
             try:
-                reponse = self.atelier.installer_palette()
+                reponse = atelier.installer_palette()
             except Exception as raison:
                 self._erreur(502, str(raison).splitlines()[0])
                 return
@@ -1719,18 +1899,29 @@ class _Gestionnaire(BaseHTTPRequestHandler):
         if chemin == "/catalogues":
             try:
                 if requete.get("oublier"):
-                    reponse = self.atelier.oublier_catalogues()
+                    reponse = atelier.oublier_catalogues()
                 else:
-                    reponse = self.atelier.definir_catalogues(requete)
+                    reponse = atelier.definir_catalogues(requete)
             except ValueError as raison:
                 self._erreur(400, str(raison))
                 return
             self._repondre(200, "application/json; charset=utf-8",
                            json.dumps(reponse).encode("utf-8"))
             return
+        # Le conseil et la fabrication sont les deux seules routes qui coutent
+        # des secondes de calcul. Ce sont donc les deux seules a passer par le
+        # permis : debit du visiteur, puis place de chantier.
+        refus_debit = self._permission_de_calculer()
+        if refus_debit:
+            return
         if chemin == "/conseil":
             try:
-                reponse = self.atelier.conseiller(requete)
+                with self._chantier():
+                    reponse = atelier.conseiller(requete)
+            except heberge.Occupe as occupe:
+                self._erreur(503, str(occupe),
+                             (("Retry-After", str(occupe.delai)),))
+                return
             except ValueError as raison:
                 self._erreur(400, str(raison))
                 return
@@ -1738,7 +1929,11 @@ class _Gestionnaire(BaseHTTPRequestHandler):
                            json.dumps(reponse).encode("utf-8"))
             return
         try:
-            reponse = self.atelier.fabriquer(requete)
+            with self._chantier():
+                reponse = atelier.fabriquer(requete)
+        except heberge.Occupe as occupe:
+            self._erreur(503, str(occupe), (("Retry-After", str(occupe.delai)),))
+            return
         except ModeleRefuse as refus:
             self._erreur(422, str(refus) + "".join(
                 f"\n   {v.invariant} : {v.detail}" for v in refus.violations[:6]))
@@ -1753,17 +1948,80 @@ class _Gestionnaire(BaseHTTPRequestHandler):
                        json.dumps(reponse).encode("utf-8"))
 
 
+def charger_installation(ldconfig=None, catalogue_bricklink=None,
+                         catalogue_elements=None, couleurs_elements=None):
+    """Ce que l'exploitant fournit une fois : palette et catalogues.
+
+    Rend `(palette, complete, note, table_bricklink, table_elements, lignes)`.
+    Les `lignes` sont des couples `(flux, texte)` : cette fonction n'imprime
+    rien et ne choisit pas de flux, c'est au lanceur de le faire — la meme
+    raison qui fait que le noyau rend un journal au lieu de l'ecrire.
+
+    Elle existe parce qu'il y a maintenant DEUX lanceurs, local et heberge, et
+    que la seule chose qu'ils partageaient etait vingt lignes recopiees. Une
+    erreur corrigee dans l'un serait restee dans l'autre.
+    """
+    lignes = []
+    complete, note = palette_utilisable([str(ldconfig)] if ldconfig else None)
+    lignes.append(note)
+    palette = complete if note[0] == "alerte" else complete.solids_only()
+
+    # Une erreur de catalogue arrete le lanceur : mieux vaut la voir au
+    # demarrage que decouvrir, apres avoir fabrique une oeuvre, qu'aucune
+    # commande n'en sort.
+    table = None
+    if catalogue_bricklink:
+        table, orphelines = bricklink.read_color_map(
+            pathlib.Path(catalogue_bricklink).read_text(encoding="utf-8"),
+            complete)
+        lignes.append(("info", f"couleurs : {len(table)} correspondances "
+                       "BrickLink" + (f", {len(orphelines)} sans equivalent"
+                                      if orphelines else "")))
+    table_elements = None
+    if catalogue_elements:
+        noms = (pickabrick.read_color_names(pickabrick.decompresser(
+            pathlib.Path(couleurs_elements).read_bytes()))
+            if couleurs_elements else None)
+        table_elements = pickabrick.read_elements(
+            pickabrick.decompresser(
+                pathlib.Path(catalogue_elements).read_bytes()),
+            noms, pieces=pickabrick.PIECES_UTILES)
+        lignes.append(("info", f"elements : {len(table_elements)} references "
+                               "LEGO lues"))
+    return palette, complete, note, table, table_elements, lignes
+
+
+DELAI_DE_SOCKET = 30.0
+"""Secondes d'inertie tolerees sur une connexion, une fois hebergee.
+
+Sans delai, un client qui annonce un corps de soixante mega-octets et n'en
+envoie jamais la fin garde un fil pour lui, indefiniment, gratuitement. Il n'en
+faut pas beaucoup pour prendre le serveur sans jamais lui demander de calculer.
+En local ce delai n'est pas pose : il n'y a personne d'autre, et une pause dans
+un debogueur ne doit pas couper la page.
+"""
+
+
 def creer_serveur(adresse: str = "127.0.0.1", port: int = 8000,
-                  atelier: Optional[Atelier] = None) -> ThreadingHTTPServer:
-    """Serveur pret a servir. `port=0` en attribue un libre — pratique en test."""
-    gestionnaire = type("_GestionnaireLie", (_Gestionnaire,),
-                        {"atelier": atelier or Atelier()})
+                  atelier: Optional[Atelier] = None,
+                  hebergement=None) -> ThreadingHTTPServer:
+    """Serveur pret a servir. `port=0` en attribue un libre — pratique en test.
+
+    Sans `hebergement`, rien ne change : un seul atelier, aucune politique.
+    Avec, chaque requete passe par `heberge.Hebergement` et l'atelier servi est
+    celui de la session du visiteur.
+    """
+    attributs = {"atelier": atelier or Atelier(), "hebergement": hebergement}
+    if hebergement is not None:
+        attributs["timeout"] = DELAI_DE_SOCKET
+    gestionnaire = type("_GestionnaireLie", (_Gestionnaire,), attributs)
     return ThreadingHTTPServer((adresse, port), gestionnaire)
 
 
 def servir(adresse: str = "127.0.0.1", port: int = 8000,
-           atelier: Optional[Atelier] = None) -> None:  # pragma: no cover
-    serveur = creer_serveur(adresse, port, atelier)
+           atelier: Optional[Atelier] = None,
+           hebergement=None) -> None:  # pragma: no cover
+    serveur = creer_serveur(adresse, port, atelier, hebergement)
     try:
         serveur.serve_forever()
     finally:
