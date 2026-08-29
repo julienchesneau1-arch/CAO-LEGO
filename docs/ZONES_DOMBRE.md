@@ -4407,3 +4407,92 @@ Le rapport haut-sur-étalon a monté à chaque passe — 1,33, puis 1,45, 1,63,
 1,78. Ce n'est pas une dérive : chaque optimisation retire du coût quasi
 linéaire et laisse peser ce qui croît plus vite. Il faudra le refaire monter
 encore le jour où quelqu'un s'attaquera à la notice.
+
+---
+
+### 5.79 Ce que seul un serveur pouvait révéler : quatre mémos sans verrou et un cache qui cessait de garder
+
+Cinquième passe, et la première qui ne cherche pas de vitesse. Après quatre
+passes d'optimisation ayant posé des mémos un peu partout, la question à se
+poser n'était plus « où gagner ? » mais « **qu'ai-je cassé en gagnant ?** ».
+Deux familles de défauts, toutes deux invisibles en usage local.
+
+#### Les mémos ne sont pas sûrs à plusieurs fils
+
+Quatre mémos de module existent maintenant : verdicts de collision, numéros de
+forme, dessins de pièces, réductions d'image. L'atelier hébergé est multi-fils
+et `BFK_SIMULTANEES` est réglable. Deux choses cassent alors :
+
+* `_MEMO.get(cle)` puis `_MEMO.move_to_end(cle)` sont **deux appels**. Une
+  éviction entre les deux lève `KeyError` — une requête perdue.
+* `numero = _PROCHAIN_NUMERO[0]` puis `_PROCHAIN_NUMERO[0] = numero + 1` est un
+  lire-modifier-écrire. Deux fils peuvent lire le même numéro et l'attribuer à
+  **deux formes différentes**. Toute la justesse du mémo de collision repose
+  sur le contraire — et sa docstring l'affirmait sans le garantir. Une paire de
+  pièces aurait alors reçu le verdict d'une autre paire : **H2 vert sur une
+  mosaïque où deux pièces s'interpénètrent**.
+
+**Et je n'ai pas réussi à le reproduire.** Ni à huit fils sur 32 000 paires, ni
+en forçant `sys.setswitchinterval(1e-6)`, ni même sur le compteur nu isolé —
+20 000 incréments × 8 fils, zéro perdu. CPython 3.11 et 3.13 ne basculent pas
+de fil entre ces deux bytecodes : la boucle d'évaluation ne vérifie les
+changements de fil qu'à certains points, et il n'y en a pas là.
+
+C'est une protection **accidentelle**, pas une garantie. Elle a déjà changé
+d'une version à l'autre et elle disparaît entièrement dans un Python sans GIL —
+c'est-à-dire exactement là où ce projet irait si quelqu'un voulait un
+parallélisme réel. Corriger sur le raisonnement plutôt que sur un test rouge
+était donc le seul choix disponible. Quatre verrous, jamais tenus pendant le
+calcul lui-même, **coût mesuré nul** (11,86 s contre 11,68 s en A/B alterné,
+soit à l'intérieur du bruit).
+
+Les tests ajoutés ne prouvent pas l'absence de course — aucun test ne le peut.
+Ils échouent si quelqu'un retire un verrou *et* qu'une course se produit, et
+ils documentent ce qui serait alors cassé. C'est le maximum honnête.
+
+#### Le cache qui cessait de garder
+
+En balayant les caches de module, un cinquième est apparu : `_CACHE_LAB`, la
+conversion sRGB → Lab. Trois défauts d'un coup, tous propres à un serveur.
+
+**Il se figeait.** Le code disait *« si le cache n'est pas plein, garde »* :
+passé 200 000 entrées, il ne gardait donc plus **rien**. Mesure : chaque
+fabrication ajoute ~4 600 teintes et n'en réutilise presque aucune de la
+précédente — deux photos différentes ne partagent pas leurs teintes. Un serveur
+atteignait le plafond vers la **quarante-cinquième mosaïque**, puis servait
+toutes les suivantes sans cache, deux fois plus lentement, sans un mot. Une
+falaise strictement invisible en usage local. Il se **vide** maintenant quand
+il est plein.
+
+**Son plafond ne bornait rien d'utile.** Mesure sur 200 000 entrées : 278
+octets l'une pour `_CACHE_LAB`, 156 pour les `_proches` d'une palette. Soit
+56 Mo pour l'un, 31 Mo par palette pour l'autre — **près de cent mega-octets**
+hors de tout budget. Plafond ramené à 65 536, ce qui couvre une fabrication au
+plafond hébergé (57 000 tenons, donc au plus 57 000 teintes distinctes) et pèse
+18 Mo.
+
+**Et `MEMOIRE_DE_BASE` mentait.** Mesure sur vingt-quatre fabrications
+successives dans un seul processus : **16 Mo au démarrage, 61 Mo de plateau**.
+La constante valait 64 Mo et prétendait couvrir l'interprète, la palette, la
+page, les tampons et le décodage d'une photo de douze mégapixels. Elle passe à
+112 Mo.
+
+Conséquence assumée : le plafond d'un conteneur de 512 Mo **baisse**, de 22 282
+à 17 367 tenons (149 → 131 de côté). C'est le premier changement de cette série
+qui rend le service moins capable, et c'est le bon : mieux vaut refuser une
+mosaïque de 149 que d'en accepter une et se faire tuer à la quarante-cinquième.
+
+| Conteneur | avant cette passe | après |
+|---|---:|---:|
+| 512 Mo | 22 282 (149²) | **17 367** (131²) |
+| 1 Go | 51 118 (226²) | **46 202** (214²) |
+| 2 Go et plus | 57 142 (239²) | 57 142 (239²) |
+
+#### Ce que cette passe dit du reste
+
+Les quatre passes précédentes cherchaient de la vitesse et en ont trouvé. Cette
+cinquième n'a cherché que ce qu'elles avaient laissé derrière — et a trouvé un
+défaut de justesse latent, une falaise de performance et un budget faux. Le
+rapport entre les deux exercices mérite d'être noté : **optimiser crée des
+défauts d'une espèce que les tests fonctionnels ne voient pas**, parce qu'ils
+n'apparaissent qu'au bout de quarante-cinq fabrications ou à deux fils.

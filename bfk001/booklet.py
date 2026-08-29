@@ -32,6 +32,7 @@ restent nets a l'impression et evitent d'embarquer une fonte matricielle.
 from __future__ import annotations
 
 import zlib
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
@@ -366,6 +367,17 @@ appelant de balayer mille echelles.
 
 _MEMO_PIECES: "OrderedDict[Tuple[str, Tuple[int, int, int], float, Tuple[int, int, int]], Image]" = OrderedDict()
 
+_VERROU_MEMO = threading.Lock()
+"""`get` puis `move_to_end` sont deux appels, et une eviction peut tomber entre
+les deux : c'est un `KeyError` au milieu d'une notice, donc une requete perdue.
+
+Ici, contrairement au memo de collision, un resultat FAUX est impossible — la
+cle determine entierement le dessin et aucun compteur n'est partage. Il ne
+reste que le risque de panne, et il suffit de deux `with` pour le retirer. Le
+cout mesure est nul : le memo est consulte quelques milliers de fois par
+notice, la ou dessiner une piece en coute des centaines de milliers.
+"""
+
 
 def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0,
                  fond: Tuple[int, int, int] = (255, 255, 255)) -> Image:
@@ -386,10 +398,11 @@ def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0
     # rendrait le cache approximatif. Un `Image` est un value object gele aux
     # donnees en `bytes` : le partager entre appelants est sans danger.
     cle = (design_id, tuple(rgb), echelle, tuple(fond))
-    garde = _MEMO_PIECES.get(cle)
-    if garde is not None:
-        _MEMO_PIECES.move_to_end(cle)
-        return garde
+    with _VERROU_MEMO:
+        garde = _MEMO_PIECES.get(cle)
+        if garde is not None:
+            _MEMO_PIECES.move_to_end(cle)
+            return garde
 
     piece = CATALOG[design_id]
     largeur, profondeur = piece.studs_x, piece.studs_y
@@ -459,9 +472,10 @@ def render_piece(design_id: str, rgb: Tuple[int, int, int], echelle: float = 9.0
     dessin = resample_box(toile.image(),
                           max(1, largeur_px // SUPERECHANTILLON),
                           max(1, hauteur_px // SUPERECHANTILLON))
-    _MEMO_PIECES[cle] = dessin
-    if len(_MEMO_PIECES) > MEMO_DESSINS:
-        _MEMO_PIECES.popitem(last=False)
+    with _VERROU_MEMO:
+        _MEMO_PIECES[cle] = dessin
+        while len(_MEMO_PIECES) > MEMO_DESSINS:
+            _MEMO_PIECES.popitem(last=False)
     return dessin
 
 

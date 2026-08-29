@@ -11,6 +11,7 @@ export. Le reste leve une erreur explicite plutot que de deviner.
 from __future__ import annotations
 
 import struct
+import threading
 import weakref
 import zlib
 from collections import OrderedDict
@@ -513,6 +514,16 @@ _TABLE_LUMIERE = tuple(
 
 _MEMO_REDUCTION: "OrderedDict[Tuple[int, ...], Tuple[object, Image]]" = \
     OrderedDict()
+
+_VERROU_REDUCTION = threading.Lock()
+"""Le troisieme des memos de module de ce depot, verrouille pour la meme raison
+que les deux autres : `get` puis `move_to_end` sont deux appels, et une
+eviction entre les deux est un `KeyError` au milieu d'une fabrication.
+
+Ce memo-la ne peut pas rendre un resultat FAUX — la reference faible et la
+verification `garde() is image` s'en chargent — mais il peut planter, et quatre
+lignes suffisent a le retirer. Le cout est nul : quelques consultations par
+fabrication, contre des millions de pixels lus a chaque manque."""
 MEMO_REDUCTIONS = 4
 """Nombre de reductions gardees. Petit a dessein.
 
@@ -568,10 +579,11 @@ def resample_box(image: Image, width: int, height: int) -> Image:
         raise ValueError("dimensions de sortie invalides")
 
     cle = _memo(image, width, height)
-    garde = _MEMO_REDUCTION.get(cle)
-    if garde is not None and garde[0]() is image:
-        _MEMO_REDUCTION.move_to_end(cle)
-        return garde[1]
+    with _VERROU_REDUCTION:
+        garde = _MEMO_REDUCTION.get(cle)
+        if garde is not None and garde[0]() is image:
+            _MEMO_REDUCTION.move_to_end(cle)
+            return garde[1]
 
     source = image.data
     source_width = image.width
@@ -599,9 +611,10 @@ def resample_box(image: Image, width: int, height: int) -> Image:
             cursor += 3
     reduite = Image(width, height, bytes(output))
     # Reference FAIBLE sur l'entree : le cache accelere, il ne retient pas.
-    _MEMO_REDUCTION[cle] = (weakref.ref(image), reduite)
-    while len(_MEMO_REDUCTION) > MEMO_REDUCTIONS:
-        _MEMO_REDUCTION.popitem(last=False)
+    with _VERROU_REDUCTION:
+        _MEMO_REDUCTION[cle] = (weakref.ref(image), reduite)
+        while len(_MEMO_REDUCTION) > MEMO_REDUCTIONS:
+            _MEMO_REDUCTION.popitem(last=False)
     return reduite
 
 

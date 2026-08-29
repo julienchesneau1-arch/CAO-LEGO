@@ -1483,3 +1483,177 @@ class TestLesFormesSontPartagees:
     def test_le_memo_est_borne(self):
         from bfk001.lego import brick_geometry
         assert brick_geometry.cache_info().maxsize == 256
+
+
+class TestLesMemosTiennentAPlusieursFils:
+    """L'atelier heberge est multi-fils, et son nombre de places est reglable.
+
+    Les trois memos poses pour optimiser la chaine — verdicts, formes, dessins
+    de pieces — sont des `OrderedDict` de module. `get` puis `move_to_end` sont
+    deux appels : une eviction entre les deux est un `KeyError`. Et le compteur
+    de numeros de forme est un lire-modifier-ecrire dont depend TOUTE la
+    justesse du memo de collision.
+
+    Ces tests ne prouvent pas l'absence de course — aucun test ne le peut. Ils
+    echouent en revanche si quelqu'un retire les verrous et qu'une course se
+    produit, et ils documentent ce qui serait alors casse.
+    """
+
+    @staticmethod
+    def _geometrie(cote, decalage=0):
+        from bfk001.collision import CollisionGeometry
+        from bfk001.geometry import AABB, LDUVector
+        return CollisionGeometry(
+            AABB(LDUVector(decalage, 0, 0),
+                 LDUVector(decalage + cote, 40, 24)), ())
+
+    def test_huit_fils_ne_font_ni_planter_ni_mentir_le_memo_de_collision(self):
+        import random
+        import threading
+        from bfk001 import collision
+        from bfk001.geometry import geometric_relation
+
+        def sans_memo(a, b):
+            return collision._status_from_world(
+                geometric_relation(a.exterior, b.exterior), a, b)
+
+        # Bornes serrees a l'extreme : c'est la que les evictions se bousculent.
+        formes, verdicts = (collision.FORMES_MEMORISEES,
+                            collision.VERDICTS_MEMORISES)
+        collision.FORMES_MEMORISEES = 4
+        collision.VERDICTS_MEMORISES = 8
+        collision.oublier_les_verdicts()
+        incidents, desaccords = [], []
+
+        def travail(graine):
+            alea = random.Random(graine)
+            try:
+                for _ in range(400):
+                    a = self._geometrie(alea.choice((20, 40, 60)),
+                                        alea.randint(-80, 80))
+                    b = self._geometrie(alea.choice((20, 40, 60)),
+                                        alea.randint(-80, 80))
+                    if collision.collide_world(a, b) is not sans_memo(a, b):
+                        desaccords.append((a, b))
+            except Exception as raison:          # pragma: no cover - la panne
+                incidents.append(repr(raison))
+
+        try:
+            fils = [threading.Thread(target=travail, args=(i,))
+                    for i in range(8)]
+            for fil in fils:
+                fil.start()
+            for fil in fils:
+                fil.join(timeout=120)
+            assert incidents == [], f"le memo a plante : {incidents[:2]}"
+            assert desaccords == [], "le memo a rendu un verdict faux"
+        finally:
+            collision.FORMES_MEMORISEES = formes
+            collision.VERDICTS_MEMORISES = verdicts
+            collision.oublier_les_verdicts()
+
+    def test_deux_formes_ne_partagent_pas_un_numero_meme_a_douze_fils(self):
+        """Le cas qui rendrait le memo FAUX plutot que cassant : deux fils qui
+        lisent le meme numero avant de l'ecrire l'attribueraient a deux formes
+        differentes, et une paire recevrait le verdict d'une autre."""
+        import threading
+        from bfk001 import collision
+
+        collision.oublier_les_verdicts()
+        depart = threading.Barrier(12)
+        resultats = [None] * 12
+
+        def travail(indice):
+            depart.wait()
+            resultats[indice] = [
+                (self._geometrie(1000 + indice * 200 + k).forme_et_origine()[0],
+                 1000 + indice * 200 + k)
+                for k in range(200)
+            ]
+
+        fils = [threading.Thread(target=travail, args=(i,)) for i in range(12)]
+        for fil in fils:
+            fil.start()
+        for fil in fils:
+            fil.join(timeout=120)
+
+        par_numero = {}
+        for vus in resultats:
+            for numero, cote in vus or ():
+                assert par_numero.get(numero, cote) == cote, (
+                    f"le numero {numero} a servi pour deux formes : "
+                    f"{par_numero[numero]} et {cote}")
+                par_numero[numero] = cote
+        assert len(par_numero) == 12 * 200
+        collision.oublier_les_verdicts()
+
+    def test_le_memo_de_dessins_tient_a_plusieurs_fils(self):
+        import threading
+        from bfk001 import booklet
+
+        memo = booklet.MEMO_DESSINS
+        booklet.MEMO_DESSINS = 2          # eviction a chaque appel ou presque
+        incidents = []
+
+        def travail(graine):
+            try:
+                for i in range(12):
+                    booklet.render_piece("3070b", (200, 30 + i, 40),
+                                         echelle=6.0 + (graine % 3))
+            except Exception as raison:      # pragma: no cover - la panne
+                incidents.append(repr(raison))
+
+        try:
+            fils = [threading.Thread(target=travail, args=(i,))
+                    for i in range(6)]
+            for fil in fils:
+                fil.start()
+            for fil in fils:
+                fil.join(timeout=120)
+            assert incidents == [], f"le memo de dessins a plante : {incidents[:2]}"
+        finally:
+            booklet.MEMO_DESSINS = memo
+            booklet._MEMO_PIECES.clear()
+
+    def test_les_verrous_sont_bien_la(self):
+        """Sans ce test, un verrou retire par distraction ne ferait echouer
+        aucun des trois precedents une fois sur mille."""
+        import threading
+        from bfk001 import booklet, collision
+        from bfk001 import imaging
+        assert isinstance(collision._VERROU, type(threading.Lock()))
+        assert isinstance(booklet._VERROU_MEMO, type(threading.Lock()))
+        assert isinstance(imaging._VERROU_REDUCTION, type(threading.Lock()))
+
+    def test_le_memo_de_reduction_tient_a_plusieurs_fils(self):
+        """Celui-ci ne peut pas mentir — reference faible et verification
+        d'identite — mais il peut planter comme les autres."""
+        import threading
+        import bfk001 as bfk
+        from bfk001 import imaging
+
+        memo = imaging.MEMO_REDUCTIONS
+        imaging.MEMO_REDUCTIONS = 1
+        images = [bfk.Image(24, 24, bytes((i * 7 + j) % 256
+                                          for j in range(24 * 24 * 3)))
+                  for i in range(4)]
+        incidents = []
+
+        def travail(graine):
+            try:
+                for i in range(20):
+                    imaging.resample_box(images[(graine + i) % 4], 8, 8)
+            except Exception as raison:      # pragma: no cover - la panne
+                incidents.append(repr(raison))
+
+        try:
+            fils = [threading.Thread(target=travail, args=(i,))
+                    for i in range(6)]
+            for fil in fils:
+                fil.start()
+            for fil in fils:
+                fil.join(timeout=120)
+            assert incidents == [], f"le memo de reduction a plante : {incidents[:2]}"
+        finally:
+            imaging.MEMO_REDUCTIONS = memo
+            imaging._MEMO_REDUCTION.clear()

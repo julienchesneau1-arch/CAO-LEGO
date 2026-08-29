@@ -20,9 +20,10 @@ giga-octets et demi de memoire. Sans cle, le premier venu prend la machine.
 Un PLAFOND calcule, pas recopie. Celui du noyau — 250 000 tenons — dit ce que
 la chaine tient sur une machine de developpement. Ici il est recalcule sur la
 memoire que le conteneur a le droit de prendre et sur le temps qu'une page web
-a le droit de mettre a repondre. Sur un giga-octet il tombe vers 226 tenons de
-cote — pres de cinq fois le COTE d'un set LEGO Art officiel, donc vingt-deux
-fois sa surface.
+a le droit de mettre a repondre. Sur un giga-octet il tombe vers 214 tenons de
+cote — plus de quatre fois le COTE d'un set LEGO Art officiel, donc vingt fois
+sa surface. Le budget compte les caches de couleur UNE FOIS CHAUDS : 16 Mo au
+demarrage, 61 Mo apres vingt-quatre fabrications dans le meme processus.
 
 UN ATELIER PAR VISITEUR. Les catalogues de commande sont une propriete de
 l'installation quand il n'y a qu'un utilisateur ; des qu'il y en a deux, le
@@ -152,7 +153,7 @@ def main() -> int:
             "de cote).\n\n"
             "Cet atelier refuserait tout ce qu'on lui demande. Il faut un "
             "conteneur\nde plus de memoire — environ 512 Mo pour une mosaique "
-            "de 149 de cote,\nun giga-octet pour 226 — ou moins de "
+            "de 131 de cote,\nun giga-octet pour 214 — ou moins de "
             "fabrications simultanees.",
             file=sys.stderr)
         return 2

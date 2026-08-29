@@ -182,12 +182,24 @@ collision et de la notice. C'est bien ce chiffre-la qu'il faut, parce que c'est
 celui que regarde le tueur de processus.
 """
 
-MEMOIRE_DE_BASE = 64 * 1024 * 1024
-"""Octets que le processus occupe avant toute fabrication.
+MEMOIRE_DE_BASE = 112 * 1024 * 1024
+"""Octets que le processus occupe avant toute fabrication, UNE FOIS CHAUD.
 
-Le tableau extrapole a zero tenon donne quarante mega-octets. Il en faut plus :
-la palette, la page, les tampons du serveur et le decodage de la photo — qui,
-elle, peut faire douze mega-pixels — vivent en dehors de la fabrication.
+Le tableau extrapole a zero tenon donne une trentaine de mega-octets, et c'est
+ce que voit un banc d'essai : un processus, une mosaique, on s'en va. Un
+serveur en fabrique des centaines dans le meme processus, et les caches de
+couleur se remplissent. Mesure sur vingt-quatre fabrications successives dans
+un seul processus : **16 Mo au demarrage, 61 Mo de plateau**.
+
+Ces quarante-cinq mega-octets-la n'entraient dans aucun budget. Sur un
+conteneur de 512 Mo, ils sortaient du meme creux que la fabrication elle-meme,
+et la quarante-cinquieme mosaique de la journee se faisait tuer sans un mot.
+
+Cent douze couvre donc le plateau mesure PLUS le decodage d'une photo de douze
+mega-pixels, la palette, la page et les tampons du serveur. C'est le chiffre
+qui baisse le plafond d'un petit conteneur, et il le baisse a bon droit : mieux
+vaut refuser une mosaique de 149 tenons de cote que d'en accepter une de 149 et
+mourir a la quarante-cinquieme.
 """
 
 SORTIE_PAR_TENON = 512

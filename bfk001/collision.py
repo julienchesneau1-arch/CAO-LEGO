@@ -8,6 +8,7 @@ geometriques exactes.
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -87,7 +88,9 @@ class CollisionGeometry:
 
         Le numero est attribue une fois par forme et jamais reattribue : deux
         formes differentes ne peuvent donc pas le partager, ce qui est la seule
-        chose dont depend la justesse du memo de `collide_world`.
+        chose dont depend la justesse du memo de `collide_world`. C'est un
+        verrou qui le garantit, et non le hasard de l'interpreteur — voir
+        `_VERROU`.
 
         Le resultat est garde SUR L'INSTANCE. La classe est gelee, et c'est
         voulu — mais un cache n'est pas un champ : il ne participe ni a
@@ -144,34 +147,66 @@ _PROCHAIN_NUMERO = [0]
 _VERDICTS: "OrderedDict[Tuple, CollisionStatus]" = OrderedDict()
 _COMPTEURS = {"juges": 0, "retrouves": 0}
 
+_VERROU = threading.Lock()
+"""Un seul verrou pour les quatre structures ci-dessus.
+
+Il n'est pas la par precaution de principe. L'atelier heberge est multi-fils et
+son nombre de places est reglable ; deux fils peuvent donc entrer ici en meme
+temps. Deux choses casseraient alors :
+
+* `_FORMES.get(...)` puis `_FORMES.move_to_end(...)` sont deux appels, et une
+  eviction peut tomber entre les deux — c'est un `KeyError`, donc une requete
+  perdue ;
+* `numero = _PROCHAIN_NUMERO[0]` puis `_PROCHAIN_NUMERO[0] = numero + 1` est un
+  lire-modifier-ecrire. Deux fils peuvent lire le meme numero et l'attribuer a
+  DEUX FORMES DIFFERENTES — et la justesse du memo repose entierement sur le
+  contraire. Le verdict rendu serait alors celui d'une autre paire de pieces.
+
+Honnetement : ce second cas ne s'est PAS reproduit ici, ni en huit fils sur
+32 000 paires, ni avec `setswitchinterval(1e-6)`, ni meme sur le compteur nu
+isole. CPython 3.11 et 3.13 ne changent pas de fil entre ces deux bytecodes.
+Mais rien dans le langage ne le promet, cette protection accidentelle a deja
+change d'une version a l'autre, et elle disparait entierement dans un Python
+sans GIL. Corriger sur le raisonnement plutot que sur un test rouge est ici le
+seul choix disponible — et le cout mesure est de 1 %.
+
+Le verrou ne couvre JAMAIS le calcul lui-meme : deux fils qui manquent le memo
+calculent en parallele et rangent le meme verdict. Le tenir pendant
+`_status_from_world` serialiserait la collision, c'est-a-dire annulerait la
+raison d'avoir plusieurs fils.
+"""
+
 
 def _numero_de_forme(signature: Tuple) -> int:
-    connu = _FORMES.get(signature)
-    if connu is not None:
-        _FORMES.move_to_end(signature)
-        return connu
-    numero = _PROCHAIN_NUMERO[0]
-    _PROCHAIN_NUMERO[0] = numero + 1
-    _FORMES[signature] = numero
-    while len(_FORMES) > FORMES_MEMORISEES:
-        _FORMES.popitem(last=False)
-    return numero
+    with _VERROU:
+        connu = _FORMES.get(signature)
+        if connu is not None:
+            _FORMES.move_to_end(signature)
+            return connu
+        numero = _PROCHAIN_NUMERO[0]
+        _PROCHAIN_NUMERO[0] = numero + 1
+        _FORMES[signature] = numero
+        while len(_FORMES) > FORMES_MEMORISEES:
+            _FORMES.popitem(last=False)
+        return numero
 
 
 def oublier_les_verdicts() -> None:
     """Vide le memo. Aucun effet sur ce que la chaine repond — seulement sur ce
     qu'elle recalcule. Existe pour les tests et pour mesurer."""
-    _FORMES.clear()
-    _VERDICTS.clear()
-    _COMPTEURS.update(juges=0, retrouves=0)
+    with _VERROU:
+        _FORMES.clear()
+        _VERDICTS.clear()
+        _COMPTEURS.update(juges=0, retrouves=0)
 
 
 def verdicts_memorises() -> Dict[str, int]:
     """Ce que le memo a evite. Pour mesurer, jamais pour decider."""
-    return {"juges": _COMPTEURS["juges"],
-            "retrouves": _COMPTEURS["retrouves"],
-            "situations": len(_VERDICTS),
-            "formes": len(_FORMES)}
+    with _VERROU:
+        return {"juges": _COMPTEURS["juges"],
+                "retrouves": _COMPTEURS["retrouves"],
+                "situations": len(_VERDICTS),
+                "formes": len(_FORMES)}
 
 
 # =============================================================================
@@ -434,21 +469,26 @@ def collide_world(
            origine_b[0] - origine_a[0],
            origine_b[1] - origine_a[1],
            origine_b[2] - origine_a[2])
-    _COMPTEURS["juges"] += 1
-    connu = _VERDICTS.get(cle)
-    if connu is not None:
-        _COMPTEURS["retrouves"] += 1
-        _VERDICTS.move_to_end(cle)
-        return connu
+    with _VERROU:
+        _COMPTEURS["juges"] += 1
+        connu = _VERDICTS.get(cle)
+        if connu is not None:
+            _COMPTEURS["retrouves"] += 1
+            _VERDICTS.move_to_end(cle)
+            return connu
 
+    # Hors verrou, deliberement : c'est la seule partie chere, et deux fils qui
+    # la font en parallele rangent le meme verdict — le memo est un memo, pas
+    # une section critique.
     verdict = _status_from_world(
         geometric_relation(geometry_a.exterior, geometry_b.exterior),
         geometry_a,
         geometry_b,
     )
-    _VERDICTS[cle] = verdict
-    while len(_VERDICTS) > VERDICTS_MEMORISES:
-        _VERDICTS.popitem(last=False)
+    with _VERROU:
+        _VERDICTS[cle] = verdict
+        while len(_VERDICTS) > VERDICTS_MEMORISES:
+            _VERDICTS.popitem(last=False)
     return verdict
 
 

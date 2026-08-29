@@ -279,8 +279,10 @@ A/B alterné entre deux copies du dépôt, empreintes SHA-256 identiques :
 La mémoire ne bougeait pas d'un mégaoctet entre exécutions — 223 Mo trois fois
 de suite — ce qui rend cette mesure plus sûre que n'importe quelle mesure de
 temps de ce dépôt. Le plafond hébergé passe de 15 915 à **17 825 tenons** sur
-512 Mo, de 36 512 à **40 894** sur un giga-octet — et le partage des formes,
-ci-dessous, les porte à 22 282 et 51 118.
+512 Mo, de 36 512 à **40 894** sur un giga-octet ; le partage des formes,
+ci-dessous, les porterait à 22 282 et 51 118 — mais le budget a ensuite dû
+absorber les caches de couleur une fois chauds, et les valeurs livrées sont
+**17 367** et **46 202**. Voir « Le cache qui cessait de garder ».
 
 `sys.getsizeof` aurait fait croire le contraire : il rend 56 octets pour un
 vecteur avec ou sans slots, parce qu'il ne compte pas le `__dict__` attaché.
@@ -358,6 +360,53 @@ aplat uni et sur moins de pixels que de centres.
 Après quoi le profil est **plat** : notice 20 %, H2 16 %, modèle 9,5 %, et six
 autres postes entre 3 et 9 %. Plus aucun poste dominant — ce qui est le signe
 qu'il faut arrêter.
+
+### Le cache qui cessait de garder
+
+Trois défauts que seul l'usage **hébergé** pouvait révéler — un serveur fabrique
+des centaines de mosaïques dans le même processus, un banc d'essai en fabrique
+une et s'en va.
+
+**1. Le cache de conversion Lab se figeait.** Le code disait *« si le cache
+n'est pas plein, garde »*. Passé le plafond de 200 000, il ne gardait donc plus
+rien. Or deux photos différentes ne partagent presque aucune teinte : chaque
+fabrication ajoute ~4 600 entrées et n'en réutilise quasiment aucune. Un serveur
+atteignait le plafond vers la **quarante-cinquième mosaïque**, puis servait
+toutes les suivantes sans cache — deux fois plus lentement, sans un mot. Il se
+**vide** maintenant quand il est plein : il reste utile indéfiniment et sa
+taille est bornée pour de vrai.
+
+**2. Le plafond ne bornait rien d'utile.** Mesure : 278 octets par entrée pour
+le cache Lab, 156 pour les couleurs proches d'une palette. À 200 000, cela
+faisait **56 Mo pour l'un et 31 Mo par palette pour l'autre** — près de cent
+mega-octets hors de tout budget. Le plafond est descendu à 65 536, ce qui couvre
+une fabrication au plafond hébergé (57 000 tenons, donc au plus 57 000 teintes)
+et pèse 18 Mo.
+
+**3. `MEMOIRE_DE_BASE` mentait.** Mesure sur vingt-quatre fabrications
+successives dans un seul processus : **16 Mo au démarrage, 61 Mo de plateau**.
+Ces quarante-cinq mega-octets sortaient du même creux que la fabrication.
+`MEMOIRE_DE_BASE` passe de 64 à 112 Mo — ce qui **baisse** le plafond d'un petit
+conteneur (149 → 131 tenons de côté sur 512 Mo), et c'est à bon droit : mieux
+vaut refuser une mosaïque que d'en accepter une et mourir à la quarante-cinquième.
+
+### Quatre mémos, quatre verrous
+
+Les optimisations ont posé des mémos de module — verdicts, formes, dessins de
+pièces, réductions d'image. L'atelier hébergé est multi-fils et son nombre de
+places est réglable. Or `get` puis `move_to_end` sont **deux** appels : une
+éviction entre les deux est un `KeyError`. Pire, le compteur de numéros de forme
+était un lire-modifier-écrire dont dépend *toute* la justesse du mémo de
+collision — deux fils pouvaient attribuer le même numéro à deux formes
+différentes, et une paire de pièces aurait reçu le verdict d'une autre.
+
+Honnêtement : ce second cas ne s'est **pas** reproduit — ni à huit fils sur
+32 000 paires, ni avec `setswitchinterval(1e-6)`, ni même sur le compteur nu
+isolé. CPython 3.11 et 3.13 ne changent pas de fil entre ces deux bytecodes.
+Mais rien dans le langage ne le promet, cette protection accidentelle a déjà
+changé d'une version à l'autre, et elle disparaît dans un Python sans GIL.
+Corrigé sur le raisonnement plutôt que sur un test rouge — c'était le seul choix
+disponible, et le coût mesuré est **nul**.
 
 ### Ce qui a été mesuré puis abandonné
 
@@ -448,9 +497,9 @@ aucune n'est un réglage :
    la mémoire que le conteneur a *réellement* le droit de prendre — lue dans
    le cgroup, pas dans `/proc/meminfo`, qui parle de la machine entière — et
    sur le temps qu'une page web a le droit de mettre à répondre, à la vitesse
-   étalonnée de la machine. Sur un giga-octet il tombe vers 226 tenons de
-   côté — près de cinq fois le côté d'un set LEGO Art officiel, donc vingt-deux
-   fois sa surface.
+   étalonnée de la machine, **caches de couleur chauds compris**. Sur un
+   giga-octet il tombe vers 214 tenons de côté — plus de quatre fois le côté
+   d'un set LEGO Art officiel, donc vingt fois sa surface.
 3. **Sans clé, le premier venu prend la machine.** L'atelier hébergé ne
    démarre pas sans `BFK_CLE`.
 

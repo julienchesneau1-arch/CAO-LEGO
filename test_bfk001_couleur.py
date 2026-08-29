@@ -1009,3 +1009,66 @@ class TestKMoyennesDeroulees(unittest.TestCase):
         from bfk001.palette import dominant_colors
         pixels = [(0, 0, 0), (255, 255, 255), (128, 128, 128)]
         self.assertEqual(dominant_colors(pixels), self._reference(pixels))
+
+
+class TestLesCachesDeCouleurSeVidentAuLieuDeSeFiger(unittest.TestCase):
+    """Un cache plein qui cesse de garder est pire qu'un cache absent.
+
+    Le code disait « si le cache n'est pas plein, garde ». Passe le plafond, il
+    ne gardait donc plus rien — et comme deux photos differentes ne partagent
+    presque aucune teinte (mesure : chaque fabrication ajoute ~4 600 teintes et
+    n'en reutilise quasiment aucune), un serveur atteignait le plafond vers la
+    quarante-cinquieme mosaique, puis servait toutes les suivantes deux fois
+    plus lentement. Invisible en usage local, ou l'on fabrique une mosaique et
+    l'on s'en va.
+    """
+
+    def setUp(self):
+        from bfk001 import palette
+        self.plafond = palette._CACHE_LAB_MAX
+        palette._CACHE_LAB.clear()
+
+    def tearDown(self):
+        from bfk001 import palette
+        palette._CACHE_LAB_MAX = self.plafond
+        palette._CACHE_LAB.clear()
+
+    def test_le_cache_lab_se_vide_et_continue_de_garder(self):
+        from bfk001 import palette
+        from bfk001.palette import load_best_palette
+        palette._CACHE_LAB_MAX = 64
+        complete, _ = load_best_palette()
+        pal = complete.solids_only()
+        for i in range(400):
+            pal.nearest((i % 256, (i * 7) % 256, (i * 13) % 256))
+        # Ni fige (il garderait 64 pour toujours), ni sans borne.
+        self.assertLessEqual(len(palette._CACHE_LAB), 64)
+        self.assertGreater(len(palette._CACHE_LAB), 0,
+                           "un cache vide apres 400 teintes = il s'est fige")
+
+    def test_il_garde_encore_apres_avoir_deborde(self):
+        """Le vrai symptome du defaut : apres debordement, une teinte NEUVE
+        n'etait plus gardee du tout."""
+        from bfk001 import palette
+        from bfk001.palette import load_best_palette
+        palette._CACHE_LAB_MAX = 32
+        complete, _ = load_best_palette()
+        pal = complete.solids_only()
+        for i in range(200):
+            pal.nearest((i, (i * 3) % 256, (i * 5) % 256))
+        avant = len(palette._CACHE_LAB)
+        pal.nearest((251, 252, 253))
+        self.assertIn((251, 252, 253), palette._CACHE_LAB,
+                      "une teinte neuve doit encore etre gardee apres le "
+                      "debordement")
+        self.assertLessEqual(len(palette._CACHE_LAB), 32)
+
+    def test_le_plafond_borne_vraiment_la_memoire(self):
+        """278 octets par entree, mesure sur 200 000 : le plafond n'est pas
+        decoratif, c'est lui qui tient le budget d'un conteneur."""
+        from bfk001 import palette
+        self.assertLessEqual(palette._CACHE_LAB_MAX, 65_536)
+        self.assertGreaterEqual(
+            palette._CACHE_LAB_MAX, 57_000,
+            "il doit couvrir une fabrication au plafond heberge, soit "
+            "57 000 tenons donc au plus 57 000 teintes")

@@ -63,10 +63,10 @@ basse qui s'applique :
 
 | Mémoire du conteneur | Borne mémoire | Borne durée¹ | Plafond appliqué |
 |---:|---:|---:|---:|
-| 512 Mo | 22 282 | 57 142 | **22 282** (~149 × 149) |
-| 1 Go | 51 118 | 57 142 | **51 118** (~226 × 226) |
-| 2 Go | 108 789 | 57 142 | **57 142** (~239 × 239) |
-| 4 Go | 224 133 | 57 142 | **57 142** (~239 × 239) |
+| 512 Mo | 17 367 | 57 142 | **17 367** (~131 × 131) |
+| 1 Go | 46 202 | 57 142 | **46 202** (~214 × 214) |
+| 2 Go | 103 874 | 57 142 | **57 142** (~239 × 239) |
+| 4 Go | 219 217 | 57 142 | **57 142** (~239 × 239) |
 
 ¹ à la vitesse de la machine de référence. Sur une machine deux fois plus
 lente, la borne de durée tombe vers 20 000 et devient contraignante dès 1 Go —
@@ -75,8 +75,8 @@ la même machine s'est mesurée à 1,57× puis à 0,89× de la référence à qu
 heures d'intervalle.
 
 Sous un giga-octet, c'est la mémoire qui mord ; au-dessus, c'est le temps de
-réponse. Même le plus petit des quatre — 149 tenons de côté — reste **près de dix fois
-la surface d'un set LEGO Art officiel** (48 × 48). Le plafond n'est pas une limite de qualité.
+réponse. Même le plus petit des quatre — 131 tenons de côté — reste **sept fois la
+surface d'un set LEGO Art officiel** (48 × 48). Le plafond n'est pas une limite de qualité.
 
 La mémoire est lue dans le **cgroup**, pas dans `/proc/meminfo` : dans un
 conteneur, le second parle de la machine entière, et le croire ne produit pas
@@ -133,7 +133,7 @@ Ce qu'il faut demander à la plateforme, quelle qu'elle soit :
 
 | Réglage | Valeur | Pourquoi |
 |---|---|---|
-| Mémoire | **1 Go au moins** | En dessous de ~200 Mo le lanceur refuse de démarrer plutôt que de servir un atelier qui refuse tout. 512 Mo donnent 126 tenons de côté, 1 Go en donnent 191. |
+| Mémoire | **1 Go au moins** | En dessous, le lanceur refuse de démarrer plutôt que de servir un atelier qui refuse tout. 512 Mo donnent 131 tenons de côté, 1 Go en donnent 214. Le budget compte les caches de couleur **une fois chauds** (mesure : 16 Mo au démarrage, 61 Mo après vingt-quatre fabrications) — sans quoi la quarante-cinquième mosaïque de la journée se ferait tuer sans un mot. |
 | Processeur | **1 vCPU** | Au-delà, rien : la chaîne ne parallélise pas. |
 | Délai de requête | **90 s au moins** | Une fabrication au plafond en prend 60. Une passerelle qui coupe à 30 s laisse le calcul continuer pour personne. |
 | Instances | **exactement 1** (min = max = 1) | Voir ci-dessous — c'est la contrainte la plus facile à manquer. |

@@ -92,9 +92,33 @@ _SL_MAX = 1 + 0.015 * 2500 / math.sqrt(20 + 2500)
 coupure exacte de `Palette.nearest` : dE2000 >= |dL| / SL_MAX."""
 
 _CACHE_LAB: Dict[Rgb, Tuple[float, float, float]] = {}
-_CACHE_LAB_MAX = 200_000
+_CACHE_LAB_MAX = 65_536
 """Une photo repasse sans cesse par les memes teintes : la conversion vaut
-d'etre gardee — mais pas au point d'avaler la memoire sur une image de 12 Mpx."""
+d'etre gardee — mais pas au point d'avaler la memoire d'un serveur.
+
+Deux mesures ont fixe ce nombre, et corrige deux defauts que l'usage LOCAL ne
+pouvait pas montrer.
+
+D'abord la taille. Une entree pese 278 octets pour `_CACHE_LAB`, 156 pour les
+`_proches` d'une palette (mesure sur 200 000 entrees). Au plafond precedent de
+200 000, cela faisait 56 Mo pour l'un et 31 Mo par palette pour l'autre —
+proche de cent mega-octets qui n'entraient dans aucun budget, et surtout pas
+dans `heberge.MEMOIRE_DE_BASE`.
+
+Ensuite le comportement une fois plein. Le code disait « si le cache n'est pas
+plein, garde » : passe le plafond, il cessait donc de garder QUOI QUE CE SOIT.
+Mesure : chaque fabrication ajoute environ 4 600 teintes et n'en reutilise
+presque aucune de la precedente — deux photos differentes ne partagent pas
+leurs teintes. Un serveur atteignait donc le plafond vers la quarante-cinquieme
+mosaique, puis servait toutes les suivantes SANS cache, deux fois plus
+lentement, sans que rien ne le dise. Une falaise invisible en usage local, ou
+l'on fabrique une mosaique et l'on s'en va.
+
+Le cache se VIDE maintenant quand il est plein, au lieu de se figer. Il reste
+utile indefiniment, et sa taille est bornee pour de vrai. Soixante-cinq mille
+teintes couvrent largement une fabrication au plafond heberge — qui compte au
+plus 57 000 tenons, donc au plus 57 000 teintes distinctes — et pesent 18 Mo.
+"""
 
 
 def srgb_to_lab(rgb: Rgb) -> Tuple[float, float, float]:
@@ -327,8 +351,12 @@ class Palette:
         target = _CACHE_LAB.get(rgb)
         if target is None:
             target = srgb_to_lab(rgb)
-            if len(_CACHE_LAB) < _CACHE_LAB_MAX:
-                _CACHE_LAB[rgb] = target
+            # Vider plutot que se figer : voir `_CACHE_LAB_MAX`. Un cache qui
+            # cesse de garder est pire qu'un cache absent — il a deja paye la
+            # memoire.
+            if len(_CACHE_LAB) >= _CACHE_LAB_MAX:
+                _CACHE_LAB.clear()
+            _CACHE_LAB[rgb] = target
         cible_l = target[0]
         clartes = self._clartes
         ordre = self._par_clarte
@@ -355,8 +383,9 @@ class Palette:
                 best_distance = distance
                 best_index = index
         choisie = self._colors[best_index]
-        if len(self._proches) < _CACHE_LAB_MAX:
-            self._proches[rgb] = choisie
+        if len(self._proches) >= _CACHE_LAB_MAX:
+            self._proches.clear()
+        self._proches[rgb] = choisie
         return choisie
 
     def restricted_to(self, codes: Sequence[int]) -> "Palette":
