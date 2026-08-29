@@ -14,15 +14,15 @@ processeur et pointe de mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 1,2 s | 39 Mo | 0,8 Mo |
-| 64 × 64 | 4 096 | 4,2 s | 75 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 7,6 s | 135 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 14,5 s | 217 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 39,8 s | 470 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **388,7 s** | **3 439 Mo** | **104,2 Mo** |
+| 32 × 32 | 1 024 | 1,0 s | 40 Mo | 0,8 Mo |
+| 64 × 64 | 4 096 | 3,2 s | 73 Mo | 2,7 Mo |
+| 96 × 96 | 9 216 | 7,3 s | 136 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 12,4 s | 219 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 31,6 s | 474 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **354,1 s** | **3 435 Mo** | **104,2 Mo** |
 
 La dernière ligne a été **mesurée**, pas déduite : une droite ajustée sur les
-cinq premières annonce 250 s et 2,9 Go. Le coût est linéaire *plus quelque
+cinq premières annonce 226 s et 2,9 Go. Le coût est linéaire *plus quelque
 chose*, et ce quelque chose se paie là où il reste le moins de marge. C'est
 pour cette raison que les pentes employées par `bfk001/heberge.py` sont celles
 du **haut** du tableau et non la moyenne : un plafond calculé trop large ne
@@ -63,14 +63,16 @@ basse qui s'applique :
 
 | Mémoire du conteneur | Borne mémoire | Borne durée¹ | Plafond appliqué |
 |---:|---:|---:|---:|
-| 512 Mo | 15 915 | 37 500 | **15 915** (~126 × 126) |
-| 1 Go | 36 512 | 37 500 | **36 512** (~191 × 191) |
-| 2 Go | 77 706 | 37 500 | **37 500** (~193 × 193) |
-| 4 Go | 160 095 | 37 500 | **37 500** (~193 × 193) |
+| 512 Mo | 15 915 | 41 379 | **15 915** (~126 × 126) |
+| 1 Go | 36 512 | 41 379 | **36 512** (~191 × 191) |
+| 2 Go | 77 706 | 41 379 | **41 379** (~203 × 203) |
+| 4 Go | 160 095 | 41 379 | **41 379** (~203 × 203) |
 
-¹ à la vitesse de la machine de référence. Sur une machine 1,8 fois plus lente,
-la borne de durée tombe à ~21 000 et devient contraignante dès 1 Go — c'est
-l'étalonnage du démarrage qui le dit, pas ce tableau.
+¹ à la vitesse de la machine de référence. Sur une machine deux fois plus
+lente, la borne de durée tombe vers 20 000 et devient contraignante dès 1 Go —
+c'est l'étalonnage du démarrage qui le dit, pas ce tableau, et il l'a déjà dit :
+la même machine s'est mesurée à 1,57× puis à 0,89× de la référence à quelques
+heures d'intervalle.
 
 Sous un giga-octet, c'est la mémoire qui mord ; au-dessus, c'est le temps de
 réponse. Même le plus petit des quatre reste **six fois la surface d'un set

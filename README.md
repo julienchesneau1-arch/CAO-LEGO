@@ -206,6 +206,58 @@ l'application.
 
 ---
 
+## Le contrôle jugeait cent mille fois la même situation
+
+H1 à H6 pesaient **40 %** de la chaîne, et l'essentiel partait dans H2 —
+la collision. Sur un carré de 96 tenons, H2 examine **103 764 paires** de
+pièces.
+
+Trois hypothèses, deux réfutées par la mesure :
+
+1. *Mémoriser le résultat sur les arguments exacts.* Instrumentation :
+   10 090 appels à `solid_overlap`, **10 090 arguments distincts**. Zéro
+   répétition. Un cache n'aurait jamais servi.
+2. *Mémoriser sur la géométrie relative.* Les mêmes appels ne comptent que
+   **179 formes relatives** : les coordonnées absolues ne se répètent jamais,
+   la forme se répète toujours. Mais normaliser les deux opérandes à chaque
+   paire coûte presque autant que calculer — **+11 %** seulement.
+3. *Normaliser une fois par pièce.* Chaque géométrie reçoit un numéro de forme ;
+   la clé d'une paire tient alors en cinq entiers. **103 764 paires,
+   1 046 situations distinctes, 13 formes** — 99 % des paires sont la
+   translation d'une paire déjà jugée.
+
+Résultat mesuré en A/B entrelacé dans un même processus, livrables identiques :
+**−19 % sur la chaîne entière, −42 % sur H2**.
+
+Ce n'est pas un contournement de l'autorité collisionnelle. `collide_world` est
+une fonction pure et son verdict est **invariant par translation** : déplacer
+deux pièces du même vecteur ne change ni leur relation, ni l'intersection, ni la
+matière en conflit. Le mémo rend un verdict que l'autorité a déjà prononcé sur
+la même situation — et il vit dans `collision.py`, pas dans l'appelant.
+
+Un mémo faux ici ne casserait rien de visible : il rendrait **H2 vert** sur une
+mosaïque où deux pièces s'interpénètrent. Huit tests vérifient donc non pas
+qu'il est rapide, mais qu'il est *incapable* de changer un verdict — dont un
+différentiel sur mille situations tirées au hasard, un mémo chauffé de mille
+`CLEAR` suivi d'une pénétration réelle, et 42 empreintes SHA-256 sur six
+configurations.
+
+### Ce qui a été mesuré puis abandonné
+
+La garantie ℤ³ — chaque coordonnée vérifiée entière à chaque construction —
+coûte **7,9 %** de la chaîne, plafond obtenu en la débranchant, ce qui est
+interdit. Aucun « chemin rapide » n'en récupérerait plus qu'une fraction. Une
+garantie d'exactitude à 8 %, c'est bon marché : idée close avec un chiffre.
+
+### Et le gain gratuit
+
+Trois paires de mesures alternées pour annuler la dérive de la machine :
+**Python 3.13 contre 3.11, −17 % de calcul et −8 % de mémoire**, sans toucher
+une ligne. Les deux bornes du plafond hébergé en dépendent. L'image Docker est
+déjà sur 3.13 ; le lanceur hébergé le signale quand il tourne sur plus ancien.
+
+---
+
 ## Héberger l'atelier
 
 `app_lego_art.py` sert l'atelier sur la boucle locale : un utilisateur, qui
@@ -232,21 +284,23 @@ mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 1,2 s | 39 Mo | 0,8 Mo |
-| 64 × 64 | 4 096 | 4,2 s | 75 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 7,6 s | 135 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 14,5 s | 217 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 39,8 s | 470 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **388,7 s** | **3 439 Mo** | **104,2 Mo** |
+| 32 × 32 | 1 024 | 1,0 s | 40 Mo | 0,8 Mo |
+| 64 × 64 | 4 096 | 3,2 s | 73 Mo | 2,7 Mo |
+| 96 × 96 | 9 216 | 7,3 s | 136 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 12,4 s | 219 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 31,6 s | 474 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **354,1 s** | **3 435 Mo** | **104,2 Mo** |
 
 La dernière ligne est le plafond que la chaîne accepte, et elle a été
 **mesurée**, pas déduite : une droite ajustée sur les cinq premières annonce
-250 s et 2,9 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
+226 s et 2,9 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
 où il reste le moins de marge.
 
 **Une seule de ces deux colonnes est une propriété du logiciel.** Le tableau
-refait sur une seconde machine du même environnement a redonné la mémoire *à
-l'octet près* — 135 Mo, 217 Mo, identiques — et le temps **multiplié par 1,8**.
+refait plus tard, la machine ayant redémarré entre-temps, a redonné la mémoire
+*à l'octet près* — 135 Mo, 217 Mo, identiques — et le temps **multiplié par
+1,8**. Mesures répétées depuis : cette machine varie seule d'un facteur 1,6
+d'une heure à l'autre, tout en restant à 8 % près au sein d'un même processus.
 Un plafond de durée posé sur une constante serait donc faux de 80 % chez qui
 héberge. L'atelier hébergé **s'étalonne au démarrage** : il fabrique une
 mosaïque de 32 × 32, la chronomètre, et corrige par le rapport mesuré une fois
@@ -334,7 +388,7 @@ page, et deux défauts s'y cachaient que vingt tests verts ne voyaient pas
 | `bfk001/geometry.py` | B, C | `LDUVector`, `AABB`, `Orientation`, `Pose`, `geometric_relation`, `intersection_aabb`, `transform_aabb`, `transform_local_to_world`, `transform_local_direction_to_world` |
 | `bfk001/connectors.py` | D | `Connector`, `ConnectorTolerance`, `_compatible` |
 | `bfk001/oracle.py` | E | `PhysicalBond` (opaque), `evaluate_connector_pair`, `is_oracle_issued` |
-| `bfk001/collision.py` | F | `CollisionStatus`, `CollisionGeometry`, `solid_overlap`, `collision_status`, `collide` |
+| `bfk001/collision.py` | F | `CollisionStatus`, `CollisionGeometry`, `solid_overlap`, `collision_status`, `collide` — et le mémo de verdicts par **situation** plutôt que par coordonnées |
 | `bfk001/spatial.py` | G | `SpatialCandidateIndex`, `ReferenceSpatialIndex`, `FrozenSpatialSnapshot` |
 | `bfk001/search.py` | H | `PlacedPart`, `SearchApproximation`, `ReferenceSearchApproximation` |
 | `bfk001/graph.py` | I | `ConstructionGraph`, `BuildStep`, `InstructionGraph` |

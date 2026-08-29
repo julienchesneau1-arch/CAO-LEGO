@@ -8,9 +8,10 @@ geometriques exactes.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .geometry import (
     AABB,
@@ -30,6 +31,8 @@ __all__ = [
     "collide",
     "world_geometry",
     "collide_world",
+    "oublier_les_verdicts",
+    "verdicts_memorises",
 ]
 
 
@@ -72,6 +75,103 @@ class CollisionGeometry:
         for void in self.voids:
             if not isinstance(void, AABB):
                 raise TypeError("CollisionGeometry.voids ne contient que des AABB")
+
+    def forme_et_origine(self) -> Tuple[int, Tuple[int, int, int]]:
+        """(numero de forme, origine). La FORME ne depend pas d'ou la piece est.
+
+        Une mosaique pose la meme piece des milliers de fois : les coordonnees
+        absolues ne se repetent jamais, la forme se repete toujours. Mesure sur
+        un carre de 96 tenons : 103 764 paires examinees, 1 046 situations
+        geometriquement distinctes — 99 % des paires sont la translation d'une
+        paire deja jugee.
+
+        Le numero est attribue une fois par forme et jamais reattribue : deux
+        formes differentes ne peuvent donc pas le partager, ce qui est la seule
+        chose dont depend la justesse du memo de `collide_world`.
+
+        Le resultat est garde SUR L'INSTANCE. La classe est gelee, et c'est
+        voulu — mais un cache n'est pas un champ : il ne participe ni a
+        l'egalite, ni a la representation, ni a la serialisation. Il meurt avec
+        l'objet, ce qui est exactement la duree de vie souhaitee.
+        """
+        connu = getattr(self, "_forme_et_origine", None)
+        if connu is not None:
+            return connu
+        origine = self.exterior.min
+        dx, dy, dz = origine.x, origine.y, origine.z
+
+        def relatif(boite: AABB) -> Tuple[int, int, int, int, int, int]:
+            return (boite.min.x - dx, boite.min.y - dy, boite.min.z - dz,
+                    boite.max.x - dx, boite.max.y - dy, boite.max.z - dz)
+
+        signature = (relatif(self.exterior),
+                     tuple(relatif(void) for void in self.voids))
+        numero = _numero_de_forme(signature)
+        valeur = (numero, (dx, dy, dz))
+        object.__setattr__(self, "_forme_et_origine", valeur)
+        return valeur
+
+
+# =============================================================================
+# Section F.2 bis — Memo des verdicts (hors contrat : aucune semantique changee)
+# =============================================================================
+#
+# `collide_world` est une fonction PURE : memes geometries, meme statut. Et son
+# resultat est INVARIANT PAR TRANSLATION — translater les deux geometries d'un
+# meme vecteur ne change ni leur relation geometrique, ni l'intersection, ni la
+# region de matiere en conflit, ni donc le statut. Le memo ci-dessous ne
+# court-circuite aucune autorite : il rend un verdict que cette autorite a deja
+# prononce sur la meme situation, a une translation pres.
+#
+# Sans lui, une mosaique de 96 tenons faisait juger 103 764 paires dont
+# 102 718 etaient la translation d'une paire deja jugee. Mesure sur la chaine
+# entiere, livrables identiques a l'octet pres : -17 %.
+
+FORMES_MEMORISEES = 4096
+"""Formes distinctes suivies. Une mosaique en compte quelques centaines.
+
+L'oubli d'une forme ne peut produire qu'un calcul de plus, jamais un verdict
+faux : un numero n'est jamais reattribue, donc deux formes differentes ne
+peuvent pas se confondre. Une forme oubliee puis revue recoit un numero neuf.
+"""
+
+VERDICTS_MEMORISES = 8192
+"""Situations distinctes gardees. 1 046 sur un carre de 96 tenons ; la borne
+existe pour un serveur qui tourne des jours, pas pour une fabrication."""
+
+_FORMES: "OrderedDict[Tuple, int]" = OrderedDict()
+_PROCHAIN_NUMERO = [0]
+_VERDICTS: "OrderedDict[Tuple, CollisionStatus]" = OrderedDict()
+_COMPTEURS = {"juges": 0, "retrouves": 0}
+
+
+def _numero_de_forme(signature: Tuple) -> int:
+    connu = _FORMES.get(signature)
+    if connu is not None:
+        _FORMES.move_to_end(signature)
+        return connu
+    numero = _PROCHAIN_NUMERO[0]
+    _PROCHAIN_NUMERO[0] = numero + 1
+    _FORMES[signature] = numero
+    while len(_FORMES) > FORMES_MEMORISEES:
+        _FORMES.popitem(last=False)
+    return numero
+
+
+def oublier_les_verdicts() -> None:
+    """Vide le memo. Aucun effet sur ce que la chaine repond — seulement sur ce
+    qu'elle recalcule. Existe pour les tests et pour mesurer."""
+    _FORMES.clear()
+    _VERDICTS.clear()
+    _COMPTEURS.update(juges=0, retrouves=0)
+
+
+def verdicts_memorises() -> Dict[str, int]:
+    """Ce que le memo a evite. Pour mesurer, jamais pour decider."""
+    return {"juges": _COMPTEURS["juges"],
+            "retrouves": _COMPTEURS["retrouves"],
+            "situations": len(_VERDICTS),
+            "formes": len(_FORMES)}
 
 
 # =============================================================================
@@ -322,12 +422,34 @@ def collide_world(
     Ce n'est pas un contournement de l'autorite collisionnelle : c'est la meme
     chaine, dans le meme module, a partir du meme point. Seule la transformation
     des reperes est sortie de la boucle.
+
+    Le verdict est memorise par SITUATION — les deux formes et leur ecart — et
+    non par coordonnees. Voir Section F.2 bis : le statut est invariant par
+    translation, donc deux paires de meme cle recoivent le meme verdict de la
+    meme autorite, une fois au lieu de mille.
     """
-    return _status_from_world(
+    numero_a, origine_a = geometry_a.forme_et_origine()
+    numero_b, origine_b = geometry_b.forme_et_origine()
+    cle = (numero_a, numero_b,
+           origine_b[0] - origine_a[0],
+           origine_b[1] - origine_a[1],
+           origine_b[2] - origine_a[2])
+    _COMPTEURS["juges"] += 1
+    connu = _VERDICTS.get(cle)
+    if connu is not None:
+        _COMPTEURS["retrouves"] += 1
+        _VERDICTS.move_to_end(cle)
+        return connu
+
+    verdict = _status_from_world(
         geometric_relation(geometry_a.exterior, geometry_b.exterior),
         geometry_a,
         geometry_b,
     )
+    _VERDICTS[cle] = verdict
+    while len(_VERDICTS) > VERDICTS_MEMORISES:
+        _VERDICTS.popitem(last=False)
+    return verdict
 
 
 def _status_from_world(

@@ -3999,8 +3999,15 @@ cinquante.
 travail a redémarré au milieu de ce chantier, et la suite de tests est passée
 de 116 s à 190 s **sans qu'une seule ligne de production n'ait changé** — le
 `--durations` ne montrait aucun test neuf en cause. En refaisant deux points du
-tableau sur cette seconde machine : la colonne **mémoire identique à l'octet
-près** (135 Mo, 217 Mo), la colonne **temps multipliée par 1,8**.
+tableau après ce redémarrage : la colonne **mémoire identique à l'octet près**
+(135 Mo, 217 Mo), la colonne **temps multipliée par 1,8**.
+
+*Correction apportée depuis (voir 5.75).* J'ai d'abord écrit « une seconde
+machine ». Des mesures répétées ensuite montrent que cette machine-ci varie
+seule d'un facteur 1,6 d'un moment à l'autre, tout en restant à 8 % près au
+sein d'un même processus. Le fait décisif ne change pas et se renforce même :
+la mémoire se reproduit, le temps non — qu'il s'agisse d'une autre machine ou
+de la même à une autre heure.
 
 C'est-à-dire que `MEMOIRE_PAR_TENON` est une propriété du logiciel et que
 `CPU_PAR_TENON` n'en est pas une. Le plafond de durée que je venais de livrer
@@ -4057,3 +4064,94 @@ il n'y a pas de démon Docker dans cet environnement. Chacune de ses étapes a
 depuis une copie ne contenant *que* les fichiers que `COPY` prend, avec un
 `HOME` étranger — et le trajet complet a été vérifié en vrai HTTP. Mais la
 mécanique de Docker elle-même reste à essayer par qui hébergera.
+
+---
+
+### 5.75 « Que faut-il pour que tout soit optimisé ? » — mesurer d'abord, et se méfier de son propre profileur
+
+La demande invitait à proposer une liste. Une liste d'optimisations non
+mesurées n'est pas un plan, c'est une opinion. Voici ce que la mesure a dit —
+y compris quand elle a réfuté mes deux premières idées.
+
+**Le profileur ment, et ce dépôt le savait déjà.** `cProfile` place
+`intersection_aabb` (3,2 millions d'appels) et `LDUVector.__post_init__`
+(2,5 millions) en tête. Or la docstring de `_require_int`, écrite lors d'une
+passe précédente, prévient noir sur blanc : *« cProfile facture son propre coût
+PAR APPEL : ce sont les fonctions les plus appelées qu'il gonfle le plus »*.
+Le profileur désignait donc exactement les fonctions qu'il déforme le plus.
+J'ai failli optimiser un artefact de mesure.
+
+**Ce que cette machine vaut comme instrument.** Huit fabrications identiques
+dans un même processus : étendue 1,08×. La même mesure d'une heure à l'autre :
+1,6×. Conclusion méthodologique, appliquée à tout ce qui suit — **aucun A/B
+n'est valable ailleurs que dans un seul processus, entrelacé**. Une
+optimisation de 10 % « prouvée » entre deux exécutions séparées ne prouve rien.
+
+**La carte honnête du temps**, par les chronomètres que la chaîne tient
+elle-même (deux mesures par exécution, aucun biais par appel) :
+
+| Phase | Part |
+|---|---:|
+| contrôle (H1 à H6) | 40 % |
+| modèle (solveur mosaïque) | 26 % |
+| le reste (image, quantification, notice, PDF, exports) | 35 % |
+
+**Hypothèse 1, réfutée par la mesure.** Mémoriser `solid_overlap` sur ses
+arguments exacts. Instrumentation : 10 090 appels, **10 090 arguments
+distincts, 0 % de répétition**. Un cache n'aurait jamais servi.
+
+**Hypothèse 2, vraie mais décevante.** Les mêmes 10 090 appels ne comptent que
+**179 formes relatives** : les coordonnées absolues ne se répètent jamais, la
+géométrie relative se répète toujours. `solid_overlap` est équivariant par
+translation — intersection et différence commutent avec la translation, donc
+translater les cinq entrées translate la sortie, exactement. Prototype :
+**+11 %** seulement. Raison : normaliser les deux opérandes **à chaque paire**
+coûte presque autant que calculer — jusqu'à 226 vides par pièce, deux fois par
+paire.
+
+**Hypothèse 3, la bonne.** Normaliser **une fois par pièce** et non une fois
+par paire : chaque géométrie reçoit un *numéro de forme*, et la clé d'une paire
+se réduit à cinq entiers — deux numéros et un écart. Sur un carré de 96
+tenons : 103 764 paires jugées, **1 046 situations géométriquement distinctes,
+13 formes**. Mesuré en A/B entrelacé, livrables identiques : **+19 %** sur la
+chaîne entière, et **42 % de moins sur H2**. Le mémo vit dans `collision.py`,
+c'est-à-dire dans l'autorité elle-même : il ne court-circuite personne, il rend
+un verdict que cette autorité a déjà prononcé sur la même situation.
+
+Un mémo faux à cet endroit ne casserait pas la chaîne — il rendrait **H2 vert**
+sur une mosaïque où deux pièces s'interpénètrent, la pire panne que ce dépôt
+puisse produire. D'où huit tests qui ne vérifient pas qu'il est rapide mais
+qu'il est *incapable* de changer un verdict : invariance par translation,
+différentiel sur mille situations tirées au hasard, mémo chaud de mille CLEAR
+suivi d'une pénétration réelle, non-réattribution des numéros de forme, oubli
+d'une forme qui coûte un calcul et jamais un verdict, et 42 empreintes SHA-256
+sur six configurations — dont un refus, qui doit être le même refus.
+
+**Hypothèse 4, mesurée puis abandonnée.** Combien coûte la garantie ℤ³ ? On la
+débranche — ce qui est interdit — et on mesure le plafond : **7,9 %**. Tout
+« chemin rapide » qui préserverait la garantie n'en récupérerait qu'une
+fraction. La garantie d'exactitude du contrat coûte 8 % : c'est bon marché.
+Idée close, avec un chiffre plutôt qu'avec un avis.
+
+**Le gain gratuit.** Trois paires de mesures alternées 3.11 / 3.13 pour annuler
+la dérive de la machine : **−17 % de calcul et −8 % de mémoire**, sans toucher
+une ligne. Les deux bornes du plafond hébergé en dépendent. L'image Docker est
+déjà sur 3.13 ; le lanceur hébergé le dit maintenant quand il tourne sur plus
+ancien.
+
+**Fausse alerte, et elle mérite d'être écrite.** En vérifiant que le mémo ne
+changeait rien, une configuration a refusé le modèle : `sections=4` sur 64 × 64,
+dix violations H4/H5. Première réaction : le mémo. Vérification : le refus est
+identique **sans** le mémo. Deuxième réaction : la découpe en sections est
+cassée. Vérification : `--sections N` signifie *des sections de N tenons de
+côté*, pas *N sections*. Je demandais des sections de quatre tenons — un carré
+de quatre tenons ne peut pas être enjambé par une plate de jonction. Avec des
+valeurs réelles (16, 32, 48 tenons), tout est livré. **L'instrument était faux,
+pas le code** — pour la sixième fois dans ce projet, et c'est toujours la même
+signature : une hypothèse sur une interface, jamais vérifiée dans le code.
+
+Reste un point réel et mineur : à 2 et 3 tenons, la chaîne refuse **tout de
+suite et en disant pourquoi** ; à 4, elle calcule puis échoue sur une liste
+opaque de pièces flottantes. Les invariants font leur travail — rien de faux
+n'est livré — mais le message pourrait arriver plus tôt. Ouvert, non corrigé,
+et de faible gravité : personne ne demande des sections de quatre tenons.

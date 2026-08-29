@@ -1197,3 +1197,162 @@ class TestIntersectionEtRelationNeDiventJamaisPasPareil(unittest.TestCase):
             intersection_aabb(a, "pas une boite")
         with self.assertRaises(TypeError):
             intersection_aabb(None, a)
+
+
+# =============================================================================
+# Le memo de verdicts : il vit DANS le module qui porte H2, donc il se prouve
+# =============================================================================
+
+
+class TestMemoDeCollision:
+    """Un memo faux ici ne casserait pas la chaine : il rendrait H2 vert.
+
+    C'est la panne la plus grave que ce depot puisse produire — une mosaique
+    declaree valide alors que deux pieces s'interpenetrent. Ces tests ne
+    verifient donc pas que le memo est rapide, mais qu'il est INCAPABLE de
+    changer un verdict.
+    """
+
+    @staticmethod
+    def _boite(x0, y0, z0, x1, y1, z1):
+        from bfk001.geometry import AABB, LDUVector
+        return AABB(LDUVector(x0, y0, z0), LDUVector(x1, y1, z1))
+
+    def _geometrie(self, decalage=(0, 0, 0), vides=()):
+        from bfk001.collision import CollisionGeometry
+        dx, dy, dz = decalage
+        exterieur = self._boite(dx, dy, dz, dx + 40, dy + 40, dz + 24)
+        return CollisionGeometry(
+            exterieur,
+            tuple(self._boite(dx + a, dy + b, dz + c, dx + d, dy + e, dz + f)
+                  for a, b, c, d, e, f in vides),
+        )
+
+    def test_le_verdict_est_invariant_par_translation(self):
+        """La propriete sur laquelle repose TOUT le memo. Si elle est fausse,
+        le memo est faux."""
+        from bfk001.collision import collide_world, oublier_les_verdicts
+        vides = ((4, 4, 0, 16, 16, 20),)
+        for dx, dy, dz in ((0, 0, 0), (1, 0, 0), (-7, 13, 5), (10**6, -10**6, 3)):
+            oublier_les_verdicts()
+            reference = collide_world(self._geometrie(vides=vides),
+                                      self._geometrie((10, 10, 0), vides))
+            oublier_les_verdicts()
+            translate = collide_world(
+                self._geometrie((dx, dy, dz), vides),
+                self._geometrie((dx + 10, dy + 10, dz), vides))
+            assert reference is translate, (dx, dy, dz)
+
+    def test_memo_chaud_ou_froid_le_verdict_ne_change_jamais(self):
+        """Differentiel sur un millier de situations tirees au hasard."""
+        import random
+        from bfk001.collision import (collide_world, oublier_les_verdicts,
+                                      _status_from_world)
+        from bfk001.geometry import geometric_relation
+
+        def sans_memo(a, b):
+            return _status_from_world(
+                geometric_relation(a.exterior, b.exterior), a, b)
+
+        alea = random.Random(20260829)
+        vides_possibles = ((), ((4, 4, 0, 16, 16, 20),),
+                           ((4, 4, 0, 16, 16, 20), (24, 24, 0, 36, 36, 20)))
+        desaccords = 0
+        oublier_les_verdicts()
+        for _ in range(1000):
+            a = self._geometrie(
+                (alea.randint(-60, 60), alea.randint(-60, 60),
+                 alea.randint(-48, 48)), alea.choice(vides_possibles))
+            b = self._geometrie(
+                (alea.randint(-60, 60), alea.randint(-60, 60),
+                 alea.randint(-48, 48)), alea.choice(vides_possibles))
+            if collide_world(a, b) is not sans_memo(a, b):
+                desaccords += 1
+        assert desaccords == 0
+
+    def test_un_memo_chaud_de_CLEAR_ne_masque_pas_une_penetration(self):
+        """Le scenario de panne : mille verdicts sains, puis un conflit reel."""
+        from bfk001.collision import (CollisionStatus, collide_world,
+                                      oublier_les_verdicts)
+        oublier_les_verdicts()
+        for i in range(1000):
+            assert collide_world(
+                self._geometrie((0, 0, 0)),
+                self._geometrie((100 + i * 40, 0, 0))) is CollisionStatus.CLEAR
+        assert collide_world(
+            self._geometrie((0, 0, 0)),
+            self._geometrie((10, 10, 0))) is CollisionStatus.PENETRATION
+
+    def test_deux_formes_differentes_ne_partagent_jamais_un_numero(self):
+        """La seule chose dont depend la justesse : un numero identifie une
+        forme et une seule. L'oubli d'une forme n'en reattribue pas le numero.
+        """
+        from bfk001 import collision
+        collision.oublier_les_verdicts()
+        vus = {}
+        for cote in range(1, 200):
+            geometrie = collision.CollisionGeometry(
+                self._boite(0, 0, 0, cote, 40, 24), ())
+            numero, _ = geometrie.forme_et_origine()
+            assert numero not in vus or vus[numero] == cote, (
+                f"le numero {numero} a servi pour {vus.get(numero)} puis {cote}")
+            vus[numero] = cote
+
+    def test_l_oubli_d_une_forme_coute_un_calcul_jamais_un_verdict_faux(self):
+        """On reduit la table des formes a presque rien et on verifie que les
+        verdicts restent ceux du calcul direct."""
+        from bfk001 import collision
+        from bfk001.geometry import geometric_relation
+        ancien = collision.FORMES_MEMORISEES
+        collision.FORMES_MEMORISEES = 2
+        try:
+            collision.oublier_les_verdicts()
+            for i in range(50):
+                a = collision.CollisionGeometry(
+                    self._boite(0, 0, 0, 20 + i, 40, 24), ())
+                b = collision.CollisionGeometry(
+                    self._boite(10, 10, 0, 50 + i, 50, 24), ())
+                attendu = collision._status_from_world(
+                    geometric_relation(a.exterior, b.exterior), a, b)
+                assert collision.collide_world(a, b) is attendu
+        finally:
+            collision.FORMES_MEMORISEES = ancien
+            collision.oublier_les_verdicts()
+
+    def test_le_cache_d_instance_ne_touche_ni_l_egalite_ni_la_representation(self):
+        """Le cache est pose sur une classe GELEE. Il ne doit rester qu'un
+        cache : invisible a l'egalite, au hachage et a la representation."""
+        from bfk001.collision import CollisionGeometry
+        a = CollisionGeometry(self._boite(0, 0, 0, 40, 40, 24), ())
+        b = CollisionGeometry(self._boite(0, 0, 0, 40, 40, 24), ())
+        a.forme_et_origine()                       # pose le cache sur `a` seul
+        assert a == b
+        assert repr(a) == repr(b)
+        assert dataclasses.astuple(a) == dataclasses.astuple(b)
+        assert "forme" not in repr(a)
+
+    def test_le_memo_est_borne(self):
+        from bfk001 import collision
+        ancien = collision.VERDICTS_MEMORISES
+        collision.VERDICTS_MEMORISES = 16
+        try:
+            collision.oublier_les_verdicts()
+            for i in range(200):
+                collision.collide_world(self._geometrie((0, 0, 0)),
+                                        self._geometrie((100 + i * 40, 0, 0)))
+            assert collision.verdicts_memorises()["situations"] <= 16
+        finally:
+            collision.VERDICTS_MEMORISES = ancien
+            collision.oublier_les_verdicts()
+
+    def test_il_retrouve_vraiment_ce_qu_il_a_juge(self):
+        """Sans ce test, le memo pourrait ne jamais servir sans qu'on le voie."""
+        from bfk001 import collision
+        collision.oublier_les_verdicts()
+        for _ in range(100):
+            collision.collide_world(self._geometrie((0, 0, 0)),
+                                    self._geometrie((10, 10, 0)))
+        etat = collision.verdicts_memorises()
+        assert etat["juges"] == 100
+        assert etat["retrouves"] == 99
+        assert etat["situations"] == 1
