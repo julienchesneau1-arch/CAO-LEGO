@@ -36,6 +36,7 @@ Deux approximations assumees, toutes deux du cote sur :
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import List, Tuple
 
 from .collision import CollisionGeometry
@@ -166,6 +167,21 @@ def _stud_grid_coords(studs: int) -> Tuple[int, ...]:
     return tuple(coords)
 
 
+# Une mosaique de 128 tenons de cote pose 16 471 pieces, et le catalogue les
+# fabrique une par une : 16 471 geometries locales pour ONZE valeurs distinctes,
+# 16 471 tuples de connecteurs pour onze valeurs, 88 160 connecteurs pour 132.
+# Mesure : 551 984 `LDUVector` vivants a la fin d'une fabrication, dont
+# l'immense majorite sont des copies de la meme poignee de formes.
+#
+# Ces objets sont GELES et ne contiennent que des champs geles : deux pieces du
+# meme dessin peuvent partager le meme objet sans qu'aucun code puisse s'en
+# apercevoir. Le memo est donc exact, et il ne change ni la geometrie, ni les
+# invariants, ni un octet de ce qui est livre.
+#
+# `lru_cache` et non un dictionnaire : la borne existe pour qu'un serveur qui
+# tourne des jours ne garde pas une forme par taille jamais revue. Deux cent
+# cinquante-six est deja vingt fois ce qu'une mosaique emploie.
+@lru_cache(maxsize=256)
 def brick_geometry(
     studs_x: int,
     studs_y: int,
@@ -230,6 +246,7 @@ def brick_geometry(
     return CollisionGeometry(exterior=exterior, voids=tuple(voids))
 
 
+@lru_cache(maxsize=256)
 def brick_connectors(
     studs_x: int,
     studs_y: int,

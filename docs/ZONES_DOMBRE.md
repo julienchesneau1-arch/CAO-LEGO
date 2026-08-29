@@ -4223,8 +4223,97 @@ adversarial garde les `__slots__` : sans lui, un `slots=True` retiré par
 distraction ferait remonter la mémoire d'un quart en silence, et aucun test
 fonctionnel ne s'en apercevrait.
 
-**Bilan des deux passes.** Sur la chaîne complète, à livrables identiques au
-bit près : **−26 % de calcul** (388,7 s → 337,5 s au plafond) et **−14 % de
-mémoire** (3 439 Mo → 2 945 Mo), plus **−15 % de calcul et −12 % de mémoire**
-si l'on passe de Python 3.11 à 3.13 — chiffre refait APRÈS les slots, car celui
-d'avant (−17 % / −8 %) ne valait plus.
+**Bilan des deux passes — et une erreur d'arithmétique corrigée ici même.**
+J'avais d'abord écrit « −26 % de calcul (388,7 s → 337,5 s au plafond) ». Ces
+deux nombres donnent **−13 %**, pas −26. Le 26 ne venait de nulle part : je
+l'avais additionné de tête à partir des gains mesurés sur 96 × 96 (−19 %) et
+128 × 128 (−6 %), qui ne s'appliquent pas au plafond et ne s'additionnent pas.
+
+Ce qui est réellement établi, et à quel degré :
+
+| Mesure | Gain | Solidité |
+|---|---:|---|
+| mémo de verdicts, 96 × 96, A/B **entrelacé dans un processus** | −19 % calcul | forte |
+| `__slots__`, 128 × 128, A/B **alterné entre deux copies** | −22 % mémoire | très forte (223 Mo trois fois de suite) |
+| `__slots__`, même protocole | −6 % calcul | moyenne (bruit du même ordre) |
+| plafond 500 × 500, mémoire, avant/après | 3 439 → 2 945 Mo, −14 % | forte (la mémoire ne dérive pas) |
+| plafond 500 × 500, calcul, avant/après | 388,7 → 337,5 s, −13 % | **indicative seulement** |
+
+La dernière ligne est indicative et pas mieux : les deux mesures ont été prises
+à des heures différentes, sur une machine dont 5.75 a établi qu'elle dérive de
+60 %. La mémoire, elle, se reproduit à l'octet près — c'est pourquoi elle est
+la seule comparaison avant/après de ce registre à laquelle on peut se fier
+entre deux sessions.
+
+S'ajoute **−15 % de calcul et −12 % de mémoire** en passant de Python 3.11 à
+3.13 — chiffre refait APRÈS les slots, car celui d'avant (−17 % / −8 %) ne
+valait plus.
+
+---
+
+### 5.77 Onze formes, seize mille pièces — et une piste réfutée en chemin
+
+Troisième passe, après le mémo de verdicts (5.75) et les `__slots__` (5.76). Le
+modèle restait le plus gros bloc de mémoire : 64 Mo sur 127. Recensement des
+objets vivants à la fin d'une fabrication de 128 × 128 :
+
+| Objet | Instances | **Valeurs distinctes** |
+|---|---:|---:|
+| `LDUVector` | 551 984 | 162 |
+| `AABB` | 179 596 | — |
+| `Connector` | 88 160 | **132** |
+| géométries locales | 16 471 | **11** |
+| tuples de connecteurs | 16 471 | **11** |
+
+`PartDefinition.geometry()` et `.connectors()` rebâtissaient tout **à chaque
+pose**. Seize mille copies de onze objets — et comme chaque géométrie porte
+neuf vides, soit neuf AABB et dix-huit vecteurs, c'est là que naissaient la
+plupart des 551 984 `LDUVector`.
+
+Ces objets sont gelés et ne contiennent que des champs gelés : deux pièces du
+même dessin peuvent partager le même objet sans qu'aucun code puisse s'en
+apercevoir. Un `lru_cache(256)` sur `brick_geometry` et `brick_connectors`,
+dont tous les arguments sont des entiers, suffit. A/B alterné entre deux copies
+du dépôt, empreinte SHA-256 identique aux six exécutions — **et c'est la même
+empreinte qu'avant les slots**, donc les trois passes n'ont pas déplacé un bit :
+
+| | sans partage | avec partage |
+|---|---:|---:|
+| mémoire (128 × 128) | 177 Mo | **128 Mo** (−28 %) |
+| calcul | 10,80 s | **9,48 s** (−12 %) |
+
+**La piste réfutée, et elle valait ses cinq minutes.** Les 1 655 952
+coordonnées de ces vecteurs ne comptent que **162 valeurs distinctes** :
+interner les entiers semblait évident. Mesure du nombre d'objets entiers
+réellement tenus : **89 983**, pas 1,6 million — Python les partage déjà
+largement par simple réutilisation de références. Interner n'aurait rendu que
+**3 Mo sur 175**, au prix d'un accès à un dictionnaire dans `__post_init__`,
+c'est-à-dire sur le chemin le plus chaud de la chaîne. Refusé sur la mesure,
+pas sur l'intuition — qui disait le contraire.
+
+**Le rapport haut-sur-étalon monte à chaque passe** : 1,33 au départ, 1,45
+après le mémo, 1,63 après le partage. Ce n'est pas une dérive, c'est le signe
+que les optimisations portent : chacune retire une part quasi linéaire du coût
+et laisse peser davantage ce qui croît plus vite. La constante est arrondie
+au-dessus à chaque fois, jamais en dessous.
+
+**Bilan des trois passes**, à livrables identiques au bit près :
+
+| | départ | maintenant | |
+|---|---:|---:|---:|
+| calcul au plafond (250 000 tenons) | 388,7 s | 278,2 s | **−28 %** |
+| mémoire au plafond | 3 439 Mo | 2 315 Mo | **−33 %** |
+| plafond hébergé, conteneur 512 Mo | 15 915 tenons | 22 282 | **+40 %** |
+| plafond hébergé, conteneur 1 Go | 36 512 tenons | 51 118 | **+40 %** |
+| suite de tests | ~116 s | ~75 s | — |
+
+La ligne « calcul au plafond » garde la réserve de 5.76 : les deux mesures sont
+séparées dans le temps sur une machine qui dérive. La ligne mémoire, elle, est
+solide — c'est la seule grandeur de ce dépôt qui se reproduise à l'octet près.
+
+**Ce qui reste ouvert.** « Le reste » — quantification, aperçus, notice, PDF,
+exports — n'a toujours pas été passé au crible qu'ont subi H2 et le modèle. Et
+la mémoire résiduelle (2,3 Go au plafond) est maintenant structurelle : elle
+tient à ce qu'un `LDUVector` soit un objet Python, ce que le contrat impose.
+La réduire davantage demanderait une représentation en colonnes, c'est-à-dire
+un autre contrat.

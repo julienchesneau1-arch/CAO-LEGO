@@ -279,11 +279,44 @@ A/B alterné entre deux copies du dépôt, empreintes SHA-256 identiques :
 La mémoire ne bougeait pas d'un mégaoctet entre exécutions — 223 Mo trois fois
 de suite — ce qui rend cette mesure plus sûre que n'importe quelle mesure de
 temps de ce dépôt. Le plafond hébergé passe de 15 915 à **17 825 tenons** sur
-512 Mo, de 36 512 à **40 894** sur un giga-octet.
+512 Mo, de 36 512 à **40 894** sur un giga-octet — et le partage des formes,
+ci-dessous, les porte à 22 282 et 51 118.
 
 `sys.getsizeof` aurait fait croire le contraire : il rend 56 octets pour un
 vecteur avec ou sans slots, parce qu'il ne compte pas le `__dict__` attaché.
 Troisième instrument de mesure pris en défaut dans ce projet.
+
+### Onze formes, seize mille pièces
+
+Le recensement des objets vivants à la fin d'une fabrication de 128 × 128 :
+
+| Objet | Instances | **Valeurs distinctes** |
+|---|---:|---:|
+| `LDUVector` | 551 984 | 162 |
+| `AABB` | 179 596 | — |
+| géométries locales | 16 471 | **11** |
+| tuples de connecteurs | 16 471 | **11** |
+| `Connector` | 88 160 | **132** |
+
+Le catalogue rebâtissait la géométrie et les connecteurs **à chaque pose**.
+Seize mille copies de onze objets.
+
+Or ces objets sont gelés et ne contiennent que des champs gelés : deux pièces du
+même dessin peuvent partager le même objet sans qu'aucun code puisse s'en
+apercevoir. Un `lru_cache` sur `brick_geometry` et `brick_connectors` — dont
+tous les arguments sont des entiers — suffit. A/B alterné, empreinte SHA-256
+identique aux six exécutions :
+
+| | sans partage | avec partage |
+|---|---:|---:|
+| mémoire (128 × 128) | 177 Mo | **128 Mo** (−28 %) |
+| calcul | 10,80 s | **9,48 s** (−12 %) |
+
+*Une piste voisine, réfutée :* les 1 655 952 coordonnées de ces vecteurs ne
+comptent que 162 valeurs distinctes — mais Python partage déjà les objets
+entiers, et n'en tient que 89 983. Les interner tous n'aurait rendu que **3 Mo**
+sur 175. La mesure a coûté cinq minutes et évité une optimisation inutile sur
+un chemin très chaud.
 
 ### Ce qui a été mesuré puis abandonné
 
@@ -333,16 +366,16 @@ mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 1,0 s | 35 Mo | 0,8 Mo |
-| 64 × 64 | 4 096 | 3,1 s | 63 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 6,5 s | 113 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 10,2 s | 175 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 29,8 s | 366 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **337,5 s** | **2 945 Mo** | **104,2 Mo** |
+| 32 × 32 | 1 024 | 0,7 s | 31 Mo | 0,8 Mo |
+| 64 × 64 | 4 096 | 2,2 s | 50 Mo | 2,7 Mo |
+| 96 × 96 | 9 216 | 5,4 s | 81 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 9,8 s | 127 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 23,6 s | 254 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **278,2 s** | **2 315 Mo** | **104,2 Mo** |
 
 La dernière ligne est le plafond que la chaîne accepte, et elle a été
 **mesurée**, pas déduite : une droite ajustée sur les cinq premières annonce
-211 s et 2,3 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
+163 s et 1,6 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
 où il reste le moins de marge.
 
 **Une seule de ces deux colonnes est une propriété du logiciel.** Le tableau
@@ -366,9 +399,9 @@ aucune n'est un réglage :
    la mémoire que le conteneur a *réellement* le droit de prendre — lue dans
    le cgroup, pas dans `/proc/meminfo`, qui parle de la machine entière — et
    sur le temps qu'une page web a le droit de mettre à répondre, à la vitesse
-   étalonnée de la machine. Sur un giga-octet il tombe vers 202 tenons de
-   côté — plus de quatre fois le côté d'un set LEGO Art officiel, donc
-   dix-sept fois sa surface.
+   étalonnée de la machine. Sur un giga-octet il tombe vers 226 tenons de
+   côté — près de cinq fois le côté d'un set LEGO Art officiel, donc vingt-deux
+   fois sa surface.
 3. **Sans clé, le premier venu prend la machine.** L'atelier hébergé ne
    démarre pas sans `BFK_CLE`.
 

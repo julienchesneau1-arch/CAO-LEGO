@@ -1417,3 +1417,69 @@ class TestLesStructuresRestentSansDictionnaire:
         assert len({a, b}) == 1
         assert dataclasses.astuple(a) == ((0, 0, 0), (1, 2, 3))
         assert repr(a) == repr(b)
+
+
+class TestLesFormesSontPartagees:
+    """Onze formes, seize mille pieces : un objet par forme, pas par piece.
+
+    Mesure sur un carre de 128 tenons, avant partage : 16 471 geometries
+    locales pour ONZE valeurs distinctes, 16 471 tuples de connecteurs pour
+    onze valeurs, 88 160 connecteurs pour 132 — et 551 984 `LDUVector` vivants,
+    presque tous copies de la meme poignee de formes.
+
+    Ces objets sont geles et ne contiennent que des champs geles : deux pieces
+    du meme dessin peuvent partager le meme objet sans qu'aucun code puisse
+    s'en apercevoir. A/B alterne, empreinte des livrables identique aux six
+    executions : 177 Mo -> 128 Mo et 10,80 s -> 9,48 s.
+
+    Ce test existe parce que retirer le memo ne casserait rien de visible : la
+    memoire remonterait de 28 % en silence.
+    """
+
+    def test_deux_appels_rendent_le_MEME_objet_et_non_deux_egaux(self):
+        from bfk001.lego import brick_connectors, brick_geometry
+        assert brick_geometry(2, 2) is brick_geometry(2, 2)
+        assert brick_connectors(2, 2) is brick_connectors(2, 2)
+
+    def test_des_parametres_differents_rendent_des_objets_differents(self):
+        """Un memo qui rendrait la meme piece pour deux tailles serait pire que
+        pas de memo du tout."""
+        from bfk001.lego import BRICK_HEIGHT_LDU, PLATE_HEIGHT_LDU, brick_geometry
+        assert brick_geometry(2, 2) is not brick_geometry(2, 4)
+        assert brick_geometry(2, 4) is not brick_geometry(4, 2)
+        assert (brick_geometry(2, 2, BRICK_HEIGHT_LDU)
+                is not brick_geometry(2, 2, PLATE_HEIGHT_LDU))
+        assert (brick_geometry(2, 2, BRICK_HEIGHT_LDU, True)
+                is not brick_geometry(2, 2, BRICK_HEIGHT_LDU, False))
+
+    def test_la_geometrie_partagee_est_bien_celle_qu_on_attend(self):
+        """Le partage ne doit rien changer a la geometrie elle-meme."""
+        from bfk001.lego import (BRICK_HEIGHT_LDU, STUD_HEIGHT_LDU,
+                                 STUD_PITCH_LDU, brick_geometry)
+        geometrie = brick_geometry(2, 2)
+        assert geometrie.exterior.min.as_tuple() == (0, 0, 0)
+        assert geometrie.exterior.max.as_tuple() == (
+            2 * STUD_PITCH_LDU, 2 * STUD_PITCH_LDU,
+            BRICK_HEIGHT_LDU + STUD_HEIGHT_LDU)
+
+    def test_une_mosaique_ne_fabrique_plus_qu_une_forme_par_dessin(self):
+        """Le test qui compte : sur un modele reel, combien d'objets pour
+        combien de valeurs ?"""
+        from bfk001.catalog import place_at
+        from bfk001.lego import STUD_PITCH_LDU
+
+        geometries, connecteurs = [], []
+        for i in range(200):
+            placee, geometrie, _ = place_at(
+                f"t{i}", "3070b", (i * STUD_PITCH_LDU, 0, 0), color_id=0)
+            geometries.append(geometrie)
+            connecteurs.append(placee.connectors)
+        assert len({id(c) for c in connecteurs}) == 1, (
+            "200 tuiles identiques ne doivent tenir qu'un tuple de connecteurs")
+        assert len({id(g) for g in geometries}) == 1, (
+            "200 tuiles identiques ne doivent tenir qu'une geometrie")
+        assert len(set(geometries)) == 1
+
+    def test_le_memo_est_borne(self):
+        from bfk001.lego import brick_geometry
+        assert brick_geometry.cache_info().maxsize == 256
