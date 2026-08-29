@@ -14,16 +14,16 @@ Ce qui a ete MESURE, parce que tout le reste en decoule
 Chaine complete, photo synthetique 512 x 512, du carre de 32 tenons a celui
 de 200, temps processeur et pointe de memoire du processus :
 
-    32 x 32      1 024 tenons     0,7 s      31 Mo     0,8 Mo de sortie
+    32 x 32      1 024 tenons     0,6 s      31 Mo     0,8 Mo de sortie
     64 x 64      4 096 tenons     2,2 s      50 Mo     2,7 Mo
-    96 x 96      9 216 tenons     5,4 s      81 Mo     5,8 Mo
-   128 x 128    16 384 tenons     9,8 s     127 Mo     9,4 Mo
-   200 x 200    40 000 tenons    23,6 s     254 Mo    19,9 Mo
-   500 x 500   250 000 tenons   278,2 s   2 315 Mo   104,2 Mo
+    96 x 96      9 216 tenons     4,2 s      85 Mo     5,8 Mo
+   128 x 128    16 384 tenons     8,5 s     126 Mo     9,4 Mo
+   200 x 200    40 000 tenons    20,3 s     254 Mo    19,9 Mo
+   500 x 500   250 000 tenons   260,7 s   2 315 Mo   104,2 Mo
 
 La derniere ligne est le PLAFOND que la chaine accepte aujourd'hui, et elle a
 ete mesuree, pas extrapolee. Il fallait la mesurer : une droite ajustee sur les
-cinq premieres lignes annonce 163 s et 1,6 Go, et la mesure donne 278 s et
+cinq premieres lignes annonce 135 s et 1,6 Go, et la mesure donne 261 s et
 2,3 Go. Le cout n'est pas lineaire, il est lineaire PLUS quelque chose, et ce
 quelque chose se paie au moment ou l'on a le moins de marge. Les pentes
 retenues plus bas sont donc celles du HAUT du tableau, pas la moyenne.
@@ -89,11 +89,11 @@ __all__ = [
 # se paie par un processus tue en plein calcul, sans message.
 # --------------------------------------------------------------------- #
 
-CPU_PAR_TENON = 1.15e-3
-"""Secondes de calcul par tenon, au taux le PIRE du tableau (278,2 s / 250 000),
+CPU_PAR_TENON = 1.05e-3
+"""Secondes de calcul par tenon, au taux le PIRE du tableau (260,7 s / 250 000),
 SUR LA MACHINE DE MESURE.
 
-Le taux varie de 0,54 ms au milieu du tableau a 1,11 ms au plafond. Prendre la
+Le taux varie de 0,46 ms au milieu du tableau a 1,04 ms au plafond. Prendre la
 moyenne donnerait un plafond de duree trop genereux exactement la ou la marge
 manque. Prendre le pire donne une annonce trop longue sur les petites
 mosaiques, ce que personne ne reproche jamais a un logiciel.
@@ -116,16 +116,17 @@ collision, notice, PDF —, assez petite pour que le demarrage n'en souffre pas 
 1,2 s sur la machine de mesure, 1,9 s sur la seconde.
 """
 
-CPU_ETALON_SECONDES = 0.7
+CPU_ETALON_SECONDES = 0.6
 """Ce que l'etalon a coute sur la machine de mesure."""
 
-RAPPORT_HAUT_SUR_ETALON = 1.7
+RAPPORT_HAUT_SUR_ETALON = 1.8
 """De combien le cout par tenon monte entre l'etalon et le plafond.
 
-1,113 ms au plafond contre 0,684 ms a l'etalon, soit 1,63 ; arrondi au-dessus.
+1,043 ms au plafond contre 0,586 ms a l'etalon, soit 1,78 ; arrondi au-dessus.
 
 Ce rapport AUGMENTE a chaque optimisation : 1,33 au depart, 1,45 apres le memo
-de verdicts, 1,63 apres le partage des formes. C'est logique et c'est meme le
+de verdicts, 1,63 apres le partage des formes, 1,78 apres le deroulement des
+k-moyennes. C'est logique et c'est meme le
 signe que les optimisations portent — chacune retire de la chaine une part
 quasi lineaire (des paires a juger, des objets a construire une fois par piece)
 et laisse peser davantage ce qui croit plus vite. Un rapport sous-estime rend le plafond de duree trop genereux,

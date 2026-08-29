@@ -193,24 +193,28 @@ def main() -> int:
         securise=not os.environ.get("BFK_SANS_TLS"),
     )
 
-    # L'interpreteur n'est pas neutre. Meme fabrication, mesures alternees pour
-    # annuler la derive de la machine, carre de 96 tenons : 6,7 s et 113 Mo sur
-    # Python 3.11 contre 5,7 s et 100 Mo sur 3.13 — 15 % de calcul et 12 % de
-    # memoire, sans changer une ligne. L'ecart GRANDIT avec la taille : a 64
-    # tenons il n'est que de 5 %, ce qui se comprend — c'est le cout par objet
-    # que 3.13 a reduit, et le nombre d'objets suit la surface.
+    # L'interpreteur n'est pas neutre — mais moins qu'avant, et le chiffre a du
+    # etre refait TROIS FOIS. Mesures alternees, carre de 96 tenons :
     #
-    # Ce chiffre a ete refait apres la pose des `__slots__` : il valait 17 % et
-    # 8 % avant, et les deux changements mordent en partie sur la meme chose.
-    # Une mesure d'avant l'optimisation ne vaut plus rien apres.
+    #   avant toute optimisation    -17 % de calcul, -8 % de memoire
+    #   apres les __slots__         -15 %,           -12 %
+    #   apres les quatre passes      -6 % (dans le bruit), -15 % de memoire
+    #
+    # Chaque optimisation mangeait une part de ce que 3.13 apportait : les deux
+    # travaillaient sur la meme chose, le cout par objet. Ce qui reste et qui
+    # est SUR, c'est la memoire — 85 Mo contre 72, a l'identique a chaque essai.
+    # Le gain de calcul, lui, n'est plus distinguable du bruit de la machine.
+    #
+    # Lecon generale, valable pour tout ce fichier : une mesure prise avant une
+    # optimisation ne vaut plus rien apres.
     if sys.version_info < (3, 13):
         actuelle = ".".join(str(n) for n in sys.version_info[:2])
-        print(f"python   : {actuelle} — sur 3.13, la meme chaine va environ "
-              f"15 % plus vite et tient dans 12 % de memoire en moins\n"
-              f"           (mesure sur 96 x 96 ; l'ecart grandit avec la "
-              f"taille). Le plafond ci-dessus monterait d'autant.\n"
-              f"           L'image Docker de ce depot est deja sur 3.13.",
-              file=sys.stderr)
+        print(f"python   : {actuelle} — sur 3.13, la meme chaine tient dans "
+              f"15 % de memoire en moins\n"
+              f"           (85 Mo contre 72 sur un carre de 96 tenons), ce qui "
+              f"monte d'autant le plafond\n"
+              f"           quand c'est la memoire qui borne. L'image Docker de "
+              f"ce depot est deja sur 3.13.", file=sys.stderr)
 
     port = _entier("PORT", 8000)
     cote = int(plafond ** 0.5)

@@ -14,15 +14,15 @@ processeur et pointe de mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 0,7 s | 31 Mo | 0,8 Mo |
+| 32 × 32 | 1 024 | 0,6 s | 31 Mo | 0,8 Mo |
 | 64 × 64 | 4 096 | 2,2 s | 50 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 5,4 s | 81 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 9,8 s | 127 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 23,6 s | 254 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **278,2 s** | **2 315 Mo** | **104,2 Mo** |
+| 96 × 96 | 9 216 | 4,2 s | 85 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 8,5 s | 126 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 20,3 s | 254 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **260,7 s** | **2 315 Mo** | **104,2 Mo** |
 
 La dernière ligne a été **mesurée**, pas déduite : une droite ajustée sur les
-cinq premières annonce 163 s et 1,6 Go. Le coût est linéaire *plus quelque
+cinq premières annonce 135 s et 1,6 Go. Le coût est linéaire *plus quelque
 chose*, et ce quelque chose se paie là où il reste le moins de marge. C'est
 pour cette raison que les pentes employées par `bfk001/heberge.py` sont celles
 du **haut** du tableau et non la moyenne : un plafond calculé trop large ne
@@ -63,10 +63,10 @@ basse qui s'applique :
 
 | Mémoire du conteneur | Borne mémoire | Borne durée¹ | Plafond appliqué |
 |---:|---:|---:|---:|
-| 512 Mo | 22 282 | 52 173 | **22 282** (~149 × 149) |
-| 1 Go | 51 118 | 52 173 | **51 118** (~226 × 226) |
-| 2 Go | 108 789 | 52 173 | **52 173** (~228 × 228) |
-| 4 Go | 224 133 | 52 173 | **52 173** (~228 × 228) |
+| 512 Mo | 22 282 | 57 142 | **22 282** (~149 × 149) |
+| 1 Go | 51 118 | 57 142 | **51 118** (~226 × 226) |
+| 2 Go | 108 789 | 57 142 | **57 142** (~239 × 239) |
+| 4 Go | 224 133 | 57 142 | **57 142** (~239 × 239) |
 
 ¹ à la vitesse de la machine de référence. Sur une machine deux fois plus
 lente, la borne de durée tombe vers 20 000 et devient contraignante dès 1 Go —

@@ -934,3 +934,78 @@ class TestRechercheDeLaPaletteOfficielle(unittest.TestCase):
         self.assertIsNone(par_code[1].lego_id,
                           "un LEGOID s'est propage a la couleur suivante")
         self.assertEqual(par_code[72].lego_id, 199)
+
+
+class TestKMoyennesDeroulees(unittest.TestCase):
+    """La boucle interieure de `dominant_colors`, deroulee sans rien changer.
+
+    Douze passes sur tous les pixels, douze centres chacune : ecrite avec
+    `min(range(count), key=lambda ...)` et un `sum(... for t in range(3))`, elle
+    creait 5,3 millions de generateurs et 1,3 million de fermetures pour une
+    mosaique de 96 tenons — 16 % de toute la chaine pour une LIGNE DE JOURNAL.
+
+    Deroulee : 3,7 %. Ce test verifie que « deroulee » veut bien dire
+    « identique », sur les trois points ou une reecriture de ce genre derape.
+    """
+
+    @staticmethod
+    def _reference(pixels, count=12, seed=7):
+        """La version d'avant, mot pour mot."""
+        import random
+        from bfk001.palette import srgb_to_lab
+        labs = [srgb_to_lab(pixel) for pixel in pixels]
+        generateur = random.Random(seed)
+        centres = [labs[generateur.randrange(len(labs))] for _ in range(count)]
+        groupes = [[] for _ in range(count)]
+        for _ in range(12):
+            groupes = [[] for _ in range(count)]
+            for index, lab in enumerate(labs):
+                plus_proche = min(
+                    range(count),
+                    key=lambda c: sum((lab[t] - centres[c][t]) ** 2
+                                      for t in range(3)),
+                )
+                groupes[plus_proche].append(index)
+            for c in range(count):
+                if groupes[c]:
+                    centres[c] = tuple(
+                        sum(labs[i][t] for i in groupes[c]) / len(groupes[c])
+                        for t in range(3))
+        resultat = []
+        for c in range(count):
+            if not groupes[c]:
+                continue
+            moyenne = tuple(sum(pixels[i][t] for i in groupes[c])
+                            // len(groupes[c]) for t in range(3))
+            resultat.append((moyenne, len(groupes[c]) / len(pixels)))
+        return sorted(resultat, key=lambda entree: -entree[1])
+
+    def test_elle_rend_exactement_ce_que_rendait_l_ancienne(self):
+        import random
+        from bfk001.palette import dominant_colors
+        alea = random.Random(20260829)
+        for essai in range(5):
+            pixels = [(alea.randrange(256), alea.randrange(256),
+                       alea.randrange(256)) for _ in range(400)]
+            self.assertEqual(dominant_colors(pixels), self._reference(pixels),
+                             f"essai {essai}")
+
+    def test_les_egalites_vont_toujours_au_PREMIER_centre(self):
+        """`min` garde le premier minimum ; un `<=` a la place du `<` aurait
+        garde le dernier, et deplace des pixels d'un groupe a l'autre."""
+        from bfk001.palette import dominant_colors
+        # Une image de deux couleurs seulement : les douze centres tires au
+        # hasard tombent forcement sur des doublons, donc des egalites.
+        pixels = [(10, 20, 30)] * 200 + [(200, 210, 220)] * 200
+        self.assertEqual(dominant_colors(pixels), self._reference(pixels))
+
+    def test_un_aplat_uni_ne_leve_pas(self):
+        from bfk001.palette import dominant_colors
+        resultat = dominant_colors([(128, 64, 32)] * 100)
+        self.assertEqual(resultat, self._reference([(128, 64, 32)] * 100))
+        self.assertEqual(sum(part for _, part in resultat), 1.0)
+
+    def test_moins_de_pixels_que_de_centres(self):
+        from bfk001.palette import dominant_colors
+        pixels = [(0, 0, 0), (255, 255, 255), (128, 128, 128)]
+        self.assertEqual(dominant_colors(pixels), self._reference(pixels))

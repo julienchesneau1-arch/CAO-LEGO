@@ -4317,3 +4317,93 @@ la mémoire résiduelle (2,3 Go au plafond) est maintenant structurelle : elle
 tient à ce qu'un `LDUVector` soit un objet Python, ce que le contrat impose.
 La réduire davantage demanderait une représentation en colonnes, c'est-à-dire
 un autre contrat.
+
+---
+
+### 5.78 Seize pour cent de la chaîne pour une ligne de journal
+
+Quatrième passe. Après les trois précédentes, « le reste » était devenu la
+part dominante : **51 %** contre 25 % au modèle et 24 % au contrôle — exactement
+ce que 5.77 annonçait comme prochaine mine.
+
+Des chronomètres autour des fonctions de haut niveau, quelques dizaines
+d'appels, aucun biais par appel :
+
+| Phase | Part |
+|---|---:|
+| notice PDF | 17,6 % |
+| **couleurs manquantes (`dominant_colors`)** | **16,0 %** |
+| H2 collision | 13,8 % |
+| modèle | 7,7 % |
+| écart de détail | 7,4 % |
+| aperçu (rendu) | 7,2 % |
+| arbitrage du tramage | 6,7 % |
+| assemblage (graphe) | 6,5 % |
+| modèle JSON | 4,4 % |
+
+Le deuxième poste est une **ligne de journal**. Pas un livrable : la phrase qui
+dit *« 1620 tuiles veulent un bleu pâle autour de #AEC8E8, et votre palette n'a
+que du Light Bluish Gray à 22 delta E »*. C'est une des lignes les plus utiles
+que la chaîne écrive — elle transforme une plainte en décision — et elle
+coûtait un sixième de tout le calcul.
+
+La cause : des k-moyennes en Lab, douze passes sur tous les pixels, douze
+centres chacune, avec une boucle intérieure écrite
+
+    plus_proche = min(range(count),
+        key=lambda c: sum((lab[t] - centres[c][t]) ** 2 for t in range(3)))
+
+soit **5,3 millions de générateurs et 1,3 million de fermetures** pour un carré
+de 96 tenons. Déroulée à la main, elle rend exactement la même chose, et les
+trois raisons sont à écrire parce que ce sont les trois façons de se tromper :
+
+1. `sum()` part de zéro et additionne dans l'ordre `t = 0, 1, 2` ; l'écriture
+   `d0*d0 + d1*d1 + d2*d2` fait la même chose dans le même ordre, et `0 + d0`
+   vaut exactement `d0` en virgule flottante.
+2. `x ** 2` et `x * x` sont le même flottant IEEE.
+3. `min` garde le **premier** minimum ; la boucle déroulée doit donc comparer
+   avec un `<` strict et non un `<=`. C'est là qu'une réécriture dérape, et
+   c'est invisible sauf sur des égalités — un test les provoque exprès.
+
+| | avant | après |
+|---|---:|---:|
+| la phase | 0,74 s (16,0 %) | **0,15 s (3,7 %)** |
+| la chaîne, A/B alterné, 128 × 128 | 9,62 s | **7,90 s** (−18 %) |
+
+Empreinte SHA-256 des livrables identique aux six exécutions, et c'est
+toujours la même qu'avant les trois passes précédentes.
+
+**Où l'on s'arrête, et pourquoi.** Le profil est maintenant plat : notice 20 %,
+H2 16 %, modèle 9,5 %, et six postes entre 3 et 9 %. Aucun poste dominant ne
+reste. Les gains suivants demanderaient dix changements pour ce qu'un seul
+rapportait ici — c'est le moment d'arrêter, et le dire vaut mieux que continuer
+par habitude.
+
+**Bilan des quatre passes**, livrables identiques au bit près :
+
+| | départ | maintenant | |
+|---|---:|---:|---:|
+| calcul au plafond (250 000 tenons) | 388,7 s | 260,7 s | **−33 %** |
+| mémoire au plafond | 3 439 Mo | 2 315 Mo | **−33 %** |
+| calcul, 96 × 96 | 7,6 s | 4,2 s | **−45 %** |
+| plafond hébergé, 512 Mo | 15 915 tenons | 22 282 | **+40 %** |
+| plafond hébergé, 1 Go | 36 512 tenons | 51 118 | **+40 %** |
+| plafond hébergé, 2 Go | 37 500 tenons | 57 142 | **+52 %** |
+| suite de tests | ~116 s | ~75 s | — |
+
+Les lignes de temps gardent la réserve de 5.76 : mesures séparées dans le temps
+sur une machine qui dérive de 60 %. Les A/B entrelacés de chaque passe, eux,
+sont solides ; c'est leur composition qui l'est moins que chacun d'eux.
+
+**Le chiffre de Python 3.13, refait une troisième fois.** −17 % / −8 % avant
+toute optimisation, −15 % / −12 % après les slots, **−6 % / −15 %** après les
+quatre passes. Chaque optimisation mangeait une part de ce que 3.13 apportait :
+les deux travaillent sur le coût *par objet*. Le gain de calcul n'est plus
+distinguable du bruit et c'est écrit comme tel ; celui de mémoire, lui, se
+reproduit à l'identique (85 Mo contre 72). Une mesure prise avant une
+optimisation ne vaut plus rien après — trois fois de suite dans ce registre.
+
+Le rapport haut-sur-étalon a monté à chaque passe — 1,33, puis 1,45, 1,63,
+1,78. Ce n'est pas une dérive : chaque optimisation retire du coût quasi
+linéaire et laisse peser ce qui croît plus vite. Il faudra le refaire monter
+encore le jour où quelqu'un s'attaquera à la notice.

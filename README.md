@@ -318,6 +318,47 @@ entiers, et n'en tient que 89 983. Les interner tous n'aurait rendu que **3 Mo**
 sur 175. La mesure a coûté cinq minutes et évité une optimisation inutile sur
 un chemin très chaud.
 
+### Seize pour cent de la chaîne pour une ligne de journal
+
+Après trois passes, « le reste » — tout ce qui n'est ni le modèle ni le
+contrôle — était devenu **51 %** de la chaîne. Des chronomètres autour des
+fonctions de haut niveau (quelques dizaines d'appels, aucun biais par appel) :
+
+| Phase | Part |
+|---|---:|
+| notice PDF | 17,6 % |
+| **couleurs manquantes** | **16,0 %** |
+| H2 collision | 13,8 % |
+| modèle | 7,7 % |
+| écart de détail | 7,4 % |
+| aperçu (rendu) | 7,2 % |
+| arbitrage du tramage | 6,7 % |
+
+« Couleurs manquantes » est la ligne du journal qui dit *« 1620 tuiles veulent
+un bleu pâle autour de #AEC8E8, et votre palette n'a que du Light Bluish Gray à
+22 delta E »*. Elle coûtait **16 % de toute la chaîne** — des k-moyennes en Lab,
+douze passes sur tous les pixels, douze centres chacune.
+
+La boucle intérieure était écrite `min(range(count), key=lambda c: sum((lab[t] -
+centres[c][t]) ** 2 for t in range(3)))` : **5,3 millions de générateurs et
+1,3 million de fermetures** pour un carré de 96 tenons. Déroulée, elle rend
+exactement la même chose — la somme part de zéro dans le même ordre, `x ** 2` et
+`x * x` sont le même flottant, et le `<` strict garde le premier minimum comme
+le faisait `min`.
+
+| | avant | après |
+|---|---:|---:|
+| la phase elle-même | 0,74 s (16,0 %) | **0,15 s (3,7 %)** |
+| la chaîne entière (128 × 128) | 9,62 s | **7,90 s** (−18 %) |
+
+Un test différentiel compare la version déroulée à une copie mot pour mot de
+l'ancienne, sur des pixels tirés au hasard, sur des égalités délibérées, sur un
+aplat uni et sur moins de pixels que de centres.
+
+Après quoi le profil est **plat** : notice 20 %, H2 16 %, modèle 9,5 %, et six
+autres postes entre 3 et 9 %. Plus aucun poste dominant — ce qui est le signe
+qu'il faut arrêter.
+
 ### Ce qui a été mesuré puis abandonné
 
 La garantie ℤ³ — chaque coordonnée vérifiée entière à chaque construction —
@@ -328,15 +369,23 @@ garantie d'exactitude à 8 %, c'est bon marché : idée close avec un chiffre.
 ### Et le gain gratuit
 
 Trois paires de mesures alternées pour annuler la dérive de la machine :
-**Python 3.13 contre 3.11, −15 % de calcul et −12 % de mémoire** sur un carré
-de 96 tenons, sans toucher une ligne. L'écart grandit avec la taille : à 64
-tenons il n'est que de 5 %, ce qui se comprend — c'est le coût *par objet* que
-3.13 a réduit, et le nombre d'objets suit la surface.
+**Python 3.13 contre 3.11.** Ce chiffre a dû être refait **trois fois**, et
+c'est la leçon la plus utile de cette section :
 
-Ce chiffre a été refait après la pose des `__slots__` : il valait −17 % et
-−8 % avant, et les deux changements mordent en partie sur la même chose. Une
-mesure d'avant l'optimisation ne vaut plus rien après — c'est vrai ici comme
-partout ailleurs dans ce fichier.
+| mesuré | calcul | mémoire |
+|---|---:|---:|
+| avant toute optimisation | −17 % | −8 % |
+| après les `__slots__` | −15 % | −12 % |
+| après les quatre passes | **−6 %** (dans le bruit) | **−15 %** |
+
+Chaque optimisation mangeait une part de ce que 3.13 apportait : les deux
+travaillent sur la même chose, le coût *par objet*. Ce qui reste et qui est
+sûr, c'est la mémoire — 85 Mo contre 72, à l'identique à chaque essai. Le gain
+de calcul, lui, n'est plus distinguable du bruit de la machine, et il est écrit
+ici comme tel plutôt que maquillé en −6 %.
+
+**Une mesure prise avant une optimisation ne vaut plus rien après.** C'est vrai
+ici comme partout ailleurs dans ce fichier.
 
 ---
 
@@ -366,16 +415,16 @@ mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 0,7 s | 31 Mo | 0,8 Mo |
+| 32 × 32 | 1 024 | 0,6 s | 31 Mo | 0,8 Mo |
 | 64 × 64 | 4 096 | 2,2 s | 50 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 5,4 s | 81 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 9,8 s | 127 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 23,6 s | 254 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **278,2 s** | **2 315 Mo** | **104,2 Mo** |
+| 96 × 96 | 9 216 | 4,2 s | 85 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 8,5 s | 126 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 20,3 s | 254 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **260,7 s** | **2 315 Mo** | **104,2 Mo** |
 
 La dernière ligne est le plafond que la chaîne accepte, et elle a été
 **mesurée**, pas déduite : une droite ajustée sur les cinq premières annonce
-163 s et 1,6 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
+135 s et 1,6 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
 où il reste le moins de marge.
 
 **Une seule de ces deux colonnes est une propriété du logiciel.** Le tableau
