@@ -17,6 +17,26 @@ preuve, soit nommée avec la décision qui lui manque.
 
 ---
 
+## Prérequis
+
+**Python 3.10 ou plus, et rien d'autre.** Aucune dépendance hors bibliothèque
+standard — c'est vérifié par un test.
+
+Le 3.10 n'est pas arbitraire : les `__slots__` posés sur les structures de base
+(`@dataclass(frozen=True, slots=True)`, −22 % de mémoire) existent depuis cette
+version. Vérifié en exécutant la chaîne complète sur 3.10, 3.11, 3.12 et 3.13.
+L'image Docker est sur 3.13, qui tient dans 15 % de mémoire en moins.
+
+Au premier lancement, installez la palette officielle LDraw — sans elle la
+chaîne tombe sur douze couleurs recopiées à la main et la mosaïque sort deux
+fois plus fausse :
+
+```bash
+python3 app_lego_art.py --installer-palette
+```
+
+---
+
 ## La chaîne complète, en une commande
 
 ```bash
