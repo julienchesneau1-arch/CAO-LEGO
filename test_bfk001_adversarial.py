@@ -1356,3 +1356,64 @@ class TestMemoDeCollision:
         assert etat["juges"] == 100
         assert etat["retrouves"] == 99
         assert etat["situations"] == 1
+
+
+class TestLesStructuresRestentSansDictionnaire:
+    """`__slots__` sur les structures de base : 22 % de memoire en moins.
+
+    Mesure sur un carre de 128 tenons, A/B alterne, empreintes identiques :
+    223 Mo sans, 174 Mo avec. Ces classes se comptent par centaines de milliers
+    — une seule pieces de 2x2 porte une pose, un AABB monde, huit connecteurs
+    et une geometrie a neuf vides — et chaque `__dict__` vide pese plus de cent
+    octets.
+
+    Le retirer ne casserait aucun test fonctionnel : la memoire remonterait
+    d'un quart en silence, et le plafond d'un conteneur hebergé baisserait
+    d'autant. D'ou ce test, qui ne verifie rien d'autre que l'absence du
+    dictionnaire.
+    """
+
+    def test_les_classes_les_plus_nombreuses_n_ont_pas_de_dictionnaire(self):
+        from bfk001.collision import CollisionGeometry
+        from bfk001.connectors import Connector
+        from bfk001.geometry import AABB, LDUVector, Orientation
+        from bfk001.search import PlacedPart
+
+        vecteur = LDUVector(1, 2, 3)
+        sans_dictionnaire = (
+            vecteur,
+            AABB(LDUVector(0, 0, 0), LDUVector(1, 1, 1)),
+            Orientation(1, 0, 0, 0, 1, 0, 0, 0, 1),
+            Connector("stud_male", vecteur, LDUVector(0, 0, 1)),
+        )
+        for objet in sans_dictionnaire:
+            assert not hasattr(objet, "__dict__"), type(objet).__name__
+            assert hasattr(type(objet), "__slots__"), type(objet).__name__
+
+        assert "__slots__" in vars(PlacedPart)
+
+        # `CollisionGeometry` en est volontairement exclue : elle garde son
+        # numero de forme SUR L'INSTANCE (Section F.2 bis), ce qui demande un
+        # dictionnaire. Elle est aussi cent fois moins nombreuse que les AABB
+        # qu'elle contient — lesquelles, elles, ont bien des slots.
+        geometrie = CollisionGeometry(
+            AABB(LDUVector(0, 0, 0), LDUVector(40, 40, 24)), ())
+        assert hasattr(geometrie, "__dict__")
+
+    def test_geler_reste_geler(self):
+        """slots ne doit pas avoir troque l'immuabilite contre de la memoire."""
+        import dataclasses
+        from bfk001.geometry import LDUVector
+        vecteur = LDUVector(1, 2, 3)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            vecteur.x = 9
+
+    def test_l_egalite_le_hachage_et_astuple_sont_intacts(self):
+        from bfk001.geometry import AABB, LDUVector
+        a = AABB(LDUVector(0, 0, 0), LDUVector(1, 2, 3))
+        b = AABB(LDUVector(0, 0, 0), LDUVector(1, 2, 3))
+        assert a == b
+        assert hash(a) == hash(b)
+        assert len({a, b}) == 1
+        assert dataclasses.astuple(a) == ((0, 0, 0), (1, 2, 3))
+        assert repr(a) == repr(b)

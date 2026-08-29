@@ -20,8 +20,8 @@ giga-octets et demi de memoire. Sans cle, le premier venu prend la machine.
 Un PLAFOND calcule, pas recopie. Celui du noyau — 250 000 tenons — dit ce que
 la chaine tient sur une machine de developpement. Ici il est recalcule sur la
 memoire que le conteneur a le droit de prendre et sur le temps qu'une page web
-a le droit de mettre a repondre. Sur un giga-octet il tombe vers 190 tenons de
-cote, ce qui reste quatre fois la surface d'un set LEGO Art officiel.
+a le droit de mettre a repondre. Sur un giga-octet il tombe vers 202 tenons de
+cote, ce qui reste dix-sept fois la surface d'un set LEGO Art officiel.
 
 UN ATELIER PAR VISITEUR. Les catalogues de commande sont une propriete de
 l'installation quand il n'y a qu'un utilisateur ; des qu'il y en a deux, le
@@ -151,7 +151,7 @@ def main() -> int:
             "de cote).\n\n"
             "Cet atelier refuserait tout ce qu'on lui demande. Il faut un "
             "conteneur\nde plus de memoire — environ 512 Mo pour une mosaique "
-            "de 126 de cote,\nun giga-octet pour 190 — ou moins de "
+            "de 133 de cote,\nun giga-octet pour 202 — ou moins de "
             "fabrications simultanees.",
             file=sys.stderr)
         return 2
@@ -193,15 +193,23 @@ def main() -> int:
     )
 
     # L'interpreteur n'est pas neutre. Meme fabrication, mesures alternees pour
-    # annuler la derive de la machine : 3,93 s et 75 Mo sur Python 3.11 contre
-    # 3,27 s et 69 Mo sur 3.13 — 17 % de calcul et 8 % de memoire, sans changer
-    # une ligne. Les deux bornes du plafond en dependent, donc le plafond aussi.
+    # annuler la derive de la machine, carre de 96 tenons : 6,7 s et 113 Mo sur
+    # Python 3.11 contre 5,7 s et 100 Mo sur 3.13 — 15 % de calcul et 12 % de
+    # memoire, sans changer une ligne. L'ecart GRANDIT avec la taille : a 64
+    # tenons il n'est que de 5 %, ce qui se comprend — c'est le cout par objet
+    # que 3.13 a reduit, et le nombre d'objets suit la surface.
+    #
+    # Ce chiffre a ete refait apres la pose des `__slots__` : il valait 17 % et
+    # 8 % avant, et les deux changements mordent en partie sur la meme chose.
+    # Une mesure d'avant l'optimisation ne vaut plus rien apres.
     if sys.version_info < (3, 13):
         actuelle = ".".join(str(n) for n in sys.version_info[:2])
-        print(f"python   : {actuelle} — sur 3.13, la meme chaine va 17 % plus "
-              f"vite et tient dans 8 % de memoire en moins.\n"
-              f"           Le plafond ci-dessus monterait d'autant. L'image "
-              f"Docker de ce depot est deja sur 3.13.", file=sys.stderr)
+        print(f"python   : {actuelle} — sur 3.13, la meme chaine va environ "
+              f"15 % plus vite et tient dans 12 % de memoire en moins\n"
+              f"           (mesure sur 96 x 96 ; l'ecart grandit avec la "
+              f"taille). Le plafond ci-dessus monterait d'autant.\n"
+              f"           L'image Docker de ce depot est deja sur 3.13.",
+              file=sys.stderr)
 
     port = _entier("PORT", 8000)
     cote = int(plafond ** 0.5)

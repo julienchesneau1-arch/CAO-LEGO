@@ -14,17 +14,17 @@ Ce qui a ete MESURE, parce que tout le reste en decoule
 Chaine complete, photo synthetique 512 x 512, du carre de 32 tenons a celui
 de 200, temps processeur et pointe de memoire du processus :
 
-    32 x 32      1 024 tenons     1,0 s      40 Mo     0,8 Mo de sortie
-    64 x 64      4 096 tenons     3,2 s      73 Mo     2,7 Mo
-    96 x 96      9 216 tenons     7,3 s     136 Mo     5,8 Mo
-   128 x 128    16 384 tenons    12,4 s     219 Mo     9,4 Mo
-   200 x 200    40 000 tenons    31,6 s     474 Mo    19,9 Mo
-   500 x 500   250 000 tenons   354,1 s   3 435 Mo   104,2 Mo
+    32 x 32      1 024 tenons     1,0 s      35 Mo     0,8 Mo de sortie
+    64 x 64      4 096 tenons     3,1 s      63 Mo     2,7 Mo
+    96 x 96      9 216 tenons     6,5 s     113 Mo     5,8 Mo
+   128 x 128    16 384 tenons    10,2 s     175 Mo     9,4 Mo
+   200 x 200    40 000 tenons    29,8 s     366 Mo    19,9 Mo
+   500 x 500   250 000 tenons   337,5 s   2 945 Mo   104,2 Mo
 
 La derniere ligne est le PLAFOND que la chaine accepte aujourd'hui, et elle a
 ete mesuree, pas extrapolee. Il fallait la mesurer : une droite ajustee sur les
-cinq premieres lignes annonce 226 s et 2,9 Go, et la mesure donne 354 s et
-3,4 Go. Le cout n'est pas lineaire, il est lineaire PLUS quelque chose, et ce
+cinq premieres lignes annonce 211 s et 2,3 Go, et la mesure donne 338 s et
+2,9 Go. Le cout n'est pas lineaire, il est lineaire PLUS quelque chose, et ce
 quelque chose se paie au moment ou l'on a le moins de marge. Les pentes
 retenues plus bas sont donc celles du HAUT du tableau, pas la moyenne.
 
@@ -35,7 +35,7 @@ calcul et trois giga-octets et demi de memoire. Un visiteur, une requete, et la
 machine est prise pour tout le monde.
 
 C'est la raison d'etre de ce module. C'est aussi ce qui exclut le sans-serveur
-avant meme d'essayer : aucune fonction hebergee ne tient six minutes ni trois
+avant meme d'essayer : aucune fonction hebergee ne tient cinq minutes ni trois
 giga-octets. Un conteneur, oui ; une fonction, non. Le plafond local n'est donc
 pas transposable — il est recalcule ici sur la memoire que le conteneur a
 REELLEMENT le droit de prendre.
@@ -89,11 +89,11 @@ __all__ = [
 # se paie par un processus tue en plein calcul, sans message.
 # --------------------------------------------------------------------- #
 
-CPU_PAR_TENON = 1.45e-3
-"""Secondes de calcul par tenon, au taux le PIRE du tableau (354,1 s / 250 000),
+CPU_PAR_TENON = 1.35e-3
+"""Secondes de calcul par tenon, au taux le PIRE du tableau (337,5 s / 250 000),
 SUR LA MACHINE DE MESURE.
 
-Le taux varie de 0,76 ms au milieu du tableau a 1,42 ms au plafond. Prendre la
+Le taux varie de 0,70 ms au milieu du tableau a 1,35 ms au plafond. Prendre la
 moyenne donnerait un plafond de duree trop genereux exactement la ou la marge
 manque. Prendre le pire donne une annonce trop longue sur les petites
 mosaiques, ce que personne ne reproche jamais a un logiciel.
@@ -119,10 +119,10 @@ collision, notice, PDF —, assez petite pour que le demarrage n'en souffre pas 
 CPU_ETALON_SECONDES = 1.0
 """Ce que l'etalon a coute sur la machine de mesure."""
 
-RAPPORT_HAUT_SUR_ETALON = 1.5
+RAPPORT_HAUT_SUR_ETALON = 1.4
 """De combien le cout par tenon monte entre l'etalon et le plafond.
 
-1,416 ms au plafond contre 0,977 ms a l'etalon, soit 1,45 ; arrondi au-dessus.
+1,350 ms au plafond contre 0,977 ms a l'etalon, soit 1,38 ; arrondi au-dessus.
 
 Ce rapport a AUGMENTE quand le memo de verdicts est entre en service (1,33
 avant, 1,45 apres), et c'est logique : le memo retire de la chaine une part
@@ -166,10 +166,10 @@ def calibrer(fabriquer: Optional[Callable[[int], float]] = None) -> float:
         return CPU_PAR_TENON
     return (mesure / CPU_ETALON_TENONS) * RAPPORT_HAUT_SUR_ETALON
 
-MEMOIRE_PAR_TENON = 14 * 1024
-"""Octets de pointe par tenon, pente du HAUT du tableau.
+MEMOIRE_PAR_TENON = 12800
+"""Octets de pointe par tenon (12,5 ko), pente du HAUT du tableau.
 
-Entre 16 384 et 40 000 tenons : 10,8 ko. Entre 40 000 et 250 000 : 14,1 ko.
+Entre 16 384 et 40 000 tenons : 8,1 ko. Entre 40 000 et 250 000 : 12,3 ko.
 C'est la seconde qui est retenue, et l'ecart entre les deux est precisement la
 raison d'avoir mesure le plafond au lieu de le deduire — un plafond calcule
 avec 10,7 ko autoriserait un tiers de tenons de trop, et un tiers de trop ne

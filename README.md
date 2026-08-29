@@ -242,6 +242,49 @@ différentiel sur mille situations tirées au hasard, un mémo chauffé de mille
 `CLEAR` suivi d'une pénétration réelle, et 42 empreintes SHA-256 sur six
 configurations.
 
+### La mémoire partait dans des dictionnaires vides
+
+La mémoire décide seule de ce qu'un petit conteneur peut fabriquer : à 512 Mo,
+c'est elle qui borne, pas la durée. Un fil échantillonnant le RSS toutes les
+20 ms donne, sur un carré de 128 tenons — pointe 243 Mo pour 9,4 Mo de
+livrables :
+
+| Phase | Δ |
+|---|---:|
+| lecture, réduction, quantification | +10 Mo |
+| **modèle** | **+105 Mo** |
+| contrôle (assemble) | +30 Mo |
+| H2 | +51 Mo |
+| aperçus, nomenclature, notice, JSON | +28 Mo |
+
+*Première idée, réfutée :* H2 tient 16 471 géométries monde simultanément ; le
+mémo ci-dessus permettrait de ne les matérialiser que sur 1 % des paires. Mais
+la mesure directe du dictionnaire dit **15 Mo**, pas 51. Restructurer le chemin
+de H2 pour 6 % de la pointe : non.
+
+*Deuxième idée, la bonne.* Les classes de base sont des `@dataclass(frozen=True)`
+— chaque instance porte donc un `__dict__` vide de plus de cent octets, et elles
+se comptent par centaines de milliers. Une seule pièce 2×2 porte une pose, un
+AABB monde, huit connecteurs et une géométrie à neuf vides. Pesée sur 200 000
+boîtes : **523 octets sans `__slots__`, 351 avec**.
+
+`slots=True` sur `LDUVector`, `AABB`, `Orientation`, `Connector`, `PlacedPart`.
+A/B alterné entre deux copies du dépôt, empreintes SHA-256 identiques :
+
+| | sans slots | avec slots |
+|---|---:|---:|
+| mémoire (128 × 128) | 223 Mo | **174 Mo** (−22 %) |
+| calcul | 10,86 s | **10,18 s** (−6 %) |
+
+La mémoire ne bougeait pas d'un mégaoctet entre exécutions — 223 Mo trois fois
+de suite — ce qui rend cette mesure plus sûre que n'importe quelle mesure de
+temps de ce dépôt. Le plafond hébergé passe de 15 915 à **17 825 tenons** sur
+512 Mo, de 36 512 à **40 894** sur un giga-octet.
+
+`sys.getsizeof` aurait fait croire le contraire : il rend 56 octets pour un
+vecteur avec ou sans slots, parce qu'il ne compte pas le `__dict__` attaché.
+Troisième instrument de mesure pris en défaut dans ce projet.
+
 ### Ce qui a été mesuré puis abandonné
 
 La garantie ℤ³ — chaque coordonnée vérifiée entière à chaque construction —
@@ -252,9 +295,15 @@ garantie d'exactitude à 8 %, c'est bon marché : idée close avec un chiffre.
 ### Et le gain gratuit
 
 Trois paires de mesures alternées pour annuler la dérive de la machine :
-**Python 3.13 contre 3.11, −17 % de calcul et −8 % de mémoire**, sans toucher
-une ligne. Les deux bornes du plafond hébergé en dépendent. L'image Docker est
-déjà sur 3.13 ; le lanceur hébergé le signale quand il tourne sur plus ancien.
+**Python 3.13 contre 3.11, −15 % de calcul et −12 % de mémoire** sur un carré
+de 96 tenons, sans toucher une ligne. L'écart grandit avec la taille : à 64
+tenons il n'est que de 5 %, ce qui se comprend — c'est le coût *par objet* que
+3.13 a réduit, et le nombre d'objets suit la surface.
+
+Ce chiffre a été refait après la pose des `__slots__` : il valait −17 % et
+−8 % avant, et les deux changements mordent en partie sur la même chose. Une
+mesure d'avant l'optimisation ne vaut plus rien après — c'est vrai ici comme
+partout ailleurs dans ce fichier.
 
 ---
 
@@ -284,16 +333,16 @@ mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 1,0 s | 40 Mo | 0,8 Mo |
-| 64 × 64 | 4 096 | 3,2 s | 73 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 7,3 s | 136 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 12,4 s | 219 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 31,6 s | 474 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **354,1 s** | **3 435 Mo** | **104,2 Mo** |
+| 32 × 32 | 1 024 | 1,0 s | 35 Mo | 0,8 Mo |
+| 64 × 64 | 4 096 | 3,1 s | 63 Mo | 2,7 Mo |
+| 96 × 96 | 9 216 | 6,5 s | 113 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 10,2 s | 175 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 29,8 s | 366 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **337,5 s** | **2 945 Mo** | **104,2 Mo** |
 
 La dernière ligne est le plafond que la chaîne accepte, et elle a été
 **mesurée**, pas déduite : une droite ajustée sur les cinq premières annonce
-226 s et 2,9 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
+211 s et 2,3 Go. Le coût n'est pas linéaire, et l'écart se paie exactement là
 où il reste le moins de marge.
 
 **Une seule de ces deux colonnes est une propriété du logiciel.** Le tableau
@@ -317,8 +366,9 @@ aucune n'est un réglage :
    la mémoire que le conteneur a *réellement* le droit de prendre — lue dans
    le cgroup, pas dans `/proc/meminfo`, qui parle de la machine entière — et
    sur le temps qu'une page web a le droit de mettre à répondre, à la vitesse
-   étalonnée de la machine. Sur un giga-octet il tombe vers 190 tenons de
-   côté, soit quatre fois la surface d'un set LEGO Art officiel.
+   étalonnée de la machine. Sur un giga-octet il tombe vers 202 tenons de
+   côté — plus de quatre fois le côté d'un set LEGO Art officiel, donc
+   dix-sept fois sa surface.
 3. **Sans clé, le premier venu prend la machine.** L'atelier hébergé ne
    démarre pas sans `BFK_CLE`.
 

@@ -4135,7 +4135,8 @@ Idée close, avec un chiffre plutôt qu'avec un avis.
 
 **Le gain gratuit.** Trois paires de mesures alternées 3.11 / 3.13 pour annuler
 la dérive de la machine : **−17 % de calcul et −8 % de mémoire**, sans toucher
-une ligne. Les deux bornes du plafond hébergé en dépendent. L'image Docker est
+une ligne. *(Chiffre refait en 5.76 après la pose des `__slots__` : il tombe à
+−15 % et −12 %. Les deux changements mordent en partie sur la même chose.)* Les deux bornes du plafond hébergé en dépendent. L'image Docker est
 déjà sur 3.13 ; le lanceur hébergé le dit maintenant quand il tourne sur plus
 ancien.
 
@@ -4155,3 +4156,75 @@ suite et en disant pourquoi** ; à 4, elle calcule puis échoue sur une liste
 opaque de pièces flottantes. Les invariants font leur travail — rien de faux
 n'est livré — mais le message pourrait arriver plus tôt. Ouvert, non corrigé,
 et de faible gravité : personne ne demande des sections de quatre tenons.
+
+---
+
+### 5.76 La mémoire : deux hypothèses, une réfutée, et un tiers de `__dict__` vides
+
+Suite directe de 5.75. Le calcul avait baissé de 19 % ; la mémoire, elle,
+n'avait jamais été regardée. Elle décide pourtant seule de ce qu'un petit
+conteneur peut fabriquer : à 512 Mo, c'est elle qui borne, pas la durée.
+
+**Instrument.** Un fil qui échantillonne le RSS toutes les 20 ms, et des
+repères posés autour des phases. Le RSS et non `tracemalloc` : c'est lui que
+regarde le tueur de processus, et il compte ce que Python n'a pas rendu au
+système. Sur un carré de 128 tenons, pointe à 243 Mo pour 9,4 Mo de livrables :
+
+| Phase | Δ | Cumul |
+|---|---:|---:|
+| lecture, réduction, quantification | +10 Mo | 28 Mo |
+| **modèle** | **+105 Mo** | 134 Mo |
+| contrôle (assemble) | +30 Mo | 169 Mo |
+| H2 | +51 Mo | 215 Mo |
+| aperçus, nomenclature, notice, JSON | +28 Mo | 243 Mo |
+
+**Hypothèse 1, réfutée par une mesure directe.** H2 construit une géométrie
+monde par pièce — 16 471 géométries, 146 654 vides — et les tient toutes en
+même temps. Le mémo de 5.75 permettrait de ne les matérialiser que sur les 1 %
+de paires qui manquent le cache. Sauf que la mesure directe du dictionnaire dit
+**15 Mo**, pas 51 : le reste du saut venait d'ailleurs dans la phase. Restructurer
+le chemin de H2 — l'invariant où « faux » veut dire « vert alors qu'il fallait
+rouge » — pour 6 % de la pointe : non. Idée close avant d'écrire une ligne.
+
+**Hypothèse 2, la bonne, et elle était sous les yeux.** Les classes de base sont
+des `@dataclass(frozen=True)`. Chaque instance porte donc un `__dict__` vide de
+plus de cent octets — et ces classes se comptent par centaines de milliers : une
+seule pièce 2×2 porte une pose, un AABB monde, huit connecteurs et une géométrie
+à neuf vides. Pesée sur 200 000 boîtes : **523 octets l'une sans `__slots__`,
+351 avec**.
+
+`slots=True` sur `LDUVector`, `AABB`, `Orientation`, `Connector` et
+`PlacedPart`. A/B alterné entre deux copies du dépôt, trois paires, empreinte
+SHA-256 des livrables identique aux six exécutions :
+
+| | sans slots | avec slots |
+|---|---:|---:|
+| mémoire (128 × 128) | 223 Mo | **174 Mo** (−22 %) |
+| calcul | 10,86 s | **10,18 s** (−6 %) |
+
+La mémoire ne bougeait pas d'un mégaoctet d'une exécution à l'autre — 223 Mo
+trois fois de suite — ce qui rend cette mesure-là plus sûre que n'importe
+laquelle des mesures de temps de ce registre.
+
+`CollisionGeometry` en est volontairement exclue : elle garde son numéro de
+forme sur l'instance (5.75), ce qui demande un dictionnaire ; et elle est cent
+fois moins nombreuse que les AABB qu'elle contient, lesquelles ont bien des
+slots. Coût de l'exception, mesuré : environ 2 % de la pointe.
+
+**Ce que `sys.getsizeof` aurait fait croire.** Il rend 56 octets pour un
+vecteur avec ou sans slots — il ne compte pas le `__dict__` attaché. Mesurer
+200 000 objets au RSS donne 523 contre 351. Un troisième instrument de mesure
+qui ment dans ce projet, après cProfile et le compteur de sections.
+
+**Effet là où ça compte.** Le plafond hébergé d'un conteneur de 512 Mo passe de
+15 915 à **17 825 tenons**, celui d'un giga-octet de 36 512 à **40 894** — 202
+tenons de côté, plus de quatre fois le côté d'un set LEGO Art officiel. Un test
+adversarial garde les `__slots__` : sans lui, un `slots=True` retiré par
+distraction ferait remonter la mémoire d'un quart en silence, et aucun test
+fonctionnel ne s'en apercevrait.
+
+**Bilan des deux passes.** Sur la chaîne complète, à livrables identiques au
+bit près : **−26 % de calcul** (388,7 s → 337,5 s au plafond) et **−14 % de
+mémoire** (3 439 Mo → 2 945 Mo), plus **−15 % de calcul et −12 % de mémoire**
+si l'on passe de Python 3.11 à 3.13 — chiffre refait APRÈS les slots, car celui
+d'avant (−17 % / −8 %) ne valait plus.

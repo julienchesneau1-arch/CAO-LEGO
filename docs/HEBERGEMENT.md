@@ -14,15 +14,15 @@ processeur et pointe de mémoire du processus :
 
 | Mosaïque | Tenons | Calcul | Mémoire | Fichiers |
 |---:|---:|---:|---:|---:|
-| 32 × 32 | 1 024 | 1,0 s | 40 Mo | 0,8 Mo |
-| 64 × 64 | 4 096 | 3,2 s | 73 Mo | 2,7 Mo |
-| 96 × 96 | 9 216 | 7,3 s | 136 Mo | 5,8 Mo |
-| 128 × 128 | 16 384 | 12,4 s | 219 Mo | 9,4 Mo |
-| 200 × 200 | 40 000 | 31,6 s | 474 Mo | 19,9 Mo |
-| **500 × 500** | **250 000** | **354,1 s** | **3 435 Mo** | **104,2 Mo** |
+| 32 × 32 | 1 024 | 1,0 s | 35 Mo | 0,8 Mo |
+| 64 × 64 | 4 096 | 3,1 s | 63 Mo | 2,7 Mo |
+| 96 × 96 | 9 216 | 6,5 s | 113 Mo | 5,8 Mo |
+| 128 × 128 | 16 384 | 10,2 s | 175 Mo | 9,4 Mo |
+| 200 × 200 | 40 000 | 29,8 s | 366 Mo | 19,9 Mo |
+| **500 × 500** | **250 000** | **337,5 s** | **2 945 Mo** | **104,2 Mo** |
 
 La dernière ligne a été **mesurée**, pas déduite : une droite ajustée sur les
-cinq premières annonce 226 s et 2,9 Go. Le coût est linéaire *plus quelque
+cinq premières annonce 211 s et 2,3 Go. Le coût est linéaire *plus quelque
 chose*, et ce quelque chose se paie là où il reste le moins de marge. C'est
 pour cette raison que les pentes employées par `bfk001/heberge.py` sont celles
 du **haut** du tableau et non la moyenne : un plafond calculé trop large ne
@@ -51,8 +51,8 @@ valeur vous-même.
 
 ### Conséquence n° 1 — pas de sans-serveur
 
-Aucune fonction hébergée ne tient six minutes et demie de calcul ni trois
-giga-octets et demi de mémoire. Ce n'est pas une préférence d'architecture,
+Aucune fonction hébergée ne tient cinq minutes et demie de calcul ni trois
+giga-octets de mémoire. Ce n'est pas une préférence d'architecture,
 c'est la mesure. **Il faut un conteneur.**
 
 ### Conséquence n° 2 — le plafond se recalcule
@@ -63,10 +63,10 @@ basse qui s'applique :
 
 | Mémoire du conteneur | Borne mémoire | Borne durée¹ | Plafond appliqué |
 |---:|---:|---:|---:|
-| 512 Mo | 15 915 | 41 379 | **15 915** (~126 × 126) |
-| 1 Go | 36 512 | 41 379 | **36 512** (~191 × 191) |
-| 2 Go | 77 706 | 41 379 | **41 379** (~203 × 203) |
-| 4 Go | 160 095 | 41 379 | **41 379** (~203 × 203) |
+| 512 Mo | 17 825 | 44 444 | **17 825** (~133 × 133) |
+| 1 Go | 40 894 | 44 444 | **40 894** (~202 × 202) |
+| 2 Go | 87 031 | 44 444 | **44 444** (~210 × 210) |
+| 4 Go | 179 302 | 44 444 | **44 444** (~210 × 210) |
 
 ¹ à la vitesse de la machine de référence. Sur une machine deux fois plus
 lente, la borne de durée tombe vers 20 000 et devient contraignante dès 1 Go —
@@ -75,8 +75,8 @@ la même machine s'est mesurée à 1,57× puis à 0,89× de la référence à qu
 heures d'intervalle.
 
 Sous un giga-octet, c'est la mémoire qui mord ; au-dessus, c'est le temps de
-réponse. Même le plus petit des quatre reste **six fois la surface d'un set
-LEGO Art officiel** (48 × 48). Le plafond n'est pas une limite de qualité.
+réponse. Même le plus petit des quatre — 133 tenons de côté — reste **sept fois la
+surface d'un set LEGO Art officiel** (48 × 48). Le plafond n'est pas une limite de qualité.
 
 La mémoire est lue dans le **cgroup**, pas dans `/proc/meminfo` : dans un
 conteneur, le second parle de la machine entière, et le croire ne produit pas
