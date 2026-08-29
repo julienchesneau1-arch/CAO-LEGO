@@ -4488,6 +4488,31 @@ mosaïque de 149 que d'en accepter une et se faire tuer à la quarante-cinquièm
 | 1 Go | 51 118 (226²) | **46 202** (214²) |
 | 2 Go et plus | 57 142 (239²) | 57 142 (239²) |
 
+#### La verification qui manquait : une endurance sur le vrai serveur
+
+`MEMOIRE_DE_BASE` avait ete repose sur une mesure EN PROCESSUS — vingt-quatre
+appels a `pipeline.run` dans un interprete nu. Le serveur, lui, a des sessions,
+un magasin de resultats, des fils et un socket. Trente fabrications a travers
+le vrai serveur HTTP, un visiteur different a chaque fois, une session neuve
+tous les cinq tours :
+
+    RSS au demarrage       34 Mo
+    apres  6 fabrications  73 Mo
+    apres 12 fabrications  89 Mo
+    apres 18 fabrications  86 Mo
+    apres 24 fabrications  92 Mo
+    apres 30 fabrications  85 Mo    (pointe 92)
+
+Elle **oscille et ne monte pas**. C'est cette mesure-la, et non le raisonnement
+qui l'a precedee, qui valide la constante.
+
+Au passage, la premiere tentative a mesure autre chose que ce qu'elle croyait :
+vingt-cinq des trente requetes ont ete refusees par le limiteur de debit, qui
+compte par adresse — et toutes venaient de 127.0.0.1. Le test ne mesurait donc
+l'endurance de rien. Corrige en declarant un relais et en variant
+`X-Forwarded-For`, ce qui exerce en prime le chemin de `adresse_du_visiteur`.
+Huitieme instrument faux de ce projet.
+
 #### Ce que cette passe dit du reste
 
 Les quatre passes précédentes cherchaient de la vitesse et en ont trouvé. Cette

@@ -141,6 +141,28 @@ Ce qu'il faut demander à la plateforme, quelle qu'elle soit :
 | HTTPS | **terminé par la plateforme** | Ce programme ne chiffre rien. |
 | Sonde de santé | `GET /sante` | La page répond 401 sans la clé ; une sonde branchée dessus redémarrerait en boucle un atelier qui va très bien. |
 
+### Ce que le serveur consomme sur la durée — mesuré
+
+Trente fabrications successives à travers le vrai serveur HTTP, chacune pour un
+visiteur différent, une session neuve tous les cinq tours :
+
+```
+RSS au démarrage :  34 Mo
+après  6 fabrications :  73 Mo
+après 12 fabrications :  89 Mo
+après 18 fabrications :  86 Mo
+après 24 fabrications :  92 Mo
+après 30 fabrications :  85 Mo   (pointe 92)
+```
+
+La mémoire **oscille et ne monte pas** : les caches de couleur se vident quand
+ils sont pleins, les sessions et les résultats sont bornés. C'est cette mesure,
+et non un raisonnement, qui valide `MEMOIRE_DE_BASE`.
+
+Avant correction, la même série montait sans jamais redescendre, et le cache de
+conversion cessait purement et simplement de garder passé la quarante-cinquième
+mosaïque — le serveur ralentissait de moitié sans qu'aucune trace ne le dise.
+
 ### Une seule instance, et c'est important
 
 Les sessions et les résultats vivent **dans le processus**. Avec deux
