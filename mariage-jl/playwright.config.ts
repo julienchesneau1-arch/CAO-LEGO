@@ -6,7 +6,9 @@ const PORT = 3220;
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: /.*\.spec\.ts/,
-  globalSetup: "./tests/e2e/global-setup.ts",
+  // La base jetable est créée par `scripts/e2e-prepare.mjs`, lancé AVANT
+  // Playwright : un globalSetup tournerait après le démarrage du serveur, dont
+  // le pool serait alors branché sur une base qui vient d'être recréée.
   fullyParallel: false,
   workers: 1,
   reporter: [["list"]],

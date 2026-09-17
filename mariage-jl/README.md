@@ -13,7 +13,7 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 | Version | Contenu | État |
 |---|---|---|
 | **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, validée le 17/09/2026** |
-| **V1 — Le socle** | **Fait** : accès par QR de foyer, code de secours, QR générique, partage de l'accès, premier lancement en trois écrans, accueil « Avant » (compte à rebours, fil des cinq étapes, carte « À faire », emplacement du film). **Reste** : Programme, Infos, FAQ, réponse (RSVP), admin invités, planche QR PDF | en cours |
+| **V1 — Le socle** | Accès par QR, code de secours, QR générique, partage de l'accès, premier lancement, accueil « Avant », navigation, Programme + `.ics`, Infos, FAQ, réponse complète, espace des mariés, planche QR PDF | **complet, en attente des contenus et des relectures** |
 | V2 → V4 | voir `docs/PLAN.md` | pas commencées |
 
 Ce qui n'est **pas** fait en V0, volontairement : aucun achat de domaine, aucune action sur le VPS, aucun projet Supabase. Ces trois points attendent tes réponses (`docs/QUESTIONS_BLOQUANTES.md`, section V0).
@@ -61,7 +61,37 @@ Les écrans existants :
 - `/g` — QR générique des cartes de table : aucune donnée nominative.
 - `/design` — **la page de validation de la direction artistique** : couleurs, neutres, typographie, monogramme, signature, mouvement, contrastes mesurés, réglages de confort de lecture.
 
+- `/programme` et `/programme/<moment>` — les cinq moments, le déroulé, « Ajouter à mon agenda ».
+- `/infos` — venir, dormir, tenue, enfants, accessibilité, rentrer en sécurité, covoiturage, liste de mariage.
+- `/faq` — les dix-huit questions, avec recherche qui marche sans réseau.
+- `/reponse` — un tap pour répondre, le reste facultatif et prérempli.
+- `/admin` — ton espace : tableau de bord, invités, import CSV, planche QR.
+
 Pour essayer en local : `pnpm db:local && pnpm db:seed` affiche trois liens d'ouverture et leurs codes de secours.
+
+## Entrer dans ton espace
+
+Le brief prévoit un lien magique par e-mail ; le prestataire n'est pas encore
+choisi (question V1-03). Le mécanisme est déjà là, seule la livraison change :
+
+```bash
+pnpm admin:lien julien@exemple.fr --inviter        # première fois
+pnpm admin:lien julien@exemple.fr                  # ensuite
+```
+
+La commande affiche un lien **valable 30 minutes et à usage unique**. Le jour
+où le prestataire e-mail est choisi, c'est ce même lien qui partira par
+courriel, sans rien changer d'autre.
+
+## Imprimer la planche QR
+
+1. Prépare un fichier CSV : `foyer;invites;langue`, les prénoms d'un même foyer
+   séparés par une barre verticale (`Prénom A|Prénom B`).
+2. Dans `/admin/invites`, importe-le : le PDF de la planche se télécharge
+   immédiatement.
+3. **Garde ce PDF.** Les QR codes et les codes de secours ne sont pas conservés
+   en clair dans la base — c'est ce qui protège les invitations en cas de fuite.
+   Une réimpression régénère les accès et invalide les planches déjà sorties.
 
 ---
 

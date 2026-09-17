@@ -2,7 +2,32 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
-## V1 — Le socle — en cours — 17 septembre 2026
+## V1 — Le socle — en cours — 17 septembre 2026 (seconde tranche)
+
+### Livré depuis la première tranche
+
+- **Navigation** : une seule barre, cinq onglets, contenu selon la période. Elle n'affiche jamais un onglet qui mènerait à un écran non livré, et vit dans l'espace des invités uniquement — l'espace des mariés ne montre pas les onglets des invités.
+- **Programme** : les cinq moments en cartes (numéro, nom, genre, horaire, lieu, filet de couleur), « Le déroulé en détail » par moment, et **« Ajouter à mon agenda »**. Tant que les horaires ne sont pas connus, le fichier `.ics` contient la journée entière du 3 juin 2028 — une information certaine — au lieu d'inventer des heures.
+- **Infos** : huit sections éditables depuis l'admin (venir, dormir, tenue, enfants, accessibilité, rentrer en sécurité, covoiturage, liste de mariage) et les trois boutons d'itinéraire (Apple Plans, Google Maps, Waze) construits sur le seul élément connu : le nom et la commune du domaine.
+- **FAQ** : les dix-huit questions du brief §15, en français et en anglais, avec recherche insensible aux accents qui fonctionne **sans réseau** une fois la page ouverte.
+- **Réponse (RSVP)** : un tap enregistre le oui, le non ou le « pas encore sûr » ; le reste est prérempli et facultatif. Présence moment par moment derrière un dépliant, menu, régimes, et **allergies avec consentement explicite, séparé et versionné** — sans la case cochée, la donnée de santé n'est pas écrite, et une saisie précédente est effacée. Parcours « Non » bienveillant : plus rien n'est demandé, seulement un mot si l'envie vient. Verrouillage automatique après la date limite.
+- **Espace des mariés** : lien d'accès **à usage unique** vérifié en base (le mécanisme du lien magique, dont l'e-mail ne sera qu'un moyen de livraison), tableau de bord (foyers, ouvertures, réponses, présents par moment, régimes, allergies déclarées), liste des invités, révocation d'un accès, import CSV.
+- **Planche QR PDF** : A4, huit foyers par page, en mode Papier (contraste mesuré 14,57), monogramme vectoriel, QR par foyer et code de secours. Les jetons n'existent en clair qu'au moment d'imprimer : l'import **renvoie directement le PDF**, et une réimpression régénère les accès — l'écran le dit avant le clic.
+
+### Six défauts trouvés par la chaîne de vérification, corrigés
+
+- Une connexion coupée par la base (redémarrage Supabase, pgBouncer) émettait un événement non traité qui **arrêtait le serveur** : le pool a désormais son gestionnaire d'erreur.
+- Les parcours partageaient leur état entre les deux gabarits de téléphone : le foyer d'essai est remis à zéro avant chaque parcours.
+- Les données amorcées en base contenaient des **apostrophes droites** et des espaces simples avant « ? » (contraire au brief §3) : corrigées, et un test couvre désormais les migrations.
+- La barre d'onglets débordait de l'écran en taille « très grande » (libellés en `em`), puis coupait les mots en deux : taille fixe de 16 px, sans capitales, sans coupure.
+- Le mot « Facultatif » apparaissait deux fois de suite sur la réponse.
+- La barre d'onglets des invités s'affichait dans l'espace des mariés : les deux espaces sont séparés par un groupe de routes.
+
+### Reste à faire dans V1
+
+Rien de fonctionnel. Trois dépendances extérieures : le prestataire e-mail pour livrer les liens d'accès (question V1-03, le mécanisme est déjà là), les options de menu (V1-08), et les contenus à écrire dans l'admin. Puis les deux relectures humaines et la passe sur un iPhone réel avant validation.
+
+## V1 — Première tranche — 17 septembre 2026
 
 V0 validée par Julien le 17 septembre 2026. Première tranche de V1 : l'accès.
 

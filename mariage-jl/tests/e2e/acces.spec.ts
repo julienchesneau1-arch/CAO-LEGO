@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { reinitialiserFoyer } from "./reinitialiser";
 import { FOYER } from "./fixtures";
 
 /**
@@ -6,6 +7,10 @@ import { FOYER } from "./fixtures";
  * Chacun compte ses gestes : l'objectif du brief est trois taps pour toute
  * information essentielle, quatre pour répondre.
  */
+
+test.beforeEach(async () => {
+  await reinitialiserFoyer();
+});
 
 test("QR du foyer : l'invité est reconnu, premier lancement passable", async ({ page }) => {
   await page.goto(`/i/${FOYER.jeton}`);

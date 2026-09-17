@@ -32,6 +32,25 @@ const { rows } = await base.query(
   [empreinte(jeton), empreinte("DEMO01")],
 );
 const foyerId = rows[0].id;
+await base.query(
+  `insert into public.guests (household_id, first_name, sort_order)
+   values ($1, 'Prénom A', 0), ($1, 'Prénom B', 1)`,
+  [foyerId],
+);
+
+// Un accès administrateur jetable, pour photographier l'espace des mariés.
+const jetonAdmin = Array.from(randomBytes(32), (o) => ALPHABET[o % ALPHABET.length]).join("");
+const emailAdmin = "demonstration@exemple.test";
+await base.query(
+  `insert into public.admin_users (email, role) values ($1, 'admin')
+   on conflict (email) do update set revoked_at = null`,
+  [emailAdmin],
+);
+await base.query(
+  `insert into public.admin_magic_links (email, token_sha256, expires_at)
+   values ($1, $2, now() + interval '30 minutes')`,
+  [emailAdmin, empreinte(jetonAdmin)],
+);
 
 const serveur = spawn("node", [".next/standalone/server.js"], {
   env: {
@@ -115,15 +134,40 @@ try {
   await page.waitForLoadState("networkidle");
   await prendre("07-partager-l-acces");
 
+  await page.goto(`${BASE}/programme`, { waitUntil: "networkidle" });
+  await prendre("08-programme");
+
+  await page.goto(`${BASE}/programme/02`, { waitUntil: "networkidle" });
+  await prendre("09-deroule-du-moment");
+
+  await page.goto(`${BASE}/infos`, { waitUntil: "networkidle" });
+  await prendre("10-infos");
+
+  await page.goto(`${BASE}/faq`, { waitUntil: "networkidle" });
+  await prendre("11-faq");
+
+  await page.goto(`${BASE}/reponse`, { waitUntil: "networkidle" });
+  await prendre("12-reponse-question");
+  await page.getByRole("button", { name: "Oui", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await prendre("13-reponse-details");
+
+  // Espace des mariés : le lien magique ouvre la session, puis on photographie.
+  await page.goto(`${BASE}/admin/entrer?jeton=${jetonAdmin}`, { waitUntil: "networkidle" });
+  await prendre("14-admin-tableau-de-bord");
+  await page.goto(`${BASE}/admin/invites`, { waitUntil: "networkidle" });
+  await prendre("15-admin-invites");
+
   await page.goto(`${BASE}/design`, { waitUntil: "networkidle" });
-  await prendre("08-direction-artistique");
+  await prendre("16-direction-artistique");
 
   await page.goto(new URL("../secours/index.html", import.meta.url).href, { waitUntil: "load" });
-  await prendre("09-page-de-secours");
+  await prendre("17-page-de-secours");
 
   await navigateur.close();
 } finally {
   serveur.kill("SIGTERM");
   await base.query("delete from public.households where id = $1", [foyerId]);
+  await base.query("delete from public.admin_users where email = $1", [emailAdmin]);
   await base.end();
 }

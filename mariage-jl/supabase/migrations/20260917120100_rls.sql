@@ -21,7 +21,7 @@ create or replace function jl.est_admin() returns boolean
   select coalesce(jl.role_courant() = 'admin', false)
 $$;
 
--- La régie hérite des droits de lecture strictement nécessaires ; l'admin les a tous.
+-- La régie hérite des droits de lecture strictement nécessaires ; l'admin les a tous.
 create or replace function jl.est_regie() returns boolean
   language sql security definer stable set search_path = public, pg_temp as $$
   select coalesce(jl.role_courant() in ('admin','regie'), false)
@@ -163,7 +163,7 @@ begin
        (old.id, old.name_fr, old.name_en, old.kind_fr, old.kind_en, old.color_token,
         old.place, old.ambience_fr, old.ambience_en, old.detail_fr, old.detail_en)
     then
-      raise exception 'La régie ne peut modifier que le décalage et les horaires d''un moment.';
+      raise exception 'La régie ne peut modifier que le décalage et les horaires d’un moment.';
     end if;
   end if;
   return new;
@@ -183,7 +183,7 @@ begin
        (old.id, old.storage_path, old.household_id, old.kind, old.mime, old.bytes,
         old.created_at, old.gps_stripped)
     then
-      raise exception 'La régie ne peut modifier que le statut d''un média.';
+      raise exception 'La régie ne peut modifier que le statut d’un média.';
     end if;
   end if;
   return new;

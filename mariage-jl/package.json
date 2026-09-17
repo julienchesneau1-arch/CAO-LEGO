@@ -23,13 +23,17 @@
     "db:local": "./scripts/pg-local.sh start",
     "db:stop": "./scripts/pg-local.sh stop",
     "db:seed": "node scripts/seed-dev.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "node scripts/e2e-prepare.mjs && playwright test",
+    "admin:lien": "node scripts/admin-lien.mjs"
   },
   "dependencies": {
     "next": "16.3.5",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.23.0",
+    "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -37,6 +41,7 @@
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.10.1",
     "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "opentype.js": "2.0.0",

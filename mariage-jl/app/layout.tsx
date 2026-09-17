@@ -54,7 +54,10 @@ export default async function RacineLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: SCRIPT_CONFORT }} />
       </head>
-      <body className={`${bodoni.variable} ${cormorant.variable}`} data-vignette="oui">
+      <body
+        className={`${bodoni.variable} ${cormorant.variable} flex min-h-screen flex-col`}
+        data-vignette="oui"
+      >
         {children}
       </body>
     </html>

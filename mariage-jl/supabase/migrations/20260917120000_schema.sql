@@ -79,10 +79,10 @@ create table public.moments (
 );
 
 insert into public.moments (id, name_fr, name_en, kind_fr, kind_en, color_token) values
-  ('01', 'L''Éclat',      'L''Éclat',      'Accueil',   'Welcome',     'eclat'),
-  ('02', 'L''Horizon',    'L''Horizon',    'Cérémonie', 'Ceremony',    'horizon'),
+  ('01', 'L’Éclat',      'L’Éclat',      'Accueil',   'Welcome',     'eclat'),
+  ('02', 'L’Horizon',    'L’Horizon',    'Cérémonie', 'Ceremony',    'horizon'),
   ('03', 'La Rencontre',  'La Rencontre',  'Cocktail',  'Cocktail',    'rencontre'),
-  ('04', 'L''Ivresse',    'L''Ivresse',    'Dîner',     'Dinner',      'ivresse'),
+  ('04', 'L’Ivresse',    'L’Ivresse',    'Dîner',     'Dinner',      'ivresse'),
   ('05', 'La Nuit',       'La Nuit',       'Fête',      'Celebration', 'nuit');
 
 -- ---------------------------------------------------------------- Réponse

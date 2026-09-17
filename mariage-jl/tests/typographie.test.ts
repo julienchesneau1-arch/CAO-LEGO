@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const RACINE = join(import.meta.dirname, "..");
@@ -32,5 +32,26 @@ describe("typographie française", () => {
 
   it("garde l'espace insécable disponible comme constante", () => {
     expect(NBSP.charCodeAt(0)).toBe(160);
+  });
+
+  /**
+   * Les textes amorcés en base (noms des moments, questions de la FAQ) sont
+   * affichés tels quels : ils suivent donc les mêmes règles que les
+   * dictionnaires. Un `''` dans une migration produisait une apostrophe droite.
+   */
+  it("n'amorce aucune apostrophe droite en base", () => {
+    const dossier = join(RACINE, "supabase", "migrations");
+    for (const fichier of readdirSync(dossier).filter((f) => f.endsWith(".sql"))) {
+      const sql = readFileSync(join(dossier, fichier), "utf8");
+      const litteraux = sql.match(/'(?:[^']|'')*'/g) ?? [];
+      for (const litteral of litteraux) {
+        // `''` seul est une chaîne vide ; c'est un `''` À L'INTÉRIEUR d'un
+        // texte qui trahit une apostrophe droite.
+        const contenu = litteral.slice(1, -1);
+        expect(contenu, `${fichier} : ${litteral.slice(0, 60)}`).not.toContain("''");
+        // Même règle d'espace insécable que dans les dictionnaires.
+        expect(contenu, `${fichier} : ${litteral.slice(0, 60)}`).not.toMatch(/\w [?!;]/);
+      }
+    }
   });
 });

@@ -82,6 +82,29 @@ body[data-vignette="oui"]::before {
 }
 
 .jl-doux { color: var(--texte-doux); }
+
+/* Numéro d'un moment : même famille que les étiquettes, mais resserré —
+   avec 0,3 em d'interlettrage, « 01 » se lisait « 0 1 ». */
+.jl-numero {
+  font-family: var(--police-texte), Georgia, serif;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  font-size: max(16px, 0.78em);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--texte-doux);
+}
+
+/* Libellés d'onglet : 16 px fixes (minimum absolu du brief), interlettrage
+   resserré et coupure autorisée. En taille « très grande », des libellés en
+   `em` faisaient déborder la barre de cinq onglets hors de l'écran. */
+.jl-onglet {
+  font-family: var(--police-texte), Georgia, serif;
+  font-weight: 500;
+  font-size: 16px;            /* minimum absolu du brief, jamais en em */
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  white-space: nowrap;        /* « Programme » ne se coupe pas en « PROGRA / MME » */
+}
 .jl-filet { background: var(--filet); height: 1px; border: 0; }
 
 /* Cibles tactiles : 48 px minimum (WCAG 2.2 AA, brief §12). */

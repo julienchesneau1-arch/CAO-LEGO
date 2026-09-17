@@ -234,7 +234,7 @@ decrire()("admin", () => {
     const r = await enTantQue("authenticated", ADMIN_ID, (c) =>
       c.query(
         `insert into public.content_blocks (key, locale, value)
-         values ('infos.tenue', 'fr', '"[À COMPLÉTER]"'::jsonb) returning key`,
+         values ('test.bloc', 'fr', '"[À COMPLÉTER]"'::jsonb) returning key`,
       ),
     );
     expect(r.rowCount).toBe(1);

@@ -28,7 +28,7 @@ Règle : aucune valeur n'est devinée. Tant qu'une question marquée **bloquante
 |---|---|---|---|
 | V1-01 | **Date d'envoi du faire-part** | Toutes les échéances du calendrier, la date butoir de V1 | bloquante |
 | V1-02 | **Date limite de réponse** | Carte « À faire », verrouillage du RSVP, rappels | bloquante |
-| V1-03 | **Prestataire e-mail transactionnel européen** (offre gratuite) + accès à la zone DNS pour SPF, DKIM, DMARC. *Nécessaire dès V1 : l'accès admin se fait par lien magique par e-mail* | Accès admin, donc l'admin invités et la planche QR | bloquante |
+| V1-03 | **Prestataire e-mail transactionnel européen** (offre gratuite) + accès à la zone DNS pour SPF, DKIM, DMARC | Livraison des liens d'accès et, en V2, les rappels | **plus bloquante** : le lien d'accès à usage unique est livré et se génère en ligne de commande (`pnpm admin:lien`). L'e-mail ne sera qu'un moyen de livraison de plus |
 | V1-04 | **Adresses e-mail de la liste blanche admin** (Julien, Lauriane) | Accès admin | bloquante |
 | V1-05 | **Liste des foyers** : prénoms par foyer et composition. Fichier existant à importer, ou saisie dans l'admin ? | Planche QR PDF, donc l'impression du faire-part | bloquante |
 | V1-06 | **Horaires des 5 moments** (début et fin) et **lieu de chacun dans le domaine** | Programme, `.ics`, cartes de table | non bloquante (éditable, mais requise avant impression) |
@@ -42,7 +42,8 @@ Règle : aucune valeur n'est devinée. Tant qu'une question marquée **bloquante
 | V1-14 | **Rentrer en sécurité** : dernières navettes, numéros de taxi locaux | Infos | non bloquante |
 | V1-15 | **Les deux relecteurs** du parcours complet (un invité de plus de 75 ans, un invité qui déteste les applications) | Critère de fin de V1 | bloquante pour clore V1 |
 | V1-16 | **Phrase d'ambiance** pour chacun des 5 moments | Cartes du programme | non bloquante |
-| V1-17 | Le partage d'accès au foyer : **durée de validité et nombre d'ouvertures** du lien ? (proposition : 30 jours, 5 ouvertures) | Règles du partage d'accès | non bloquante |
+| V1-17 | Le partage d'accès au foyer : **durée de validité et nombre d'ouvertures** du lien ? | Règles du partage d'accès | non bloquante — **30 jours et 5 ouvertures sont en place** en attendant ton arbitrage |
+| V1-18 | **Menus** : tant que les options ne sont pas connues (V1-08), l'écran affiche un champ libre et le dit. Veux-tu garder le champ libre en plus des options, quand elles existeront ? | Étape 3 de la réponse | non bloquante |
 
 ---
 
