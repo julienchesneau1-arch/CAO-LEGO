@@ -47,6 +47,14 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Parcours Playwright (iPhone et Android simulés)
         run: pnpm run test:e2e
+      - name: Base de développement pour la mesure
+        run: node scripts/seed-dev.mjs
+        env:
+          JL_ADMIN_DATABASE_URL: postgres://postgres@127.0.0.1:55432/postgres
+      - name: Lighthouse mobile (seuil 95)
+        run: pnpm run lighthouse
+        env:
+          JL_DATABASE_URL: postgres://postgres@127.0.0.1:55432/jl_dev
       - name: Page de secours à jour
         run: |
           pnpm run gen:secours

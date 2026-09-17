@@ -27,7 +27,9 @@ export default async function LayoutInvite({
 
   return (
     <>
-      <div className="flex-1">{children}</div>
+      {/* La barre d'onglets est opaque et flotte au-dessus du contenu : cette
+          réserve garantit que la fin de chaque page reste atteignable. */}
+      <div className="flex-1 pb-28">{children}</div>
       <Navigation onglets={onglets(periode)} libelles={t.navigation} />
     </>
   );

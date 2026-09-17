@@ -8,6 +8,14 @@ import { FOYER, URL_E2E } from "./fixtures";
  * « Non », et la règle du consentement des allergies vérifiée en base.
  */
 
+/** Attend que l'envoi du formulaire ait abouti avant de lire la base. */
+const envoyer = async (page: import("@playwright/test").Page, nom: string): Promise<void> => {
+  await Promise.all([
+    page.waitForLoadState("networkidle"),
+    page.getByRole("button", { name: nom, exact: true }).click(),
+  ]);
+};
+
 const enBase = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> => {
   const client = new Client({ connectionString: URL_E2E });
   await client.connect();
@@ -33,9 +41,9 @@ test("répondre oui tient en quatre taps", async ({ page }) => {
   await page.goto(`/i/${FOYER.jeton}`);
   await taper(page.getByRole("button", { name: "Passer" }).click());
   await taper(page.getByRole("link", { name: "Réponse" }).click());
-  await taper(page.getByRole("button", { name: "Oui", exact: true }).click());
+  await taper(envoyer(page, "Oui"));
   await expect(page.getByText("C’est noté. Nous avons hâte.")).toBeVisible();
-  await taper(page.getByRole("button", { name: "Enregistrer" }).click());
+  await taper(envoyer(page, "Enregistrer"));
 
   expect(taps).toBeLessThanOrEqual(4);
   const reponses = await enBase<{ status: string }>("select status from public.rsvp");
@@ -46,7 +54,7 @@ test("parcours « Non » : bienveillant et sans rien demander", async ({ page })
   await page.goto(`/i/${FOYER.jeton}`);
   await page.getByRole("button", { name: "Passer" }).click();
   await page.goto("/reponse");
-  await page.getByRole("button", { name: "Non", exact: true }).click();
+  await envoyer(page, "Non");
 
   await expect(page.getByText("Vous nous manquerez. Nous penserons à vous.")).toBeVisible();
   // Aucune étape de menu, aucune présence à cocher.
@@ -54,7 +62,9 @@ test("parcours « Non » : bienveillant et sans rien demander", async ({ page })
   await expect(page.locator("input[required], textarea[required]")).toHaveCount(0);
 
   await page.locator('textarea[name="message"]').fill("Nous serons avec vous de loin.");
-  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await envoyer(page, "Enregistrer");
+  // Le texte revient dans le formulaire : la réponse est bien enregistrée.
+  await expect(page.locator('textarea[name="message"]')).toHaveValue(/de loin/);
   const lignes = await enBase<{ message_to_couple: string }>(
     "select message_to_couple from public.rsvp",
   );
@@ -65,16 +75,16 @@ test("une allergie n'est pas conservée sans consentement explicite", async ({ p
   await page.goto(`/i/${FOYER.jeton}`);
   await page.getByRole("button", { name: "Passer" }).click();
   await page.goto("/reponse");
-  await page.getByRole("button", { name: "Oui", exact: true }).click();
+  await envoyer(page, "Oui");
 
   await page.locator('input[name^="allergies-"]').first().fill("arachides");
-  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await envoyer(page, "Enregistrer");
   expect(await enBase("select 1 from public.health_allergies")).toHaveLength(0);
 
   // Avec la case cochée, la donnée est acceptée.
   await page.locator('input[name^="allergies-"]').first().fill("arachides");
   await page.getByLabel(/J’accepte que ces allergies/).check();
-  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await envoyer(page, "Enregistrer");
   const lignes = await enBase<{ content: string }>("select content from public.health_allergies");
   expect(lignes[0]?.content).toBe("arachides");
 });

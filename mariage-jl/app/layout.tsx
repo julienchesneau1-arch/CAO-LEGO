@@ -1,25 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Bodoni_Moda, Cormorant_Garamond } from "next/font/google";
 import { cookies } from "next/headers";
 import { COOKIE_LANGUE, LANGUE_DEFAUT, estLangue } from "@/lib/i18n";
+import { bodoni, cormorant } from "@/lib/polices";
 import "./globals.css";
-
-/** Polices auto-hébergées par next/font : aucune requête vers Google à l'exécution. */
-const bodoni = Bodoni_Moda({
-  subsets: ["latin"],
-  axes: ["opsz"],
-  style: ["normal", "italic"],
-  display: "swap",
-  variable: "--police-titre",
-});
-
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  style: ["normal", "italic"],
-  display: "swap",
-  variable: "--police-texte",
-});
 
 export const metadata: Metadata = {
   title: "J & L — 03 · 06 · 2028",

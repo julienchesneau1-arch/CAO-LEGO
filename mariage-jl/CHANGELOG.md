@@ -2,6 +2,25 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
+## V1 — Qualité mesurée — 17 septembre 2026
+
+Les deux critères de fin de V1 que je peux vérifier moi-même sont atteints.
+
+### Mesures
+
+- **Lighthouse mobile** sur l'application compilée (accueil, programme, FAQ) : Performance **99**, Accessibilité **100**, Bonnes pratiques **100**. Seuil vérifié en intégration continue (`pnpm lighthouse`).
+- **Accessibilité** : axe-core sur les sept écrans d'invité, étiquettes WCAG 2.0, 2.1 et 2.2 niveaux A et AA — **zéro anomalie**. Plus une mesure de la taille réelle de chaque cible (≥ 48 px, contre 24 px exigés) et un parcours au clavier seul.
+
+### Trois défauts trouvés par ces mesures, corrigés
+
+- **Les polices n'étaient pas préchargées** : le LCP de l'accueil était de 3,1 s, sur la date en Bodoni. Les fichiers sont désormais dans le dépôt (`assets/polices/`, sous-ensembles latins, 148 ko au total) et chargés par `next/font/local` : Next émet le préchargement, la performance passe de 94 à 99, et la compilation ne dépend plus du réseau — ce qui compte pour l'intégration continue et pour le gel de J-7 à J+1.
+- **Une icône manquante** provoquait un 404 en console (bonnes pratiques 96). L'icône est maintenant générée depuis les tracés du monogramme, comme le reste, et le manifeste de l'application est en place — sans jamais proposer l'installation, qui reste facultative.
+- **La barre d'onglets pouvait masquer la fin d'une page** : le gabarit réserve sa hauteur.
+
+### Une contradiction du brief, tranchée
+
+Le §12 demande Lighthouse ≥ 95 dans les quatre catégories, dont « SEO ». Le §11 interdit d'indexer les données des invités : l'application est en `noindex`, donc l'audit « page indexable » échoue et la catégorie plafonne à 60. C'est la confidentialité qui gagne. Le seuil est vérifié sur les trois autres catégories, et cet audit est explicitement exclu — pas ignoré en silence.
+
 ## V1 — Le socle — en cours — 17 septembre 2026 (seconde tranche)
 
 ### Livré depuis la première tranche

@@ -24,7 +24,10 @@
     "db:stop": "./scripts/pg-local.sh stop",
     "db:seed": "node scripts/seed-dev.mjs",
     "test:e2e": "node scripts/e2e-prepare.mjs && playwright test",
-    "admin:lien": "node scripts/admin-lien.mjs"
+    "admin:lien": "node scripts/admin-lien.mjs",
+    "lighthouse": "node scripts/lighthouse.mjs",
+    "polices": "node scripts/telecharger-polices.mjs",
+    "gen:icone": "node scripts/build-icone.mjs"
   },
   "dependencies": {
     "next": "16.3.5",
@@ -37,6 +40,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.10.1",
@@ -44,6 +48,8 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "chrome-launcher": "^1.2.1",
+    "lighthouse": "^13.4.1",
     "opentype.js": "2.0.0",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
