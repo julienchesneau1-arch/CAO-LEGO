@@ -15,6 +15,14 @@ const Schema = z.object({
   // Clé publique de « La promesse » : elle n'a rien de secret, c'est la clé
   // privée — imprimée, conservée hors ligne — qui ouvre les vœux en 2029.
   JL_PROMESSE_CLE_PUBLIQUE: z.string().optional(),
+  // Web Push : paire VAPID générée localement (pnpm push:cles). Aucun
+  // prestataire, aucun compte à créer.
+  JL_VAPID_CLE_PUBLIQUE: z.string().optional(),
+  JL_VAPID_CLE_PRIVEE: z.string().optional(),
+  JL_VAPID_CONTACT: z.string().optional(),
+  // Transport e-mail : « console » tant que le prestataire n'est pas choisi
+  // (question V1-03). Les e-mails restent alors dans leur file.
+  JL_EMAIL_TRANSPORT: z.string().optional(),
   JL_FILM_POSTER_URL: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });

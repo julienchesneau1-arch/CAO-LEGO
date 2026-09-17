@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { CarteAFaire } from "@/components/CarteAFaire";
+import { derniereAnnonce } from "@/lib/annonces";
 import { CompteARebours } from "@/components/CompteARebours";
 import { FiletsEtapes } from "@/components/FiletsEtapes";
 import { Film } from "@/components/Film";
@@ -38,6 +39,7 @@ export default async function Accueil() {
   const periode = await periodeCourante(maintenant);
   const foyer = await foyerCourant();
   const repondu = foyer === undefined ? false : await aRepondu(foyer.id);
+  const annonce = await derniereAnnonce(langue);
 
   const etapes = etapesFranchies(maintenant, parametresJournee.date_mariage, repondu).map(
     (etape) => ({
@@ -102,6 +104,23 @@ export default async function Accueil() {
         </header>
 
         <hr className="jl-filet" />
+
+        {/* La dernière annonce, s'il y en a une : rien ne clignote, rien ne
+            s'impose — elle est simplement là, au-dessus du reste. */}
+        {annonce === undefined ? null : (
+          <section aria-labelledby="derniere-annonce" className="flex flex-col gap-2">
+            <h2 id="derniere-annonce" className="jl-etiquette">
+              {t.annonces.derniere}
+            </h2>
+            <p className="jl-titre text-xl">{annonce.texte}</p>
+            <Link
+              href="/annonces"
+              className="jl-cible jl-etiquette flex items-center underline decoration-1 underline-offset-8"
+            >
+              {t.annonces.lien}
+            </Link>
+          </section>
+        )}
 
         {periode === "avant" || periode === "semaine" ? (
           <>

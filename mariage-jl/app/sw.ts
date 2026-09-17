@@ -89,3 +89,54 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+/**
+ * Notifications (brief §5 et §7). Le service worker les affiche même quand
+ * l'application est fermée — c'est tout l'intérêt du push.
+ *
+ * Ton sobre, conforme à la direction artistique : un titre, une phrase, pas
+ * de vibration imposée, pas de son.
+ */
+self.addEventListener("push", (evenement: PushEvent) => {
+  type Charge = { titre?: string; corps?: string; chemin?: string };
+  const charge: Charge = (() => {
+    try {
+      return (evenement.data?.json() ?? {}) as Charge;
+    } catch {
+      // Une charge qui n'est pas du JSON reste affichable telle quelle.
+      const texte = evenement.data?.text();
+      return texte === undefined ? {} : { corps: texte };
+    }
+  })();
+
+  evenement.waitUntil(
+    self.registration.showNotification(charge.titre ?? "Julien & Lauriane", {
+      body: charge.corps ?? "",
+      icon: "/icon.svg",
+      badge: "/icon.svg",
+      tag: "jl-annonce",
+      data: { chemin: charge.chemin ?? "/" },
+      silent: false,
+    }),
+  );
+});
+
+/** Un tap sur la notification rouvre l'onglet existant plutôt qu'un nouveau. */
+self.addEventListener("notificationclick", (evenement: NotificationEvent) => {
+  evenement.notification.close();
+  const chemin = (evenement.notification.data as { chemin?: string } | undefined)?.chemin ?? "/";
+
+  evenement.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clients) {
+        if ("focus" in client) {
+          await client.focus();
+          if ("navigate" in client) await client.navigate(chemin);
+          return;
+        }
+      }
+      await self.clients.openWindow(chemin);
+    })(),
+  );
+});

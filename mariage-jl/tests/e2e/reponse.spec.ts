@@ -14,8 +14,17 @@ import { FOYER, URL_E2E } from "./fixtures";
  * `fetch` (pour que la file d'attente puisse rattraper un échec), et la page
  * pouvait déjà être inactive au moment du clic.
  */
-const envoyer = async (page: import("@playwright/test").Page, nom: string): Promise<void> => {
-  const traite = page.waitForResponse((reponse) => reponse.request().method() === "POST");
+const envoyer = async (
+  page: import("@playwright/test").Page,
+  nom: string,
+  action = "/reponse/",
+): Promise<void> => {
+  // On attend la réponse **de ce formulaire** : attendre n'importe quel POST
+  // laissait passer celui de la file d'attente et la lecture en base partait
+  // trop tôt.
+  const traite = page.waitForResponse(
+    (reponse) => reponse.request().method() === "POST" && reponse.url().includes(action),
+  );
   await page.getByRole("button", { name: nom, exact: true }).click();
   await traite;
   await page.waitForLoadState("networkidle");

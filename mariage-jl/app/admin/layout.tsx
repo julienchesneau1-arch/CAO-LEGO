@@ -39,6 +39,9 @@ export default async function AdminLayout({
           <a href="/admin/invites" className="jl-cible jl-etiquette flex items-center">
             {t.admin.invites}
           </a>
+          <a href="/admin/annonces" className="jl-cible jl-etiquette flex items-center">
+            {t.admin_annonces.titre}
+          </a>
         </nav>
         <p className="jl-doux text-sm">{session.email}</p>
         <hr className="jl-filet" />

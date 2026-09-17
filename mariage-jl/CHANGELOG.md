@@ -2,9 +2,31 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
-## V2 — La préparation — en cours — 17 septembre 2026
+## V2 — La préparation — 17 septembre 2026 — complète côté code
 
-Première tranche : ce qui ne dépend de personne.
+### Seconde tranche
+
+- **Fil d'annonces** : une page `/annonces` pour les invités, la dernière annonce mise en avant sur l'accueil, et un écran de publication pour les mariés (français et anglais). Aucune donnée personnelle n'y entre : le fil est donc lisible depuis le QR générique.
+- **Notifications Web Push**, sans aucun prestataire : le serveur parle directement au service de notification du navigateur, authentifié par une paire de clés VAPID qu'on génère soi-même (`pnpm push:cles`). L'autorisation n'est **jamais** demandée au premier chargement (§17) : elle l'est au clic, et un refus est accepté sans insister. Publier une annonce peut envoyer une notification, ou non — c'est une case à cocher, pas un automatisme.
+- **Rappels par e-mail**, en opt-in explicite : l'adresse est demandée dans la réponse, jamais ailleurs ; chaque e-mail porte un lien de désinscription qui fonctionne **en un tap**, sans connexion ni question, et le message est le même que le lien soit valide ou déjà utilisé — inutile d'apprendre à un curieux si une adresse était inscrite.
+- **File d'envoi des e-mails** : le prestataire n'étant pas choisi (question V1-03), les e-mails sont écrits dans une file en base et un transport les en sort. Le transport « console » les affiche sans les envoyer : on peut relire exactement ce qui partirait. Le jour où le prestataire est choisi, il y a **une fonction à écrire** dans `lib/email.ts` et rien d'autre à toucher.
+
+### Décisions de produit prises en passant
+
+- Les rappels e-mail ne sont **pas proposés** à un foyer qui a répondu « Non » : lui envoyer des rappels serait au mieux inutile. Recevoir les photos après le mariage viendra avec la version « Après », avec son propre consentement.
+- Un abonnement aux notifications déclaré périmé par le navigateur est **supprimé**, pas réessayé : sans cela la liste ne ferait que grossir et chaque envoi ralentirait. Un test le vérifie.
+
+### Mesures
+
+174 tests, 66 parcours sur deux gabarits, Lighthouse toujours au-dessus du seuil.
+
+### Ce qui reste de V2
+
+Le contenu des rappels (question V2-01) et le transport e-mail (V1-03). Les deux sont des décisions, pas du code.
+
+## V2 — Première tranche — 17 septembre 2026
+
+Ce qui ne dépend de personne.
 
 ### Livré
 

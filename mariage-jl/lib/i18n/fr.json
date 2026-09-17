@@ -303,5 +303,45 @@
     "erreur": "Nous n’avons pas pu sceller votre vœu. Réessayez dans un instant.",
     "indisponible": "La promesse ouvrira bientôt.",
     "garantie": "Le vœu est chiffré dans votre téléphone avant d’être envoyé. Le serveur ne reçoit qu’une enveloppe close, et n’a aucun moyen de l’ouvrir. Il est anonyme."
+  },
+  "annonces": {
+    "lien": "Annonces",
+    "titre": "Les annonces",
+    "intro": "Ce que Julien et Lauriane ont à vous dire, du plus récent au plus ancien.",
+    "aucune": "Rien à signaler pour l’instant. C’est plutôt bon signe.",
+    "par_admin": "Julien & Lauriane",
+    "par_regie": "L’équipe du jour J",
+    "derniere": "Dernière annonce"
+  },
+  "notifications": {
+    "titre": "Recevoir les annonces sur ce téléphone",
+    "explication": "Rien n’est obligatoire. Vous pouvez refuser, ou changer d’avis plus tard dans les réglages de votre téléphone.",
+    "activer": "Recevoir les annonces",
+    "active": "Vous recevrez les annonces sur ce téléphone.",
+    "refuse": "Les notifications sont refusées pour ce site. Vous pouvez les autoriser dans les réglages de votre téléphone.",
+    "impossible": "Ce téléphone ne prend pas les notifications en charge. Rien ne sera perdu : tout reste dans l’application."
+  },
+  "admin_annonces": {
+    "titre": "Annonces",
+    "champ_fr": "Annonce en français",
+    "champ_en": "Annonce en anglais",
+    "notifier": "Envoyer aussi une notification aux invités abonnés",
+    "publier": "Publier",
+    "publiee": "Annonce publiée.",
+    "erreur": "Nous n’avons pas pu publier. Réessayez.",
+    "push_absent": "Les notifications ne sont pas configurées : voir pnpm push:cles.",
+    "envoyees": "{nombre} notification(s) envoyée(s).",
+    "historique": "Publiées"
+  },
+  "rappels": {
+    "titre": "Rappels par e-mail",
+    "explication": "Nous n’enverrons que l’essentiel. Vous pouvez arrêter à tout moment, en un tap.",
+    "champ": "Votre adresse e-mail",
+    "activer": "Recevoir les rappels",
+    "actifs": "Vous recevrez les rappels à {email}.",
+    "arreter": "Ne plus recevoir de rappels",
+    "arretes": "Vous ne recevrez plus de rappels.",
+    "desinscrit_titre": "C’est fait",
+    "desinscrit_texte": "Vous ne recevrez plus de rappels. Rien d’autre ne change : votre invitation reste valable."
   }
 }

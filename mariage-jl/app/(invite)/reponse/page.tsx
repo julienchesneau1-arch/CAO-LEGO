@@ -4,6 +4,7 @@ import { foyerCourant } from "@/lib/foyer";
 import { formater } from "@/lib/i18n";
 import { genreMoment, moments, nomMoment } from "@/lib/moments";
 import { langueEtTextes } from "@/lib/page-commune";
+import { optinDuFoyer } from "@/lib/rappels";
 import { REGIMES, invitesDuFoyer, reponseDuFoyer, reponseVerrouillee } from "@/lib/rsvp";
 import { MOMENTS } from "@/lib/tokens";
 
@@ -37,11 +38,12 @@ export default async function PageReponse({
     );
   }
 
-  const [reponse, invites, liste, verrouillee] = await Promise.all([
+  const [reponse, invites, liste, verrouillee, rappels] = await Promise.all([
     reponseDuFoyer(foyer.id),
     invitesDuFoyer(foyer.id),
     moments(),
     reponseVerrouillee(),
+    optinDuFoyer(foyer.id),
   ]);
 
   const confirmation =
@@ -289,6 +291,65 @@ export default async function PageReponse({
             {t.reponse.envoyer}
           </button>
         </form>
+      ) : null}
+
+      {/* Rappels par e-mail : opt-in explicite, arrêt en un tap (§11).
+          Jamais proposés à un foyer qui ne vient pas : le parcours « Non » ne
+          demande plus rien. Recevoir les photos après le mariage viendra avec
+          la version « Après », avec son propre consentement. */}
+      {reponse !== null && reponse.statut !== "no" ? (
+      <section aria-labelledby="rappels" className="flex flex-col gap-4">
+        <hr className="jl-filet" />
+        <h2 id="rappels" className="jl-etiquette">
+          {t.rappels.titre}
+        </h2>
+        <p className="jl-doux text-sm">{t.rappels.explication}</p>
+
+        {etat === "rappels_actives" ? (
+          <p aria-live="polite" className="jl-doux">
+            {t.rappels.actifs.replace("{email}", rappels?.email ?? "")}
+          </p>
+        ) : null}
+        {etat === "rappels_arretes" ? (
+          <p aria-live="polite" className="jl-doux">
+            {t.rappels.arretes}
+          </p>
+        ) : null}
+
+        {rappels === undefined ? (
+          <form method="post" action="/rappels" className="flex flex-col gap-4">
+            <input type="hidden" name="action" value="activer" />
+            <label className="flex flex-col gap-2">
+              <span className="jl-doux">{t.rappels.champ}</span>
+              <input
+                type="email"
+                name="email"
+                required
+                autoComplete="email"
+                className="jl-cible border bg-transparent px-4 py-3"
+                style={{ ...bordure, color: "var(--texte)" }}
+              />
+            </label>
+            <button type="submit" className="jl-cible self-start border px-5 py-3" style={bordure}>
+              {t.rappels.activer}
+            </button>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p>{formater(t.rappels.actifs, { email: rappels.email })}</p>
+            <form method="post" action="/rappels">
+              <input type="hidden" name="action" value="arreter" />
+              <button
+                type="submit"
+                className="jl-cible border px-5 py-3"
+                style={bordure}
+              >
+                {t.rappels.arreter}
+              </button>
+            </form>
+          </div>
+        )}
+      </section>
       ) : null}
 
       {etat === "enregistre" ? (

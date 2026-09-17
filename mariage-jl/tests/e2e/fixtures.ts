@@ -13,3 +13,6 @@ export const FOYER = {
   code: "TEST42",
   invite: "Camille",
 } as const;
+
+/** Même port que `playwright.config.ts` : utile pour ouvrir un second navigateur. */
+export const BASE_URL = "http://127.0.0.1:3220";

@@ -14,7 +14,7 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 |---|---|---|
 | **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, validée le 17/09/2026** |
 | **V1 — Le socle** | Accès par QR, code de secours, QR générique, partage de l'accès, premier lancement, accueil « Avant », navigation, Programme + `.ics`, Infos, FAQ, réponse complète, espace des mariés, planche QR PDF | **complet, en attente des contenus et des relectures** |
-| **V2 — La préparation** | **Fait** : « Le texte », « La promesse », messages des absents, hébergements affichés. **Reste** : rappels e-mail, fil d'annonces, Web Push | en cours |
+| **V2 — La préparation** | « Le texte », « La promesse », messages des absents, hébergements, fil d'annonces, Web Push, rappels e-mail en opt-in avec file d'envoi | **complète côté code** — reste le contenu des rappels et le choix du prestataire |
 | V3 → V4 | voir `docs/PLAN.md` | pas commencées |
 
 Ce qui n'est **pas** fait en V0, volontairement : aucun achat de domaine, aucune action sur le VPS, aucun projet Supabase. Ces trois points attendent tes réponses (`docs/QUESTIONS_BLOQUANTES.md`, section V0).
@@ -122,6 +122,35 @@ fichier. Avant cette date, la commande refuse.
 
 **Perdre la clé privée rend les vœux définitivement illisibles.** C'est le prix
 de la promesse.
+
+## Annonces et notifications
+
+Depuis `/admin/annonces`, tu publies une annonce en français et en anglais.
+Elle apparaît aussitôt dans `/annonces` et sur l'accueil des invités. Une case
+permet, si tu le veux, d'envoyer en plus une notification aux invités qui l'ont
+demandée — ce n'est jamais automatique.
+
+Pour activer les notifications, une seule fois :
+
+```bash
+pnpm push:cles        # affiche les trois lignes à coller dans .env.local
+```
+
+Aucun prestataire, aucun compte : ces clés authentifient notre serveur auprès
+des navigateurs. Les changer déconnecte tous les abonnés.
+
+## Rappels par e-mail
+
+L'invité donne son adresse dans sa réponse, et peut s'arrêter en un tap.
+Tant que le prestataire n'est pas choisi (question V1-03), les e-mails
+s'accumulent dans une file sans partir :
+
+```bash
+pnpm emails:envoyer   # affiche ce qui partirait, sans rien envoyer
+```
+
+Quand tu auras choisi le prestataire, il y aura **une fonction à écrire** dans
+`lib/email.ts`. Les écrans, l'opt-in et la désinscription ne changeront pas.
 
 ## Sans réseau
 

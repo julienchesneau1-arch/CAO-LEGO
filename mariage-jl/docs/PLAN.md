@@ -301,6 +301,8 @@ Accès QR + code de secours + QR générique ; premier lancement en 3 écrans ; 
 Rappels e-mail en opt-in + fil d'annonces dans l'app ; Web Push (VAPID) ; page « Le texte » ; messages écrits des absents ; La promesse (chiffrement côté navigateur, clé privée hors serveur) ; paragraphe covoiturage + lien de groupe ; hébergements éditables.
 *Terminé quand* : rappel reçu sur les **2 canaux** (e-mail, push) et visible dans le fil ; un vœu scellé est illisible depuis la base et déchiffrable avec la clé imprimée.
 
+État au 17/09/2026 : **tout le code de V2 est livré et testé.** Le fil d'annonces, les notifications et l'opt-in e-mail fonctionnent ; un vœu scellé est vérifié illisible côté serveur. Deux points restent, et ce sont des décisions : le contenu des rappels (V2-01) et le transport e-mail (V1-03), qui représente une fonction à écrire dans `lib/email.ts`. Le critère « rappel reçu » ne pourra donc être coché qu'avec un vrai prestataire.
+
 ### V3 — Le jour J (J-3 mois)
 Semaine J (météo Open-Meteo, checklist) ; Maintenant ; Aide avec boutons d'appel ; régie minimale (annonces, décalage d'un moment, masquage d'une photo) ; cérémonie débranchée ; photos et vidéos complètes (compression, HEIC, suppression GPS, file persistante, Wi-Fi seulement, modération, demande de retrait) ; mur `/live` ; plan de table ; lien privé de diffusion ; cartes de table PDF et fiche régie PDF ; défis photo si le temps le permet.
 *Terminé quand* : répétition générale de J-60 réussie ; test de charge exécuté contre la production hors gel et consigné ; procédure de bascule DNS chronométrée pour de vrai.

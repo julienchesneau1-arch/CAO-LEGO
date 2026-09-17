@@ -303,5 +303,45 @@
     "erreur": "We could not seal your wish. Please try again in a moment.",
     "indisponible": "The promise will open shortly.",
     "garantie": "The wish is encrypted on your phone before it is sent. The server only receives a sealed envelope, and has no way to open it. It is anonymous."
+  },
+  "annonces": {
+    "lien": "Announcements",
+    "titre": "Announcements",
+    "intro": "What Julien and Lauriane have to tell you, most recent first.",
+    "aucune": "Nothing to report yet. Which is rather a good sign.",
+    "par_admin": "Julien & Lauriane",
+    "par_regie": "The wedding-day team",
+    "derniere": "Latest announcement"
+  },
+  "notifications": {
+    "titre": "Get announcements on this phone",
+    "explication": "Nothing is required. You may decline, or change your mind later in your phone settings.",
+    "activer": "Get announcements",
+    "active": "You will get announcements on this phone.",
+    "refuse": "Notifications are blocked for this site. You can allow them in your phone settings.",
+    "impossible": "This phone does not support notifications. Nothing will be lost: everything stays in the app."
+  },
+  "admin_annonces": {
+    "titre": "Announcements",
+    "champ_fr": "Announcement in French",
+    "champ_en": "Announcement in English",
+    "notifier": "Also send a notification to subscribed guests",
+    "publier": "Publish",
+    "publiee": "Announcement published.",
+    "erreur": "We could not publish. Please try again.",
+    "push_absent": "Notifications are not configured: see pnpm push:cles.",
+    "envoyees": "{nombre} notification(s) sent.",
+    "historique": "Published"
+  },
+  "rappels": {
+    "titre": "E-mail reminders",
+    "explication": "We will only send what matters. You can stop at any time, with one tap.",
+    "champ": "Your e-mail address",
+    "activer": "Get reminders",
+    "actifs": "You will get reminders at {email}.",
+    "arreter": "Stop reminders",
+    "arretes": "You will no longer get reminders.",
+    "desinscrit_titre": "Done",
+    "desinscrit_texte": "You will no longer get reminders. Nothing else changes: your invitation is still valid."
   }
 }

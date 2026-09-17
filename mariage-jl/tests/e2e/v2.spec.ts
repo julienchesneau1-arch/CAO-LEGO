@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { Client } from "pg";
-import { FOYER, URL_E2E } from "./fixtures";
+import { BASE_URL, FOYER, URL_E2E } from "./fixtures";
 import { reinitialiserFoyer } from "./reinitialiser";
 
 /**
@@ -24,6 +24,10 @@ test.beforeEach(async () => {
   await client.connect();
   await client.query("delete from public.promises");
   await client.query("delete from public.absent_messages");
+  await client.query("delete from public.announcements");
+  await client.query("delete from public.emails");
+  await client.query("delete from public.reminder_optin");
+  await client.query("delete from public.admin_magic_links");
   await client.end();
 });
 
@@ -106,4 +110,88 @@ test("le vœu n'est jamais rattaché à un foyer", async ({ page }) => {
       where table_schema = 'public' and table_name = 'promises'`,
   );
   expect(colonnes.map((c) => c.column_name)).not.toContain("household_id");
+});
+
+test("une annonce publiée apparaît dans le fil et sur l'accueil", async ({ page, browser }) => {
+  // Côté mariés : publier.
+  const jetonAdmin = await (async () => {
+    const client = new Client({ connectionString: URL_E2E });
+    await client.connect();
+    try {
+      await client.query(
+        `insert into public.admin_users (email, role) values ('maries@e2e.test', 'admin')
+         on conflict (email) do update set revoked_at = null`,
+      );
+      // Jeton de lien magique posé directement : le parcours teste l'annonce,
+      // pas l'envoi du lien.
+      const jeton = "annonce2parcours3admin4jeton5lien67";
+      const { createHash } = await import("node:crypto");
+      await client.query(
+        `insert into public.admin_magic_links (email, token_sha256, expires_at)
+         values ('maries@e2e.test', $1, now() + interval '30 minutes')`,
+        [createHash("sha256").update(jeton).digest()],
+      );
+      return jeton;
+    } finally {
+      await client.end();
+    }
+  })();
+
+  const maries = await browser.newContext({ baseURL: BASE_URL });
+  const pageMaries = await maries.newPage();
+  await pageMaries.goto(`/admin/entrer?jeton=${jetonAdmin}`);
+  await pageMaries.goto("/admin/annonces");
+  await pageMaries.locator('textarea[name="texte_fr"]').fill("Le cocktail est servi sur la terrasse.");
+  await pageMaries.locator('textarea[name="texte_en"]').fill("Cocktails are served on the terrace.");
+  const publie = pageMaries.waitForResponse((r) => r.request().method() === "POST");
+  await pageMaries.getByRole("button", { name: "Publier" }).click();
+  await publie;
+  await expect(pageMaries.getByText("Annonce publiée.")).toBeVisible();
+  await maries.close();
+
+  // Côté invité : le fil, puis l'accueil.
+  await page.goto("/annonces");
+  await expect(page.getByText("Le cocktail est servi sur la terrasse.")).toBeVisible();
+
+  await page.goto(`/i/${FOYER.jeton}`);
+  await page.getByRole("button", { name: "Passer" }).click();
+  await expect(page.getByText("Le cocktail est servi sur la terrasse.")).toBeVisible();
+});
+
+test("les rappels e-mail ne partent qu'après consentement, et s'arrêtent en un tap", async ({
+  page,
+}) => {
+  await page.goto(`/i/${FOYER.jeton}`);
+  await page.getByRole("button", { name: "Passer" }).click();
+  await page.goto("/reponse");
+
+  // Les rappels ne sont proposés qu'à un foyer qui vient : on répond d'abord.
+  const repondu = page.waitForResponse((r) => r.url().includes("/reponse/statut"));
+  await page.getByRole("button", { name: "Oui", exact: true }).click();
+  await repondu;
+
+  // Rien en file avant le consentement.
+  expect(await enBase("select 1 from public.emails")).toHaveLength(0);
+
+  await page.locator('input[name="email"]').fill("invite@parcours.test");
+  const active = page.waitForResponse((r) => r.request().method() === "POST");
+  await page.getByRole("button", { name: "Recevoir les rappels" }).click();
+  await active;
+
+  await expect(page.getByText("invite@parcours.test").first()).toBeVisible();
+  const files = await enBase<{ destinataire: string; corps: string }>(
+    "select destinataire, corps from public.emails",
+  );
+  expect(files).toHaveLength(1);
+  expect(files[0]?.destinataire).toBe("invite@parcours.test");
+  expect(files[0]?.corps).toContain("/desabonner/");
+
+  // Le lien de l'e-mail désinscrit en un tap, sans rien demander.
+  const lien = /\/desabonner\/[a-z2-9]+/.exec(files[0]?.corps ?? "")?.[0] ?? "";
+  expect(lien).not.toBe("");
+  await page.goto(lien);
+  await expect(page.getByRole("heading", { name: "C’est fait" })).toBeVisible();
+  expect(await enBase("select 1 from public.reminder_optin where revoked_at is null")).toHaveLength(
+    0,
+  );
 });

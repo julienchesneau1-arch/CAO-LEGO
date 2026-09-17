@@ -17,6 +17,7 @@ export const LIVREES = new Set([
   "/le-texte",
   "/loin",
   "/promesse",
+  "/annonces",
 ]);
 
 export type Onglet = { readonly cle: string; readonly chemin: string };
