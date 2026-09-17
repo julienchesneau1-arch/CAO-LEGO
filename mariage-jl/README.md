@@ -12,8 +12,8 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 
 | Version | Contenu | État |
 |---|---|---|
-| **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, en attente de ta validation** |
-| V1 — Le socle | Accès par QR, réponse, programme, infos, FAQ, admin invités, planche QR | pas commencée |
+| **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, validée le 17/09/2026** |
+| **V1 — Le socle** | **Fait** : accès par QR de foyer, code de secours, QR générique, partage de l'accès, premier lancement en trois écrans, accueil « Avant » (compte à rebours, fil des cinq étapes, carte « À faire », emplacement du film). **Reste** : Programme, Infos, FAQ, réponse (RSVP), admin invités, planche QR PDF | en cours |
 | V2 → V4 | voir `docs/PLAN.md` | pas commencées |
 
 Ce qui n'est **pas** fait en V0, volontairement : aucun achat de domaine, aucune action sur le VPS, aucun projet Supabase. Ces trois points attendent tes réponses (`docs/QUESTIONS_BLOQUANTES.md`, section V0).
@@ -38,21 +38,30 @@ Prérequis : Node.js 22 et pnpm (`corepack enable` suffit).
 pnpm install          # installe les dépendances
 pnpm dev              # démarre l'app en local sur http://localhost:3000
 pnpm verify           # traductions + TypeScript + tests + compilation
+pnpm test:e2e         # parcours Playwright (iPhone et Android simulés)
 pnpm captures          # captures d'écran mobile dans captures/
 pnpm gen:secours      # recompose la page de secours (secours/index.html)
 pnpm gen:monogram     # régénère le monogramme vectorisé depuis la police
 pnpm db:local         # démarre un PostgreSQL jetable pour les tests de sécurité
-pnpm db:stop          # l'arrête
+pnpm db:seed          # base de développement + trois foyers d'essai (jetons affichés)
+pnpm db:stop          # arrête PostgreSQL
 ```
 
 `pnpm verify` exécute 50 tests. Les 26 tests de sécurité de la base ont besoin
 d'un PostgreSQL : sans lui, ils sont ignorés en local (et refusés en
 intégration continue, où une base est fournie). Voir `supabase/README.md`.
 
-Deux pages existent aujourd'hui :
+Les écrans existants :
 
-- `/` — page d'attente, uniquement des informations connues ;
-- `/design` — **la page à valider** : les cinq couleurs, les neutres, la typographie, le monogramme, la signature, le mouvement, les contrastes mesurés, et les réglages de confort de lecture (trois tailles de texte, mode Papier, animations réduites, français/anglais).
+- `/i/<jeton>` — ouverture d'une invitation depuis le QR du faire-part. L'appareil est reconnu ensuite, sans compte ni installation.
+- `/` — accueil. Compte à rebours, fil des cinq étapes, une seule action à la fois, emplacement du film.
+- `/retrouver` — « Retrouver mon invitation » avec le nom et le code à six caractères. Formulaire HTML simple, fonctionne sans JavaScript.
+- `/partager` — partager l'accès au foyer : c'est aussi « un proche répond pour moi ».
+- `/p/<jeton>` — le lien de partage, tel que le reçoit le proche.
+- `/g` — QR générique des cartes de table : aucune donnée nominative.
+- `/design` — **la page de validation de la direction artistique** : couleurs, neutres, typographie, monogramme, signature, mouvement, contrastes mesurés, réglages de confort de lecture.
+
+Pour essayer en local : `pnpm db:local && pnpm db:seed` affiche trois liens d'ouverture et leurs codes de secours.
 
 ---
 

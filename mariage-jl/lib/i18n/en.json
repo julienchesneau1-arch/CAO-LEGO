@@ -8,7 +8,30 @@
     "date": "03 · 06 · 2028",
     "lieu": "Domaine de Roiffé",
     "attente": "The app for the day is being written. You will receive the link together with the invitation.",
-    "lien_design": "View the art direction"
+    "lien_design": "View the art direction",
+    "bienvenue": "Welcome, {foyer}.",
+    "bienvenue_generique": "Welcome.",
+    "tout_est_ici": "Everything is here.",
+    "compte_jours": "days",
+    "compte_heures": "hours",
+    "compte_minutes": "minutes",
+    "compte_secondes": "seconds",
+    "compte_titre": "Remaining",
+    "etape_annonce": "Announcement",
+    "etape_reponse": "Reply",
+    "etape_j30": "30 days",
+    "etape_j7": "7 days",
+    "etape_jourj": "The day",
+    "a_faire": "To do",
+    "a_faire_repondre": "Reply",
+    "a_faire_repondre_avant": "Reply before {date}",
+    "a_faire_rien": "All that is left is to come.",
+    "film_titre": "The film",
+    "film_attente": "The film will be added here. It needs a connection: it is not kept offline.",
+    "film_lire": "Play the film",
+    "partager_lien": "Share access with your household",
+    "periode_jour": "The day is under way. This screen arrives with the wedding-day version.",
+    "periode_apres": "Thank you. This screen arrives with the after version."
   },
   "confort": {
     "titre": "Reading comfort",
@@ -78,5 +101,36 @@
     "matiere": "La Matière — authenticity",
     "noir": "Screen background",
     "papier": "Paper mode"
+  },
+  "lancement": {
+    "passer": "Skip",
+    "suivant": "Continue",
+    "ecran1": "Julien and Lauriane",
+    "ecran3_titre": "Everything is here.",
+    "ecran3_texte": "The schedule, how to get there, your reply. Nothing to install, no account to create."
+  },
+  "retrouver": {
+    "titre": "Find my invitation",
+    "intro": "The six-character code is printed under the QR code on your invitation.",
+    "champ_nom": "Your name",
+    "champ_code": "Six-character code",
+    "envoyer": "Find",
+    "echec": "We cannot find this invitation. Please check the code, or call us.",
+    "trop_essais": "Too many attempts. Please try again in an hour, or call us.",
+    "aide_contact": "Need help: {contact}"
+  },
+  "partager": {
+    "titre": "Share access with your household",
+    "intro": "This link opens your invitation on another phone. It is also how you ask someone close to reply for you.",
+    "creer": "Create a link",
+    "copier": "Copy the link",
+    "copie": "Link copied.",
+    "validite": "Valid for {jours} days, {ouvertures} openings.",
+    "non_reconnu": "Please open your invitation from the QR code on your invitation card first."
+  },
+  "erreurs": {
+    "invitation_inconnue": "This invitation is no longer valid.",
+    "lien_expire": "This sharing link has expired.",
+    "base_indisponible": "The information will be here shortly. Please try again in a moment."
   }
 }

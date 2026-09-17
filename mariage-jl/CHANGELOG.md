@@ -2,7 +2,39 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
-## V0 — Fondations — 17 septembre 2026 — en attente de validation
+## V1 — Le socle — en cours — 17 septembre 2026
+
+V0 validée par Julien le 17 septembre 2026. Première tranche de V1 : l'accès.
+
+### Livré
+
+- **Ouverture par QR de foyer** (`/i/<jeton>`) : jeton de 160 bits, stocké seulement haché (SHA-256), cookie signé HMAC `httpOnly` de 18 mois. L'appareil est reconnu ensuite sans compte ni installation. Langue du foyer appliquée, sauf si l'invité a déjà choisi la sienne.
+- **Code de secours** (`/retrouver`) : nom + six caractères sans I, O, 0 ni 1. Formulaire HTML classique, **sans JavaScript** — c'est le chemin de secours, il doit marcher sur le téléphone le plus ancien. Cinq essais par heure, message d'échec unique qui ne dit jamais lequel des deux champs est faux.
+- **Partage de l'accès au foyer** (`/partager`, `/p/<jeton>`) : un lien, 30 jours, 5 ouvertures, révocable, compté dans la même requête que sa vérification. C'est aussi « un proche répond pour moi » — un seul mécanisme, conformément à l'arbitrage de la section 0 bis.
+- **QR générique** (`/g`) : accès sans aucune donnée nominative.
+- **Premier lancement en trois écrans**, une seule fois par appareil, « Passer » visible dès la première image : ouverture signature (les cinq filets se déploient, montent, révèlent le contour du monogramme qui se remplit), confort de lecture, « Tout est ici ».
+- **Accueil « Avant »** : compte à rebours en Bodoni Moda (valeur initiale calculée par le serveur, donc juste même si le téléphone est mal réglé), fil des cinq étapes, carte « À faire » avec **une seule action à la fois**, emplacement du film qui dit son absence au lieu d'inventer.
+- **Périodes** calculées en jour civil parisien, avec bascule manuelle de l'admin et horloge simulable.
+- **Limitation de débit** en base, clé d'appelant hachée : aucune adresse IP en clair.
+- **Sonde `/api/health`** : vérifie désormais l'application **et** la base, et répond 503 si la base manque.
+- **95 tests** (contre 50) et **16 parcours Playwright** sur deux gabarits de téléphone : QR de foyer, trois écrans du premier lancement, absence de défilement derrière l'ouverture, code de secours, partage de l'accès ouvert depuis un second téléphone, confort « très grande » sans débordement, cibles ≥ 48 px, QR générique.
+
+### Quatre défauts trouvés par la chaîne de vérification, corrigés
+
+- `restant()` était exporté d'un module client et appelé côté serveur : l'accueil renvoyait 500. Le décompte vit maintenant dans `lib/compte.ts`.
+- Les redirections absolues de Next réécrivaient l'hôte (`127.0.0.1` → `localhost`), ce qui faisait **perdre le cookie de foyer** — et, derrière Caddy, aurait exposé l'hôte interne. Toutes les redirections sont désormais relatives (`lib/http.ts`).
+- Le premier lancement laissait la page défiler derrière lui et le focus restait dehors : un lecteur d'écran lisait l'accueil masqué. Défilement bloqué, focus déplacé dans la surcouche.
+- Les parcours Playwright ne correspondaient pas au binaire disponible : version alignée sur le Chromium installé (1.56.0) et gabarits forcés en Chromium.
+
+### Limite assumée
+
+Le gabarit « iPhone » de Playwright vérifie la mise en page et les gestes, **pas le moteur de Safari** (WebKit n'est pas installé dans l'environnement de développement). Le brief §12 exige Safari iOS : il devra être vérifié sur un appareil réel avant la validation de V1.
+
+### Reste à faire dans V1
+
+Programme et déroulé détaillé, `.ics`, Infos (six sections), FAQ avec recherche, réponse (RSVP en quatre taps avec parcours « Non » et consentement séparé pour les allergies), admin invités, planche QR PDF, prestataire e-mail pour le lien magique admin (question V1-03).
+
+## V0 — Fondations — 17 septembre 2026 — validée
 
 ### Livré
 

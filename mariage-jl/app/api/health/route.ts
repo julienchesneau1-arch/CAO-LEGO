@@ -1,19 +1,35 @@
 import { NextResponse } from "next/server";
+import { requete } from "@/lib/db";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Sonde de disponibilité (brief §0 bis). En V0 elle ne vérifie que
- * l'application : le contrôle de Supabase sera ajouté avec la base, en V1.
+ * Sonde de disponibilité (brief §0 bis) : elle vérifie l'application ET la
+ * base, puisque c'est la base qui porte toutes les données. La sonde externe
+ * interroge cette route, ce qui garde aussi le projet Supabase actif.
  */
-export function GET() {
+export async function GET(): Promise<NextResponse> {
+  const debut = Date.now();
+  let base: "ok" | "indisponible" = "indisponible";
+  let detail: string | undefined;
+
+  try {
+    await requete("select 1");
+    base = "ok";
+  } catch (erreur) {
+    detail = erreur instanceof Error ? erreur.message.slice(0, 120) : "erreur inconnue";
+  }
+
   return NextResponse.json(
     {
-      etat: "ok",
-      version: process.env["JL_VERSION"] ?? "v0-dev",
-      supabase: "non branché en V0",
+      etat: base === "ok" ? "ok" : "degrade",
+      base,
+      ...(detail === undefined ? {} : { detail }),
+      version: env().JL_VERSION,
+      latence_ms: Date.now() - debut,
       horodatage: new Date().toISOString(),
     },
-    { headers: { "cache-control": "no-store" } },
+    { status: base === "ok" ? 200 : 503, headers: { "cache-control": "no-store" } },
   );
 }

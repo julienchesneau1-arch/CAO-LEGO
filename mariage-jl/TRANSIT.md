@@ -16,5 +16,5 @@ de CAO-LEGO en une commande :
 git rm -r --cached mariage-jl && rm -rf mariage-jl && git commit -m "Fin du transit mariage-jl"
 ```
 
-L'historique du projet (2 commits V0) vit dans le dépôt local
+L'historique du projet (V0 puis V1) vit dans le dépôt local
 `/home/user/mariage-jl` de la session ; cette copie en est le contenu à plat.

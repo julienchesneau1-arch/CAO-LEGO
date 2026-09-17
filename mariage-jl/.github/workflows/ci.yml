@@ -43,6 +43,10 @@ jobs:
         run: pnpm run test
       - name: Compilation
         run: pnpm run build
+      - name: Navigateur pour les parcours
+        run: npx playwright install --with-deps chromium
+      - name: Parcours Playwright (iPhone et Android simulés)
+        run: pnpm run test:e2e
       - name: Page de secours à jour
         run: |
           pnpm run gen:secours

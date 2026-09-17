@@ -8,7 +8,30 @@
     "date": "03 · 06 · 2028",
     "lieu": "Domaine de Roiffé",
     "attente": "L’application de la journée s’écrit en ce moment. Vous recevrez le lien en même temps que le faire-part.",
-    "lien_design": "Voir la direction artistique"
+    "lien_design": "Voir la direction artistique",
+    "bienvenue": "Bienvenue, {foyer}.",
+    "bienvenue_generique": "Bienvenue.",
+    "tout_est_ici": "Tout est ici.",
+    "compte_jours": "jours",
+    "compte_heures": "heures",
+    "compte_minutes": "minutes",
+    "compte_secondes": "secondes",
+    "compte_titre": "Il reste",
+    "etape_annonce": "Annonce",
+    "etape_reponse": "Réponse",
+    "etape_j30": "J-30",
+    "etape_j7": "J-7",
+    "etape_jourj": "Jour J",
+    "a_faire": "À faire",
+    "a_faire_repondre": "Répondre",
+    "a_faire_repondre_avant": "Répondre avant le {date}",
+    "a_faire_rien": "Il ne vous reste qu’à venir.",
+    "film_titre": "Le film",
+    "film_attente": "Le film sera ajouté ici. Il a besoin du réseau : il n’est pas conservé hors ligne.",
+    "film_lire": "Lire le film",
+    "partager_lien": "Partager l’accès au foyer",
+    "periode_jour": "La journée est en cours. Cet écran arrive avec la version du jour J.",
+    "periode_apres": "Merci. Cet écran arrive avec la version d’après."
   },
   "confort": {
     "titre": "Confort de lecture",
@@ -78,5 +101,36 @@
     "matiere": "La Matière — authenticité",
     "noir": "Le fond de l’écran",
     "papier": "Mode Papier"
+  },
+  "lancement": {
+    "passer": "Passer",
+    "suivant": "Continuer",
+    "ecran1": "Julien et Lauriane",
+    "ecran3_titre": "Tout est ici.",
+    "ecran3_texte": "Le programme, l’accès, votre réponse. Rien à installer, rien à créer."
+  },
+  "retrouver": {
+    "titre": "Retrouver mon invitation",
+    "intro": "Le code à six caractères est imprimé sous le QR code de votre faire-part.",
+    "champ_nom": "Votre nom",
+    "champ_code": "Code à six caractères",
+    "envoyer": "Retrouver",
+    "echec": "Nous ne trouvons pas cette invitation. Vérifiez le code, ou appelez-nous.",
+    "trop_essais": "Trop d’essais. Réessayez dans une heure, ou appelez-nous.",
+    "aide_contact": "Besoin d’aide : {contact}"
+  },
+  "partager": {
+    "titre": "Partager l’accès au foyer",
+    "intro": "Ce lien ouvre votre invitation sur un autre téléphone. Il sert aussi à demander à un proche de répondre pour vous.",
+    "creer": "Créer un lien",
+    "copier": "Copier le lien",
+    "copie": "Lien copié.",
+    "validite": "Valable {jours} jours, {ouvertures} ouvertures.",
+    "non_reconnu": "Ouvrez d’abord votre invitation depuis le QR code de votre faire-part."
+  },
+  "erreurs": {
+    "invitation_inconnue": "Cette invitation n’est plus valable.",
+    "lien_expire": "Ce lien de partage a expiré.",
+    "base_indisponible": "Les informations arrivent bientôt. Réessayez dans un instant."
   }
 }

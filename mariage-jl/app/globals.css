@@ -114,3 +114,45 @@ body[data-vignette="oui"]::before {
   outline: 2px solid var(--texte);
   outline-offset: 3px;
 }
+
+/* ---------------------------------------------------------------
+   Ouverture signature (brief §3) : cinq filets se déploient, montent,
+   révèlent le contour du monogramme qui se remplit d'ivoire — le final
+   du film. Une seule fois par appareil, jamais bloquante.
+   --------------------------------------------------------------- */
+.jl-ouverture-filet {
+  transform-origin: left center;
+  animation: jl-filet-deploie var(--duree-longue) var(--ease) both,
+             jl-filet-monte var(--duree-longue) var(--ease) both;
+  animation-delay: calc(var(--rang) * 90ms), calc(900ms + var(--rang) * 60ms);
+}
+@keyframes jl-filet-deploie { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes jl-filet-monte {
+  from { opacity: 1; transform: translateY(0) scaleX(1); }
+  to { opacity: 0; transform: translateY(-12px) scaleX(1); }
+}
+
+.jl-ouverture-plein {
+  animation: jl-remplissage var(--duree-longue) var(--ease) both;
+  animation-delay: 1200ms;
+  clip-path: inset(100% 0 0 0);
+}
+@keyframes jl-remplissage {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+.jl-ouverture-contour { animation: jl-fondu-seul var(--duree-moyenne) var(--ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jl-ouverture-filet, .jl-ouverture-plein, .jl-ouverture-contour {
+    animation: jl-fondu-seul 200ms var(--ease) both;
+    clip-path: none;
+  }
+}
+:root[data-mouvement="reduit"] .jl-ouverture-filet,
+:root[data-mouvement="reduit"] .jl-ouverture-plein,
+:root[data-mouvement="reduit"] .jl-ouverture-contour {
+  animation: jl-fondu-seul 200ms var(--ease) both;
+  clip-path: none;
+}
