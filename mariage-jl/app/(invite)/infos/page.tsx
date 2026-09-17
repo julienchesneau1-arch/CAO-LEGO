@@ -1,5 +1,6 @@
-import { contenus } from "@/lib/contenus";
+import { contenus, hebergements } from "@/lib/contenus";
 import { itineraires } from "@/lib/cartes";
+import { formater } from "@/lib/i18n";
 import { langueEtTextes } from "@/lib/page-commune";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ const SECTIONS = [
  */
 export default async function PageInfos() {
   const { langue, t } = await langueEtTextes();
-  const blocs = await contenus(langue);
+  const [blocs, lits] = await Promise.all([contenus(langue), hebergements()]);
   const destination = t.infos.adresse;
 
   const aCompleter = (texte: string): boolean =>
@@ -68,6 +69,43 @@ export default async function PageInfos() {
             <p className={vide ? "jl-doux" : "whitespace-pre-line"}>
               {vide ? t.infos.attente : texte}
             </p>
+
+            {/* Les hébergements viennent de l'admin : tant que la liste est
+                vide, la section dit simplement qu'elle arrive. */}
+            {section === "dormir" && lits.length > 0 ? (
+              <ul className="flex flex-col gap-6">
+                {lits.map((lit) => (
+                  <li key={lit.id} className="flex flex-col gap-2 border p-5" style={{ borderColor: "var(--filet)" }}>
+                    <p className="jl-titre text-xl">{lit.name}</p>
+                    {lit.distance_km === null ? null : (
+                      <p className="jl-doux tabular-nums">
+                        {formater(t.infos_dormir.distance, { km: String(lit.distance_km) })}
+                      </p>
+                    )}
+                    {lit.price_hint === null ? null : (
+                      <p className="jl-doux">
+                        {formater(t.infos_dormir.prix, { prix: lit.price_hint })}
+                      </p>
+                    )}
+                    {lit.shuttle === null ? null : (
+                      <p className="jl-doux">
+                        {lit.shuttle ? t.infos_dormir.navette : t.infos_dormir.sans_navette}
+                      </p>
+                    )}
+                    {lit.phone === null ? null : (
+                      <a href={`tel:${lit.phone.replace(/\s/g, "")}`} className="jl-cible flex items-center underline decoration-1 underline-offset-8">
+                        {t.infos_dormir.telephone} · {lit.phone}
+                      </a>
+                    )}
+                    {lit.url === null ? null : (
+                      <a href={lit.url} rel="noreferrer" target="_blank" className="jl-cible flex items-center underline decoration-1 underline-offset-8">
+                        {t.infos_dormir.reserver}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {bloc?.lien == null ? null : (
               <a
                 href={bloc.lien}

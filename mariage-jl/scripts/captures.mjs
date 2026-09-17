@@ -61,6 +61,7 @@ const serveur = spawn("node", [".next/standalone/server.js"], {
     // Le serveur compilé tourne en NODE_ENV=production : le secret de cookie
     // est alors obligatoire (c'est voulu). On en tire un, jetable.
     JL_COOKIE_SECRET: process.env["JL_COOKIE_SECRET"] ?? randomBytes(32).toString("base64url"),
+    JL_PROMESSE_CLE_PUBLIQUE: process.env["JL_PROMESSE_CLE_PUBLIQUE"] ?? "",
   },
   cwd: new URL("..", import.meta.url).pathname,
   stdio: "ignore",
@@ -160,6 +161,17 @@ try {
 
   await page.goto(`${BASE}/design`, { waitUntil: "networkidle" });
   await prendre("16-direction-artistique");
+
+  await page.goto(`${BASE}/le-texte`, { waitUntil: "networkidle" });
+  await prendre("18-le-texte", { attente: 2600 });
+  await page.getByRole("button", { name: "Sauf que…" }).click();
+  await prendre("19-le-texte-sauf-que", { attente: 2600 });
+
+  await page.goto(`${BASE}/promesse`, { waitUntil: "networkidle" });
+  await prendre("20-la-promesse");
+
+  await page.goto(`${BASE}/loin`, { waitUntil: "networkidle" });
+  await prendre("21-ceux-qui-sont-loin");
 
   await page.goto(new URL("../secours/index.html", import.meta.url).href, { waitUntil: "load" });
   await prendre("17-page-de-secours");

@@ -8,7 +8,16 @@ import type { Periode } from "./periode";
  * n'affiche jamais un onglet qui mènerait à une page absente. C'est ce qui
  * permet de livrer version par version sans jamais montrer un cul-de-sac.
  */
-export const LIVREES = new Set(["/", "/programme", "/reponse", "/infos", "/faq"]);
+export const LIVREES = new Set([
+  "/",
+  "/programme",
+  "/reponse",
+  "/infos",
+  "/faq",
+  "/le-texte",
+  "/loin",
+  "/promesse",
+]);
 
 export type Onglet = { readonly cle: string; readonly chemin: string };
 

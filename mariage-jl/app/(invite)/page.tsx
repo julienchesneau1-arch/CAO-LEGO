@@ -142,6 +142,20 @@ export default async function Accueil() {
 
         <hr className="jl-filet" />
 
+        <Link
+          href="/le-texte"
+          className="jl-etiquette jl-cible flex items-center underline decoration-1 underline-offset-8"
+        >
+          {t.texte.lien}
+        </Link>
+
+        <Link
+          href="/promesse"
+          className="jl-etiquette jl-cible flex items-center underline decoration-1 underline-offset-8"
+        >
+          {t.promesse.lien}
+        </Link>
+
         {foyer === undefined ? null : (
           <Link
             href="/partager"

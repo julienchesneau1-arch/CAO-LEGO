@@ -28,7 +28,9 @@
     "lighthouse": "node scripts/lighthouse.mjs",
     "polices": "node scripts/telecharger-polices.mjs",
     "gen:icone": "node scripts/build-icone.mjs",
-    "postbuild": "node scripts/postbuild.mjs"
+    "postbuild": "node scripts/postbuild.mjs",
+    "promesse:cles": "node scripts/promesse-cles.mjs",
+    "promesse:ouvrir": "node --experimental-strip-types scripts/promesse-ouvrir.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

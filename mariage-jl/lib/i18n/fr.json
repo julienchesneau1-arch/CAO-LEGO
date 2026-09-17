@@ -264,5 +264,44 @@
     "en_attente": "{nombre} réponse en attente de réseau",
     "en_attente_pluriel": "{nombre} réponses en attente de réseau",
     "envoye": "Votre réponse vient de partir."
+  },
+  "texte": {
+    "lien": "Le texte",
+    "revoir": "Revoir le film",
+    "sens_endroit": "Le texte, du début à la fin.",
+    "sens_inverse": "Le texte, de la fin au début."
+  },
+  "loin": {
+    "titre": "Ceux qui sont loin",
+    "intro": "Vous ne pourrez pas être là. Vous pouvez laisser un mot : nous le lirons.",
+    "champ": "Votre mot pour Julien et Lauriane",
+    "visibilite": "Qui peut le lire",
+    "visibilite_prive": "Julien et Lauriane seulement",
+    "visibilite_livre": "Le livre d’or, visible des invités",
+    "envoyer": "Envoyer",
+    "envoye": "C’est envoyé. Merci.",
+    "erreur": "Nous n’avons pas pu envoyer. Réessayez dans un instant.",
+    "diffusion_titre": "Suivre la cérémonie",
+    "diffusion_attente": "Le lien de diffusion sera ajouté ici avant le jour J, visible seulement depuis votre invitation."
+  },
+  "infos_dormir": {
+    "distance": "{km} km du domaine",
+    "prix": "Prix indicatif : {prix}",
+    "navette": "Navette depuis cet hébergement",
+    "sans_navette": "Pas de navette depuis cet hébergement",
+    "telephone": "Téléphone",
+    "reserver": "Voir et réserver"
+  },
+  "promesse": {
+    "lien": "La promesse",
+    "titre": "La promesse",
+    "echo": "Leur plus belle promesse reste à faire.",
+    "intro": "Écrivez un vœu pour Julien et Lauriane. Il sera scellé, et personne ne le lira — pas même eux — avant le 3 juin 2029.",
+    "champ": "Votre vœu",
+    "sceller": "Sceller",
+    "scelle": "Votre vœu est scellé.",
+    "erreur": "Nous n’avons pas pu sceller votre vœu. Réessayez dans un instant.",
+    "indisponible": "La promesse ouvrira bientôt.",
+    "garantie": "Le vœu est chiffré dans votre téléphone avant d’être envoyé. Le serveur ne reçoit qu’une enveloppe close, et n’a aucun moyen de l’ouvrir. Il est anonyme."
   }
 }

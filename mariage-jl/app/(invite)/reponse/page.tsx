@@ -125,6 +125,12 @@ export default async function PageReponse({
             {t.reponse.message}
           </h2>
           <p className="jl-doux">{t.reponse.non_suite}</p>
+          <a
+            href="/loin"
+            className="jl-cible jl-etiquette flex items-center underline decoration-1 underline-offset-8"
+          >
+            {t.loin.titre}
+          </a>
           {verrouillee ? null : (
             <form method="post" action="/reponse/details" data-file-attente className="flex flex-col gap-4">
               <label className="flex flex-col gap-2">

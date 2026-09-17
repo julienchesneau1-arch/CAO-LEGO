@@ -264,5 +264,44 @@
     "en_attente": "{nombre} reply waiting for the network",
     "en_attente_pluriel": "{nombre} replies waiting for the network",
     "envoye": "Your reply has just been sent."
+  },
+  "texte": {
+    "lien": "The text",
+    "revoir": "Watch the film again",
+    "sens_endroit": "The text, from the beginning to the end.",
+    "sens_inverse": "The text, from the end to the beginning."
+  },
+  "loin": {
+    "titre": "Those who are far away",
+    "intro": "You will not be able to join us. You can leave a word: we will read it.",
+    "champ": "Your word for Julien and Lauriane",
+    "visibilite": "Who can read it",
+    "visibilite_prive": "Julien and Lauriane only",
+    "visibilite_livre": "The guest book, visible to guests",
+    "envoyer": "Send",
+    "envoye": "Sent. Thank you.",
+    "erreur": "We could not send it. Please try again in a moment.",
+    "diffusion_titre": "Follow the ceremony",
+    "diffusion_attente": "The streaming link will be added here before the day, visible only from your invitation."
+  },
+  "infos_dormir": {
+    "distance": "{km} km from the venue",
+    "prix": "Indicative price: {prix}",
+    "navette": "Shuttle from this place",
+    "sans_navette": "No shuttle from this place",
+    "telephone": "Phone",
+    "reserver": "See and book"
+  },
+  "promesse": {
+    "lien": "The promise",
+    "titre": "The promise",
+    "echo": "Their finest promise is yet to be made.",
+    "intro": "Write a wish for Julien and Lauriane. It will be sealed, and nobody will read it — not even them — before 3 June 2029.",
+    "champ": "Your wish",
+    "sceller": "Seal it",
+    "scelle": "Your wish is sealed.",
+    "erreur": "We could not seal your wish. Please try again in a moment.",
+    "indisponible": "The promise will open shortly.",
+    "garantie": "The wish is encrypted on your phone before it is sent. The server only receives a sealed envelope, and has no way to open it. It is anonymous."
   }
 }

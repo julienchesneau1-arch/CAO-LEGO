@@ -12,6 +12,9 @@ const Schema = z.object({
   JL_ALLOW_CLOCK_OVERRIDE: z.enum(["0", "1"]).default("0"),
   JL_VERSION: z.string().default("v1-dev"),
   JL_FILM_URL: z.string().optional(),
+  // Clé publique de « La promesse » : elle n'a rien de secret, c'est la clé
+  // privée — imprimée, conservée hors ligne — qui ouvre les vœux en 2029.
+  JL_PROMESSE_CLE_PUBLIQUE: z.string().optional(),
   JL_FILM_POSTER_URL: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });

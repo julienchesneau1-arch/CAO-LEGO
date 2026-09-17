@@ -2,6 +2,26 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
+## V2 — La préparation — en cours — 17 septembre 2026
+
+Première tranche : ce qui ne dépend de personne.
+
+### Livré
+
+- **« Le texte »** : le palindrome du faire-part, quatorze lignes qui s'allument l'une après l'autre comme dans le film. « Sauf que… » les rallume en sens inverse. Aucune explication — c'est le propre du texte. Le changement de sens est annoncé aux lecteurs d'écran par une région vivante, sans que le nom de la liste bouge.
+- **« La promesse »** : un vœu écrit par l'invité, **chiffré dans son téléphone** avant d'être envoyé. Le serveur ne reçoit qu'une enveloppe close et n'a aucun moyen de l'ouvrir : c'est ce qui rend vraie la phrase du brief, « invisibles de tous, y compris des mariés ». Schéma hybride avec WebCrypto seul, sans dépendance : une clé AES-256-GCM par vœu, elle-même chiffrée en RSA-OAEP-2048. Le vœu est **anonyme** : la table ne porte aucune colonne de foyer, donc même avec l'accès à la base on ne peut pas deviner qui a écrit quoi. Aucun compteur de participation (§17).
+- **Deux outils en ligne de commande** : `pnpm promesse:cles` produit la paire (clé publique pour l'environnement, clé privée à imprimer en deux exemplaires et à confier à deux personnes), et `pnpm promesse:ouvrir` déchiffre les vœux — en refusant de le faire avant le 3 juin 2029.
+- **« Ceux qui sont loin »** : un message écrit aux mariés, privé par défaut, ou pour le livre d'or si l'invité le choisit. Emplacement du lien de diffusion, visible seulement depuis une invitation reconnue. Proposé aussi au bout du parcours « Non ».
+- **Hébergements** : la liste éditable s'affiche dans Infos (distance, prix indicatif, navette, téléphone, lien de réservation) ; tant qu'elle est vide, la section le dit.
+
+### Mesures
+
+160 tests, 62 parcours sur deux gabarits. Six tests portent sur le seul point qui compte pour La promesse : un vœu scellé ne contient aucun mot du texte, ne s'ouvre pas avec une autre clé, et refuse une enveloppe modifiée d'un seul octet.
+
+### Ce qui attend une décision
+
+`pnpm promesse:cles` est prêt, mais **la garde de la clé privée est une décision, pas du code** (question V2-05) : sans elle, les vœux de 2029 resteront fermés pour toujours. Deux exemplaires papier, deux personnes différentes — à valider.
+
 ## V1 — Hors ligne — 17 septembre 2026
 
 « Tout fonctionne mal connecté » est la règle 4 du brief, et le domaine est à la campagne.

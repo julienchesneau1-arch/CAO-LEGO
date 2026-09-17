@@ -14,7 +14,8 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 |---|---|---|
 | **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, validée le 17/09/2026** |
 | **V1 — Le socle** | Accès par QR, code de secours, QR générique, partage de l'accès, premier lancement, accueil « Avant », navigation, Programme + `.ics`, Infos, FAQ, réponse complète, espace des mariés, planche QR PDF | **complet, en attente des contenus et des relectures** |
-| V2 → V4 | voir `docs/PLAN.md` | pas commencées |
+| **V2 — La préparation** | **Fait** : « Le texte », « La promesse », messages des absents, hébergements affichés. **Reste** : rappels e-mail, fil d'annonces, Web Push | en cours |
+| V3 → V4 | voir `docs/PLAN.md` | pas commencées |
 
 Ce qui n'est **pas** fait en V0, volontairement : aucun achat de domaine, aucune action sur le VPS, aucun projet Supabase. Ces trois points attendent tes réponses (`docs/QUESTIONS_BLOQUANTES.md`, section V0).
 
@@ -102,6 +103,25 @@ courriel, sans rien changer d'autre.
 À faire une seule fois dans GitHub : `Settings` → `Pages` → `Source : GitHub Actions`. Le dépôt la publiera à chaque modification. Le jour où le domaine est acheté, on décommente la ligne `CNAME` dans `.github/workflows/pages.yml`.
 
 ---
+
+## La promesse — à faire une seule fois
+
+```bash
+pnpm promesse:cles
+```
+
+La commande affiche deux clés. La **publique** va dans `.env.local`
+(`JL_PROMESSE_CLE_PUBLIQUE`) : elle ne sert qu'à sceller, elle n'a rien de
+secret. La **privée** est à imprimer en deux exemplaires, confiés à deux
+personnes différentes, puis à effacer de l'écran. Elle n'existe nulle part
+ailleurs : c'est ce qui garantit que personne — vous compris — ne peut lire un
+vœu avant le 3 juin 2029.
+
+Ce jour-là : `pnpm promesse:ouvrir cle-privee.txt` écrit tous les vœux dans un
+fichier. Avant cette date, la commande refuse.
+
+**Perdre la clé privée rend les vœux définitivement illisibles.** C'est le prix
+de la promesse.
 
 ## Sans réseau
 

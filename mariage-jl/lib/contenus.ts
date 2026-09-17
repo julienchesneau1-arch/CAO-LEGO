@@ -34,3 +34,21 @@ export async function faq(langue: Langue): Promise<ReadonlyArray<QuestionFaq>> {
        from public.faq where published order by sort_order`,
   );
 }
+
+export type Hebergement = {
+  readonly id: string;
+  readonly name: string;
+  readonly distance_km: string | null;
+  readonly price_hint: string | null;
+  readonly url: string | null;
+  readonly phone: string | null;
+  readonly shuttle: boolean | null;
+};
+
+/** Hébergements éditables depuis l'admin (brief §8.4). */
+export async function hebergements(): Promise<ReadonlyArray<Hebergement>> {
+  return requete<Hebergement>(
+    `select id, name, distance_km, price_hint, url, phone, shuttle
+       from public.accommodations order by sort_order, name`,
+  );
+}

@@ -3,6 +3,11 @@ import { URL_E2E } from "./tests/e2e/fixtures";
 
 const PORT = 3220;
 
+/** Clé publique jetable, utilisée seulement par les parcours. */
+const CLE_PUBLIQUE_TEST =
+  
+  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo04slJzGtrZWI4GjOc3NLT48gKuWB+eX/CtMbnwNcbkkaeWnlbV8PCkp1YQZT91d6rG6Xvwo5oVXFfT8kKGEigaihIJYwcKI+Zi7zpkSl7VKt9V0js8XqyTx/S0b1GnMRZ80mSsStSBgiRyMCr3FtR+EZd9HGl7G7GR8Y92nimAj7FUDLAxu+G2VjRhQRHmPfZMuz/ImBhGYykUHf0AXBykaHtPA3t0+tWdM2RU9jVhAFUX18T+DD6hVETaNmSenmyPQTBmr4YfyeXCB1+5ruGIM3yzYzTuPVpWolfXvFKIS2Eiaw6U4iNW5rRjsdbTgOV43G5XcBuHjYvafD5OB9QIDAQAB";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: /.*\.spec\.ts/,
@@ -47,6 +52,9 @@ export default defineConfig({
       JL_DATABASE_URL: URL_E2E,
       JL_COOKIE_SECRET: "secret-de-test-playwright-0123456789abcdef",
       JL_VERSION: "e2e",
+      // Clé publique de scellement pour les parcours. Une clé publique n'est
+      // pas un secret ; la clé privée correspondante n'existe nulle part.
+      JL_PROMESSE_CLE_PUBLIQUE: process.env["JL_PROMESSE_CLE_PUBLIQUE"] ?? CLE_PUBLIQUE_TEST,
     },
   },
 });

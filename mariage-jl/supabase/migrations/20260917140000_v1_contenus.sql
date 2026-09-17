@@ -22,7 +22,11 @@ insert into public.content_blocks (key, locale, value) values
   ('infos.covoiturage',   'fr', '{"texte": "[À COMPLÉTER]", "lien": null}'),
   ('infos.covoiturage',   'en', '{"texte": "[TO BE COMPLETED]", "lien": null}'),
   ('infos.liste_mariage', 'fr', '{"texte": "[À COMPLÉTER]", "lien": null}'),
-  ('infos.liste_mariage', 'en', '{"texte": "[TO BE COMPLETED]", "lien": null}')
+  ('infos.liste_mariage', 'en', '{"texte": "[TO BE COMPLETED]", "lien": null}'),
+  -- Lien de diffusion de la cérémonie : rempli plus tard, visible seulement
+  -- des foyers reconnus (brief §8.9, arbitrage C9 de la section 0 bis).
+  ('loin.diffusion',      'fr', '{"texte": "[À COMPLÉTER]", "lien": null}'),
+  ('loin.diffusion',      'en', '{"texte": "[TO BE COMPLETED]", "lien": null}')
 on conflict (key, locale) do nothing;
 
 -- Les dix-huit questions du brief §15. Publiées : une question sans réponse
