@@ -19,7 +19,9 @@
     "gen:monogram": "node scripts/build-monogram.mjs",
     "verify": "pnpm run check:i18n && pnpm run lint && pnpm run test && pnpm run build",
     "gen:secours": "node scripts/build-secours.mjs",
-    "captures": "node scripts/captures.mjs"
+    "captures": "node scripts/captures.mjs",
+    "db:local": "./scripts/pg-local.sh start",
+    "db:stop": "./scripts/pg-local.sh stop"
   },
   "dependencies": {
     "next": "16.3.5",
@@ -30,9 +32,11 @@
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.10.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "opentype.js": "2.0.0",
+    "pg": "^8.23.0",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vitest": "5.0.1",

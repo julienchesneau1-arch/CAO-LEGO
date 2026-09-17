@@ -8,6 +8,25 @@ on:
 jobs:
   verifier:
     runs-on: ubuntu-latest
+
+    # Les tests RLS tournent contre un vrai PostgreSQL : sans base, ils
+    # échouent au lieu d'être silencieusement ignorés (JL_REQUIRE_DB=1).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      JL_REQUIRE_DB: "1"
+      JL_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:55432/postgres
+
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -20,7 +39,7 @@ jobs:
         run: pnpm run check:i18n
       - name: TypeScript strict
         run: pnpm run lint
-      - name: Tests unitaires
+      - name: Tests unitaires et RLS
         run: pnpm run test
       - name: Compilation
         run: pnpm run build

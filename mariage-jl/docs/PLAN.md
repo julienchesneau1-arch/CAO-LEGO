@@ -157,7 +157,8 @@ tests/                 unit/ · e2e/
 
 ## 4. Modèle de données
 
-Schéma Postgres (esquisse, à figer en V0). **Toutes les tables en RLS active, refus par défaut.** Les lectures invité passent par le serveur Next.js avec filtrage par foyer ; les politiques RLS servent de seconde barrière pour les rôles Supabase (admin, régie).
+Schéma Postgres — **figé et appliqué** dans `supabase/migrations/` (24 tables, 31 politiques).
+Trois écarts par rapport à l'esquisse ci-dessous, pour n'avoir qu'une source de vérité : `periods_override` et la date du mariage sont fusionnées dans `parametres` (une seule ligne) ; `admin_users` porte un `user_id` rempli à la première connexion ; `promises` porte `remise_le`, faute de quoi la règle « remis puis supprimés » n'était pas vérifiable. **Toutes les tables en RLS active, refus par défaut.** Les lectures invité passent par le serveur Next.js avec filtrage par foyer ; les politiques RLS servent de seconde barrière pour les rôles Supabase (admin, régie).
 
 ```sql
 -- Accès
@@ -289,6 +290,8 @@ Chaque écran est validé contre ces huit lectures avant d'être considéré com
 ### V0 — Fondations (immédiat)
 Domaine acheté ; **page de secours statique en ligne hors VPS** sur le domaine définitif ; audit du VPS en lecture seule consigné dans `INFRA.md` puis validé ; jetons de direction artistique (7 couleurs, 3 tailles de texte, mode Papier), polices auto-hébergées, `<Monogram />` et `<Signature />` en SVG vectorisé, page `/design` ; projet Supabase en Europe, schéma, RLS et tests RLS ; squelette i18n avec vérification des clés au build ; CI (tests + build image).
 *Terminé quand* : `/design` validée par Julien ; tests RLS verts ; page de secours servie en HTTPS sur le domaine ; `INFRA.md` complété et validé.
+
+État au 17/09/2026 : **tests RLS verts** (26 tests contre PostgreSQL 16, `supabase/README.md`), jetons de DA, monogramme, `/design` et page de secours **livrés**. Restent : la validation de `/design` par Julien, le domaine (V0-02) pour servir la page de secours en HTTPS, le projet Supabase (V0-06) pour y pousser les migrations, et les accès VPS (V0-05) pour `INFRA.md`.
 
 ### V1 — Le socle (avant le faire-part)
 Accès QR + code de secours + QR générique ; premier lancement en 3 écrans ; confort de lecture ; accueil « Avant » (film, compte à rebours, carte « À faire ») ; Programme + déroulé + `.ics` ; Infos (venir, dormir, tenue, enfants, accessibilité, liste de mariage, rentrer en sécurité) ; FAQ avec recherche ; RSVP complet avec parcours « Non » et consentement allergies ; partage d'accès au foyer ; admin invités (import CSV, édition, révocation) ; **planche QR PDF** ; pages Confidentialité / Mes données ; prestataire e-mail configuré (lien magique admin, SPF/DKIM/DMARC).

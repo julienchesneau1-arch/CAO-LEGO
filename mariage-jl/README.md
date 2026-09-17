@@ -12,7 +12,7 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 
 | Version | Contenu | État |
 |---|---|---|
-| **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, vérifications automatiques | **Livrée, en attente de ta validation** |
+| **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, en attente de ta validation** |
 | V1 — Le socle | Accès par QR, réponse, programme, infos, FAQ, admin invités, planche QR | pas commencée |
 | V2 → V4 | voir `docs/PLAN.md` | pas commencées |
 
@@ -41,7 +41,13 @@ pnpm verify           # traductions + TypeScript + tests + compilation
 pnpm captures          # captures d'écran mobile dans captures/
 pnpm gen:secours      # recompose la page de secours (secours/index.html)
 pnpm gen:monogram     # régénère le monogramme vectorisé depuis la police
+pnpm db:local         # démarre un PostgreSQL jetable pour les tests de sécurité
+pnpm db:stop          # l'arrête
 ```
+
+`pnpm verify` exécute 50 tests. Les 26 tests de sécurité de la base ont besoin
+d'un PostgreSQL : sans lui, ils sont ignorés en local (et refusés en
+intégration continue, où une base est fournie). Voir `supabase/README.md`.
 
 Deux pages existent aujourd'hui :
 
@@ -62,6 +68,7 @@ Deux pages existent aujourd'hui :
 
 1. **Aucune information inventée.** Tout ce qui n'est pas connu s'affiche `[À COMPLÉTER]` et sera éditable depuis l'espace admin. Horaires, adresses, prix, noms, liens : rien n'est deviné.
 2. **Les cinq couleurs ne portent jamais de texte.** Un test échoue si une couleur de moment est utilisée comme couleur de texte quelque part dans le code.
+3. **La base refuse tout par défaut.** Un invité n'a aucune clé d'accès à la base ; la régie ne voit ni foyers, ni invités, ni allergies ; les vœux de « La promesse » ne sont lisibles par personne, pas même par vous. Vingt-six tests le vérifient à chaque envoi de code.
 
 Les vérifications tournent aussi à chaque envoi de code (`.github/workflows/ci.yml`) : traductions complètes en français et en anglais, TypeScript strict, tests, compilation, page de secours à jour.
 
