@@ -2,10 +2,7 @@ import { empreinte, genererJeton } from "@/lib/acces";
 import { une } from "@/lib/db";
 import { foyerCourant, tentativeAutorisee } from "@/lib/foyer";
 import { redirection } from "@/lib/http";
-
-/** Durée et nombre d'ouvertures proposés en attendant l'arbitrage V1-17. */
-export const JOURS_VALIDITE = 30;
-export const OUVERTURES_MAX = 5;
+import { JOURS_VALIDITE, OUVERTURES_MAX } from "@/lib/partage";
 
 /**
  * Crée un lien de partage du foyer (brief §6). Le jeton n'est stocké que

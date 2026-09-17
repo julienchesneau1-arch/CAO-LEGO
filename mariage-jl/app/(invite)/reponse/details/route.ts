@@ -1,11 +1,9 @@
 import type { NextRequest } from "next/server";
 import { foyerCourant, tentativeAutorisee } from "@/lib/foyer";
+import { VERSION_CONSENTEMENT } from "@/lib/consentement";
 import { redirection } from "@/lib/http";
 import { moments } from "@/lib/moments";
 import { REGIMES, SchemaDetails, enregistrerDetails, reponseVerrouillee } from "@/lib/rsvp";
-
-/** Version du texte de consentement : tracée avec chaque allergie (§11). */
-export const VERSION_CONSENTEMENT = "allergies-2026-09-17";
 
 const texte = (donnees: FormData, cle: string): string => {
   const valeur = donnees.get(cle);

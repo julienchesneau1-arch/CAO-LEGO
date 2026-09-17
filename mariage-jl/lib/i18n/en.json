@@ -256,5 +256,13 @@
     "planche_bouton": "Regenerate access and download",
     "planche_avertissement": "Regenerating replaces every QR code and backup code. Sheets already printed stop working. Only do this before the invitations are sent.",
     "domaine_absent": "The domain is not bought yet: the sheet will use the server address."
+  },
+  "horsligne": {
+    "titre": "No network right now",
+    "texte": "Everything you do will be sent as soon as it is back.",
+    "disponible": "These pages stay available, as you last opened them:",
+    "en_attente": "{nombre} reply waiting for the network",
+    "en_attente_pluriel": "{nombre} replies waiting for the network",
+    "envoye": "Your reply has just been sent."
   }
 }

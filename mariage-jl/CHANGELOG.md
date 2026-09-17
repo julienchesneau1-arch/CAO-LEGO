@@ -2,6 +2,35 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
+## V1 — Hors ligne — 17 septembre 2026
+
+« Tout fonctionne mal connecté » est la règle 4 du brief, et le domaine est à la campagne.
+
+### Livré
+
+- **Service worker** (Serwist) : le programme, les infos et la FAQ restent consultables sans réseau une fois ouverts, la recherche de la FAQ comprise — elle se fait dans le téléphone.
+- **Écran « Pas de réseau pour l'instant »**, précaché à l'installation, bilingue et sans aucune donnée personnelle : c'est la condition pour qu'il ait le droit de vivre dans un cache.
+- **File d'attente persistante** (IndexedDB) pour les réponses : une réponse donnée sans réseau est gardée, annoncée sobrement à l'écran, et repart d'elle-même au retour du réseau. Sans JavaScript, le formulaire part normalement — cette couche n'enlève rien, elle ajoute.
+- **Manifeste** de l'application : l'icône et les couleurs sont correctes pour qui ajoute l'app à son écran d'accueil, sans que rien ne le propose jamais.
+
+### Deux failles réelles trouvées et refermées
+
+- **Le cache par défaut conservait les charges RSC de l'accueil et de la réponse** — donc le nom du foyer et sa réponse — sur le disque du téléphone. Un téléphone prêté ou perdu les rendait lisibles. Désormais, **seules les navigations vers les trois pages de contenu** entrent en cache ; tout le reste du domaine passe par le réseau sans laisser de trace, et un test vérifie qu'aucun cache ne contient `/`, `/reponse` ni `/partager`.
+- **Le même cache accumulait les préchargements RSC** (`?_rsc=<jeton>`, un jeton différent à chaque chargement) : le cache grossissait sans fin sur le téléphone de l'invité. Les charges RSC n'y entrent plus.
+
+### Deux défauts d'outillage, corrigés à la racine
+
+- La sortie `standalone` de Next ne contient ni `public/` ni `.next/static` : le serveur compilé servait des pages **sans style ni JavaScript**, ce qui faisait échouer les 54 parcours d'un coup sans en dire la cause. Un `postbuild` les copie maintenant à chaque compilation.
+- Un serveur orphelin laissé par une exécution interrompue faisait échouer les parcours **et** la mesure Lighthouse (toutes les notes à zéro, message trompeur). La libération du port est partagée par les deux outils.
+
+### Une méthode de test rectifiée
+
+`context.setOffline(true)` met bien `navigator.onLine` à faux, mais **Chromium continue de joindre 127.0.0.1** : des tests hors ligne bâtis dessus passaient sans rien vérifier. Les parcours hors ligne démarrent donc leur propre serveur et **le coupent** — ce qui reproduit ce que vit l'invité : le téléphone se croit connecté, et plus rien ne répond. La file d'attente a été revue en conséquence : elle rattrape aussi bien la coupure du réseau que le serveur injoignable, cas que l'indicateur du navigateur ne signale pas.
+
+### Mesures après ce changement
+
+Lighthouse mobile : Performance 95 à 98, Accessibilité 100, Bonnes pratiques 100. 149 tests, 54 parcours sur deux gabarits.
+
 ## V1 — Qualité mesurée — 17 septembre 2026
 
 Les deux critères de fin de V1 que je peux vérifier moi-même sont atteints.

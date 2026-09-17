@@ -8,12 +8,17 @@ import { FOYER, URL_E2E } from "./fixtures";
  * « Non », et la règle du consentement des allergies vérifiée en base.
  */
 
-/** Attend que l'envoi du formulaire ait abouti avant de lire la base. */
+/**
+ * Attend que le serveur ait **traité** l'envoi avant de lire la base.
+ * Attendre l'inactivité réseau ne suffit pas : le formulaire est envoyé par
+ * `fetch` (pour que la file d'attente puisse rattraper un échec), et la page
+ * pouvait déjà être inactive au moment du clic.
+ */
 const envoyer = async (page: import("@playwright/test").Page, nom: string): Promise<void> => {
-  await Promise.all([
-    page.waitForLoadState("networkidle"),
-    page.getByRole("button", { name: nom, exact: true }).click(),
-  ]);
+  const traite = page.waitForResponse((reponse) => reponse.request().method() === "POST");
+  await page.getByRole("button", { name: nom, exact: true }).click();
+  await traite;
+  await page.waitForLoadState("networkidle");
 };
 
 const enBase = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> => {

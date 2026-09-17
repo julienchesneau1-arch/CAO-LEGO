@@ -1,4 +1,5 @@
 import { Filet } from "@/components/Filet";
+import { FileAttente } from "@/components/FileAttente";
 import { foyerCourant } from "@/lib/foyer";
 import { formater } from "@/lib/i18n";
 import { genreMoment, moments, nomMoment } from "@/lib/moments";
@@ -58,6 +59,13 @@ export default async function PageReponse({
     <main className="mx-auto flex max-w-2xl flex-col gap-10 px-6 py-12">
       <header className="flex flex-col gap-3">
         <h1 className="jl-titre text-3xl">{t.reponse.titre}</h1>
+        <FileAttente
+          libelles={{
+            enAttente: t.horsligne.en_attente,
+            enAttentePluriel: t.horsligne.en_attente_pluriel,
+            envoye: t.horsligne.envoye,
+          }}
+        />
         {etat === "erreur" || etat === "debit" ? (
           <p role="alert" className="border p-4" style={bordure}>
             {t.reponse.erreur}
@@ -82,7 +90,7 @@ export default async function PageReponse({
           </div>
         )}
         {verrouillee ? null : (
-          <form method="post" action="/reponse/statut" className="flex flex-wrap gap-3">
+          <form method="post" action="/reponse/statut" data-file-attente className="flex flex-wrap gap-3">
             {(
               [
                 ["yes", t.reponse.oui],
@@ -118,7 +126,7 @@ export default async function PageReponse({
           </h2>
           <p className="jl-doux">{t.reponse.non_suite}</p>
           {verrouillee ? null : (
-            <form method="post" action="/reponse/details" className="flex flex-col gap-4">
+            <form method="post" action="/reponse/details" data-file-attente className="flex flex-col gap-4">
               <label className="flex flex-col gap-2">
                 <span className="sr-only">{t.reponse.message}</span>
                 <textarea
@@ -139,7 +147,7 @@ export default async function PageReponse({
 
       {/* Étapes 2 à 4, seulement si le foyer vient. Tout est prérempli. */}
       {reponse !== null && reponse.statut !== "no" && !verrouillee ? (
-        <form method="post" action="/reponse/details" className="flex flex-col gap-10">
+        <form method="post" action="/reponse/details" data-file-attente className="flex flex-col gap-10">
           <section aria-labelledby="etape2" className="flex flex-col gap-6">
             <hr className="jl-filet" />
             <h2 id="etape2" className="jl-etiquette">

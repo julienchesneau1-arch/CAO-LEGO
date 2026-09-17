@@ -11,9 +11,9 @@
   "scripts": {
     "dev": "next dev",
     "prebuild": "node scripts/check-i18n.mjs",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "tsc --noEmit",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json",
     "test": "vitest run",
     "check:i18n": "node scripts/check-i18n.mjs",
     "gen:monogram": "node scripts/build-monogram.mjs",
@@ -27,9 +27,11 @@
     "admin:lien": "node scripts/admin-lien.mjs",
     "lighthouse": "node scripts/lighthouse.mjs",
     "polices": "node scripts/telecharger-polices.mjs",
-    "gen:icone": "node scripts/build-icone.mjs"
+    "gen:icone": "node scripts/build-icone.mjs",
+    "postbuild": "node scripts/postbuild.mjs"
   },
   "dependencies": {
+    "idb": "^8.0.3",
     "next": "16.3.5",
     "pdf-lib": "^1.17.1",
     "pg": "^8.23.0",
@@ -37,11 +39,13 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
+    "serwist": "^9.5.12",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.0",
+    "@serwist/next": "^9.5.12",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.10.1",
     "@types/pg": "^8.23.1",

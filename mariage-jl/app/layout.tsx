@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
+import { EnregistrerServiceWorker } from "@/components/EnregistrerServiceWorker";
 import { COOKIE_LANGUE, LANGUE_DEFAUT, estLangue } from "@/lib/i18n";
 import { bodoni, cormorant } from "@/lib/polices";
 import "./globals.css";
@@ -42,6 +43,7 @@ export default async function RacineLayout({
         data-vignette="oui"
       >
         {children}
+        <EnregistrerServiceWorker />
       </body>
     </html>
   );

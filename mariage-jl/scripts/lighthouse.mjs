@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import * as chromeLauncher from "chrome-launcher";
 import lighthouse from "lighthouse";
+import { libererPort } from "./liberer-port.mjs";
 
 const PORT = Number(process.env["PORT"] ?? 3230);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -28,6 +29,8 @@ const AUDITS_VOULUS = new Set(["is-crawlable"]);
 
 const chemin = process.env["JL_CHROMIUM"] ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 if (existsSync(chemin)) process.env["CHROME_PATH"] = chemin;
+
+libererPort(PORT);
 
 const serveur = spawn("node", [".next/standalone/server.js"], {
   env: {

@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import { LienCopiable } from "@/components/LienCopiable";
 import { foyerCourant } from "@/lib/foyer";
 import { COOKIE_LANGUE, LANGUE_DEFAUT, dictionnaire, estLangue, formater } from "@/lib/i18n";
-import { JOURS_VALIDITE, OUVERTURES_MAX } from "./creer/route";
+import { JOURS_VALIDITE, OUVERTURES_MAX } from "@/lib/partage";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Partager l'accès — J & L" };

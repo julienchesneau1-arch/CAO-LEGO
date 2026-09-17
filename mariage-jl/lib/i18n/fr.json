@@ -256,5 +256,13 @@
     "planche_bouton": "Régénérer les accès et télécharger",
     "planche_avertissement": "Régénérer remplace tous les QR codes et codes de secours. Les planches déjà imprimées cessent de fonctionner. À ne faire qu’avant l’envoi du faire-part.",
     "domaine_absent": "Le domaine n’est pas encore acheté : la planche utilisera l’adresse du serveur."
+  },
+  "horsligne": {
+    "titre": "Pas de réseau pour l’instant",
+    "texte": "Tout ce que vous faites sera envoyé dès son retour.",
+    "disponible": "Ces pages restent consultables, telles que vous les avez ouvertes :",
+    "en_attente": "{nombre} réponse en attente de réseau",
+    "en_attente_pluriel": "{nombre} réponses en attente de réseau",
+    "envoye": "Votre réponse vient de partir."
   }
 }

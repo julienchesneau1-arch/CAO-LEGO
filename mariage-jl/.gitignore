@@ -8,3 +8,6 @@ next-env.d.ts
 captures/
 test-results/
 playwright-report/
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js

@@ -103,6 +103,16 @@ courriel, sans rien changer d'autre.
 
 ---
 
+## Sans réseau
+
+Le programme, les infos et la FAQ restent consultables une fois ouverts, la
+recherche comprise. Une réponse donnée sans réseau est gardée dans le
+téléphone et repart d'elle-même au retour du réseau.
+
+Ce qui n'est **jamais** mis en cache : l'accueil, la réponse, le partage et ton
+espace — ils portent le nom du foyer ou des données personnelles. Un téléphone
+prêté ou perdu ne les révèle pas.
+
 ## Deux règles que le code applique tout seul
 
 1. **Aucune information inventée.** Tout ce qui n'est pas connu s'affiche `[À COMPLÉTER]` et sera éditable depuis l'espace admin. Horaires, adresses, prix, noms, liens : rien n'est deviné.
