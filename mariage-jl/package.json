@@ -1,0 +1,41 @@
+{
+  "name": "mariage-jl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "L'application du mariage de Julien & Lauriane — 3 juin 2028",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "prebuild": "node scripts/check-i18n.mjs",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "gen:monogram": "node scripts/build-monogram.mjs",
+    "verify": "pnpm run check:i18n && pnpm run lint && pnpm run test && pnpm run build",
+    "gen:secours": "node scripts/build-secours.mjs",
+    "captures": "node scripts/captures.mjs"
+  },
+  "dependencies": {
+    "next": "16.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "opentype.js": "2.0.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vitest": "5.0.1",
+    "wawoff2": "^2.0.1"
+  }
+}

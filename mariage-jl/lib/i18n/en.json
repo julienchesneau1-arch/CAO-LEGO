@@ -1,0 +1,82 @@
+{
+  "langue": {
+    "nom": "English",
+    "bascule": "Français"
+  },
+  "accueil": {
+    "signature": "J&L — SINCE 2018",
+    "date": "03 · 06 · 2028",
+    "lieu": "Domaine de Roiffé",
+    "attente": "The app for the day is being written. You will receive the link together with the invitation.",
+    "lien_design": "View the art direction"
+  },
+  "confort": {
+    "titre": "Reading comfort",
+    "taille": "Text size",
+    "taille_normale": "Normal",
+    "taille_grande": "Large",
+    "taille_tres_grande": "Very large",
+    "papier": "Paper mode",
+    "mouvement": "Reduce animations",
+    "langue": "Language",
+    "actif": "on",
+    "inactif": "off"
+  },
+  "design": {
+    "titre": "Art direction",
+    "intro": "Internal validation page. It is not intended for guests.",
+    "section_couleurs": "The five moments",
+    "section_neutres": "The neutrals",
+    "section_typo": "Typography",
+    "section_monogramme": "Monogram and signature",
+    "section_mouvement": "Motion",
+    "section_contraste": "Measured contrast",
+    "colonne_moment": "Moment",
+    "colonne_reference": "Reference",
+    "colonne_hex": "Screen hex",
+    "colonne_role": "Role",
+    "role_fil": "Line, dot, border — never text",
+    "contraste_sur_noir": "Ratio on the black background",
+    "contraste_verdict_texte": "Usable as text",
+    "contraste_verdict_fil": "Lines only",
+    "note_couleurs": "The five colours never carry text. This is an art-direction decision: the measurements below show it does not follow from contrast alone.",
+    "monogramme_plein": "Solid",
+    "monogramme_contour": "1 px outline",
+    "mouvement_rejouer": "Play again",
+    "mouvement_note": "Fades and slides of 12 px at most, a single easing curve, 300 to 900 ms.",
+    "typo_titre": "Bodoni Moda — titles, numerals, monogram",
+    "typo_texte": "Cormorant Garamond — body text",
+    "typo_etiquette": "Label in capitals"
+  },
+  "commun": {
+    "a_completer": "[TO BE COMPLETED]"
+  },
+  "moments": {
+    "eclat": {
+      "nom": "L'Éclat",
+      "moment": "Welcome"
+    },
+    "horizon": {
+      "nom": "L'Horizon",
+      "moment": "Ceremony"
+    },
+    "rencontre": {
+      "nom": "La Rencontre",
+      "moment": "Cocktail"
+    },
+    "ivresse": {
+      "nom": "L'Ivresse",
+      "moment": "Dinner"
+    },
+    "nuit": {
+      "nom": "La Nuit",
+      "moment": "Celebration"
+    }
+  },
+  "neutres": {
+    "fond": "Le Fond — balance",
+    "matiere": "La Matière — authenticity",
+    "noir": "Screen background",
+    "papier": "Paper mode"
+  }
+}

@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------
+   Jetons de la direction artistique. Miroir CSS de lib/tokens.ts.
+   Les 5 couleurs ne sont JAMAIS une couleur de texte (brief §3, §17) :
+   elles n'existent ici que comme fils, bordures et fonds de pastille.
+   --------------------------------------------------------------- */
+@theme {
+  --color-jl-noir: #080808;
+  --color-jl-ivoire: #e9e2d8;
+  --color-jl-matiere: #99836f;
+  --color-jl-eclat: #e9b131;
+  --color-jl-horizon: #365d87;
+  --color-jl-rencontre: #cb5726;
+  --color-jl-ivresse: #721f23;
+  --color-jl-nuit: #84568d;
+  --font-titre: var(--police-titre);
+  --font-texte: var(--police-texte);
+}
+
+:root {
+  --fond: #080808;
+  --texte: #e9e2d8;
+  --texte-doux: color-mix(in srgb, #e9e2d8 60%, transparent);
+  --filet: color-mix(in srgb, #e9e2d8 12%, transparent);
+  --base: 18px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --duree-courte: 300ms;
+  --duree-moyenne: 600ms;
+  --duree-longue: 900ms;
+}
+
+/* Confort de lecture : trois échelles, minimum absolu 16 px. */
+:root[data-taille="grande"] { --base: 21px; }
+:root[data-taille="tres-grande"] { --base: 25px; }
+
+/* Mode Papier : proposé à tous, utilisé pour les documents imprimables. */
+:root[data-papier="oui"] {
+  --fond: #e9e2d8;
+  --texte: #121212;
+  --texte-doux: color-mix(in srgb, #121212 65%, transparent);
+  --filet: color-mix(in srgb, #121212 20%, transparent);
+}
+
+html { background: var(--fond); }
+
+body {
+  background: var(--fond);
+  color: var(--texte);
+  font-family: var(--police-texte), Georgia, serif;
+  font-size: var(--base);
+  line-height: 1.55;
+  font-variant-numeric: lining-nums tabular-nums;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Vignette radiale très légère, autorisée par le brief §3. */
+body[data-vignette="oui"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgb(0 0 0 / 0.35) 100%);
+}
+:root[data-papier="oui"] body[data-vignette="oui"]::before { display: none; }
+
+.jl-titre {
+  font-family: var(--police-titre), "Times New Roman", serif;
+  font-weight: 470;
+  font-variation-settings: "opsz" 24;
+  letter-spacing: 0.01em;
+}
+
+/* Étiquettes : capitales, interlettrage 0,3 em, jamais sous 16 px. */
+.jl-etiquette {
+  font-family: var(--police-texte), Georgia, serif;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-size: max(16px, 0.78em);
+  color: var(--texte-doux);
+}
+
+.jl-doux { color: var(--texte-doux); }
+.jl-filet { background: var(--filet); height: 1px; border: 0; }
+
+/* Cibles tactiles : 48 px minimum (WCAG 2.2 AA, brief §12). */
+.jl-cible { min-height: 48px; min-width: 48px; }
+
+.jl-apparition { animation: jl-fondu var(--duree-moyenne) var(--ease) both; }
+@keyframes jl-fondu {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.jl-trace { animation: jl-trace var(--duree-moyenne) var(--ease) both; }
+@keyframes jl-trace {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* Mouvement réduit : simples fondus, jamais de glissement (brief §3). */
+@media (prefers-reduced-motion: reduce) {
+  .jl-apparition, .jl-trace { animation-duration: 1ms; animation-name: jl-fondu-seul; }
+}
+:root[data-mouvement="reduit"] .jl-apparition,
+:root[data-mouvement="reduit"] .jl-trace {
+  animation-duration: 200ms;
+  animation-name: jl-fondu-seul;
+}
+@keyframes jl-fondu-seul { from { opacity: 0; } to { opacity: 1; } }
+
+*:focus-visible {
+  outline: 2px solid var(--texte);
+  outline-offset: 3px;
+}

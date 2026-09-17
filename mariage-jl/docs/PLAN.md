@@ -45,8 +45,8 @@ Fonctions conservées malgré leur coût : « Le texte » (V2), La promesse (V2)
 
 Signalées avant tout code, conformément aux méthodes 3 et 4 de la section 0.
 
-**[ANOMALIE_LOGIQUE : dépôt de code]**
-Le dossier de travail (`CAO-LEGO`) contient un projet Python sans rapport (BFK001, mosaïques LEGO, 64 fichiers suivis). Le brief demande un dossier vide. Les livrables de cette étape sont donc isolés dans `mariage-jl/`. Choix d'emplacement définitif à trancher (question V0-01) avant la première ligne de code applicatif.
+**[ANOMALIE_LOGIQUE : dépôt de code — tranchée le 17/09/2026]**
+Le dossier de travail initial (`CAO-LEGO`) contient un projet Python sans rapport (BFK001, mosaïques LEGO). Décision : **dépôt dédié `mariage-jl`**. Le dépôt GitHub reste à créer par Julien — l'App GitHub de cette session n'a pas le droit de créer un dépôt (HTTP 403). En attendant, le projet est conservé en transit dans `CAO-LEGO/mariage-jl/` pour ne rien perdre, et sera déplacé dès que le dépôt existe.
 
 **[ANOMALIE_LOGIQUE : durée de vie de l'hébergement vs La promesse]**
 §11 conserve les vœux jusqu'au **3 juin 2029**, soit 12 mois après le mariage, alors que §0 bis prévoit un retour à l'offre gratuite Supabase après export et que la galerie est supprimée à 12 mois. L'application doit donc rester en ligne, payée et maintenue, un an après l'événement — ce n'est écrit nulle part. Trois issues possibles (question V2-06) : maintien en ligne jusqu'au 4 juin 2029 ; export chiffré + envoi automatique à la date, puis extinction ; remise manuelle par Julien.
@@ -74,6 +74,9 @@ Atteignable à condition que le film ne soit jamais préchargé : vignette noire
 
 **[POINT DE VIGILANCE : mise en veille Supabase]**
 Un projet Supabase de l'offre gratuite est suspendu après une période d'inactivité (règle à confirmer dans la documentation officielle en V0). La sonde externe interrogeant `/api/health`, qui touche Postgres, suffit à l'empêcher — à vérifier et consigner dans `INFRA.md`, jamais à supposer.
+
+**[CONSTAT MESURÉ : la justification du contraste est inexacte]**
+Le brief affirme que les cinq couleurs ne peuvent pas porter de texte par insuffisance de contraste. Mesures sur le fond `#080808` : L'Éclat 10,30 · La Rencontre 4,70 · La Nuit 3,53 · L'Horizon 2,93 · L'Ivresse 1,85. Deux des cinq passeraient le niveau AA. La règle est **conservée telle quelle** — c'est une décision de direction artistique, pas une contrainte d'accessibilité — et elle est désormais tenue par un test automatique plutôt que par la vigilance.
 
 **[POINT DE VIGILANCE : « photos appréciées » vs §17]**
 §8.7 prévoit un tri « appréciées » alors que §17 interdit tout compteur de participation ou comparaison entre invités. Proposition : conserver un signal privé (« j'aime » non affiché en nombre) servant uniquement à ordonner, sans jamais montrer de total ni d'auteur. À valider (question V3-09).
@@ -105,7 +108,7 @@ DNS              : zone Hostinger (hPanel) — bascule = changement d'enregistre
 
 | Sujet | Décision | Pourquoi |
 |---|---|---|
-| Framework | Next.js App Router, version épinglée après vérification de la doc officielle en V0 (question V0-04), sortie `standalone` | Rendu serveur pour le premier affichage, images optimisées, un seul artefact Docker |
+| Framework | Next.js **16.3.5** (App Router, sortie `standalone`), React 19.3.0 — versions relevées sur le registre npm le 17/09/2026 | Rendu serveur pour le premier affichage, images optimisées, un seul artefact Docker |
 | TypeScript | `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` | Exigence du brief, zéro `any` toléré |
 | Styles | Tailwind + variables CSS pour les 7 couleurs et les 3 tailles de texte | Le confort de lecture change une variable, pas un composant |
 | i18n | Dictionnaires JSON typés (`fr.json`, `en.json`) + cookie `jl_lang`, sans dépendance ni préfixe d'URL | Application privée (pas de SEO), une dépendance de moins, clés vérifiées au build : toute clé manquante casse la compilation |

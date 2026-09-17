@@ -1,0 +1,82 @@
+{
+  "langue": {
+    "nom": "Français",
+    "bascule": "English"
+  },
+  "accueil": {
+    "signature": "J&L — DEPUIS 2018",
+    "date": "03 · 06 · 2028",
+    "lieu": "Domaine de Roiffé",
+    "attente": "L’application de la journée s’écrit en ce moment. Vous recevrez le lien en même temps que le faire-part.",
+    "lien_design": "Voir la direction artistique"
+  },
+  "confort": {
+    "titre": "Confort de lecture",
+    "taille": "Taille du texte",
+    "taille_normale": "Normale",
+    "taille_grande": "Grande",
+    "taille_tres_grande": "Très grande",
+    "papier": "Mode Papier",
+    "mouvement": "Réduire les animations",
+    "langue": "Langue",
+    "actif": "activé",
+    "inactif": "désactivé"
+  },
+  "design": {
+    "titre": "Direction artistique",
+    "intro": "Page de validation interne. Elle n’est pas destinée aux invités.",
+    "section_couleurs": "Les cinq moments",
+    "section_neutres": "Les neutres",
+    "section_typo": "Typographie",
+    "section_monogramme": "Monogramme et signature",
+    "section_mouvement": "Mouvement",
+    "section_contraste": "Contrastes mesurés",
+    "colonne_moment": "Moment",
+    "colonne_reference": "Référence",
+    "colonne_hex": "Hex écran",
+    "colonne_role": "Rôle",
+    "role_fil": "Fil, pastille, bordure — jamais du texte",
+    "contraste_sur_noir": "Rapport sur le fond noir",
+    "contraste_verdict_texte": "Utilisable comme texte",
+    "contraste_verdict_fil": "Réservé aux fils",
+    "note_couleurs": "Les cinq couleurs ne portent jamais de texte. Cette règle est une décision de direction artistique : les mesures ci-dessous montrent qu’elle ne découle pas seulement du contraste.",
+    "monogramme_plein": "Plein",
+    "monogramme_contour": "Contour 1 px",
+    "mouvement_rejouer": "Rejouer",
+    "mouvement_note": "Fondus et glissements de 12 px au maximum, courbe d’accélération unique, 300 à 900 ms.",
+    "typo_titre": "Bodoni Moda — titres, chiffres, monogramme",
+    "typo_texte": "Cormorant Garamond — textes courants",
+    "typo_etiquette": "Étiquette en capitales"
+  },
+  "commun": {
+    "a_completer": "[À COMPLÉTER]"
+  },
+  "moments": {
+    "eclat": {
+      "nom": "L’Éclat",
+      "moment": "Accueil"
+    },
+    "horizon": {
+      "nom": "L’Horizon",
+      "moment": "Cérémonie"
+    },
+    "rencontre": {
+      "nom": "La Rencontre",
+      "moment": "Cocktail"
+    },
+    "ivresse": {
+      "nom": "L’Ivresse",
+      "moment": "Dîner"
+    },
+    "nuit": {
+      "nom": "La Nuit",
+      "moment": "Fête"
+    }
+  },
+  "neutres": {
+    "fond": "Le Fond — équilibre",
+    "matiere": "La Matière — authenticité",
+    "noir": "Le fond de l’écran",
+    "papier": "Mode Papier"
+  }
+}

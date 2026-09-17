@@ -1,0 +1,46 @@
+name: Page de secours
+
+# Déploie la page de secours statique sur GitHub Pages — hors du VPS, pour
+# qu'elle survive à une panne du serveur (brief §0 bis).
+# Prérequis une seule fois : Settings → Pages → Source : GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+    paths: ["secours/**", "components/monogram.generated.ts", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deployer:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Composer la page
+        run: node scripts/build-secours.mjs
+      - name: Préparer l'artefact
+        run: |
+          mkdir -p site
+          cp secours/index.html site/index.html
+          # Domaine personnalisé : décommenter après l'achat du domaine (V0-02).
+          # echo "[DOMAINE À COMPLÉTER]" > site/CNAME
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - id: deploiement
+        uses: actions/deploy-pages@v4

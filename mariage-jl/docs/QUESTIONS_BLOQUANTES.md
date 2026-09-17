@@ -8,15 +8,17 @@ Règle : aucune valeur n'est devinée. Tant qu'une question marquée **bloquante
 
 | # | Question | Ce qu'elle bloque | Réponse attendue |
 |---|---|---|---|
-| V0-01 | **Où vit le code ?** Le dossier de travail contient le projet Python BFK001, sans rapport. Sous-dossier `mariage-jl/` dans ce dépôt, nouveau dépôt dédié, ou aucun commit ? | Toute écriture de code | un choix |
+| V0-01 | ~~**Où vit le code ?**~~ | — | **Répondu le 17/09/2026 : dépôt dédié `mariage-jl`.** Reste à le créer sur GitHub : l'App n'a pas le droit de créer un dépôt (403) |
 | V0-02 | **Nom de domaine exact à acheter** (il sera imprimé sur le faire-part et ne changera jamais) | Achat du domaine, page de secours, QR, HTTPS | `exemple.fr` |
-| V0-03 | **Hébergeur statique de la page de secours** (hors VPS, hors Hostinger). Propositions gratuites : Cloudflare Pages, GitHub Pages, Netlify | Page de secours V0, chaîne CI, valeurs DNS de bascule | un choix |
-| V0-04 | **Version de Next.js** : dernière version stable vérifiée le jour du démarrage, ou Next.js 14 (préférence générale déclarée par Julien) ? | Initialisation du projet, épinglage des dépendances | un choix |
+| V0-03 | ~~**Hébergeur statique de la page de secours**~~ | — | **Répondu le 17/09/2026 : GitHub Pages.** Workflow livré ; à activer une fois dans `Settings → Pages → Source : GitHub Actions` |
+| V0-04 | ~~**Version de Next.js**~~ | — | **Répondu le 17/09/2026 : dernière stable vérifiée.** Épinglé : Next 16.3.5, React 19.3.0, Tailwind 4.3.3 |
 | V0-05 | **Accès VPS pour l'audit en lecture seule** : hôte, port SSH, nom d'utilisateur, clé publique à autoriser | `INFRA.md`, donc tout le déploiement | accès SSH ou séance partagée |
 | V0-06 | **Compte Supabase** : organisation existante ou à créer, et **région européenne** retenue (par exemple Paris ou Francfort) | Création du projet, schéma, RLS | un choix |
 | V0-07 | **Registre d'images privé** : GitHub Container Registry du dépôt, ou autre | Chaîne CI/CD, déploiement | un choix |
 | V0-08 | **Références couleur définitives** : les 7 hex du brief sont relevés sur une maquette écran. Les valeurs de l'imprimeur sont-elles disponibles, ou travaille-t-on avec ces hex en attendant ? | Jetons de direction artistique, page `/design`, imprimables | 7 valeurs ou « on garde les hex » |
 | V0-09 | **Film d'annonce** : où récupérer `JL_annonce_1080p_version_texte.mp4` et son image d'affiche (première frame noire au monogramme) ? | Accueil V1, page `/design` | fichier + affiche |
+| V0-10 | **Monogramme définitif** : le faire-part et le film ont-ils un monogramme déjà vectorisé (SVG, AI, PDF) ? Si oui, il remplace le tracé généré et devient la référence unique | Monogramme, imprimables, page de secours | fichier ou « non » |
+| V0-11 | **Graisse du monogramme** : les tracés générés sont en wght 400, le brief demande ≈ 470 (l'API Google Fonts ne sert pas l'instance 470 en fichier statique). On garde 400, ou tu fournis l'instance 470 exportée depuis un logiciel de dessin ? Comparaison visible sur `/design` | Monogramme | un choix |
 
 ---
 

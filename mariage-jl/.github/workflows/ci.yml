@@ -1,0 +1,31 @@
+name: Vérifications
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Traductions complètes
+        run: pnpm run check:i18n
+      - name: TypeScript strict
+        run: pnpm run lint
+      - name: Tests unitaires
+        run: pnpm run test
+      - name: Compilation
+        run: pnpm run build
+      - name: Page de secours à jour
+        run: |
+          pnpm run gen:secours
+          git diff --exit-code -- secours/index.html \
+            || (echo "secours/index.html n'est pas à jour : lancez pnpm run gen:secours" && exit 1)
