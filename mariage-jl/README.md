@@ -15,6 +15,7 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 | **V0 — Fondations** | Jetons de la direction artistique, polices, monogramme vectorisé, signature, page `/design`, page de secours statique, squelette de traductions, **schéma de base + politiques RLS testées**, vérifications automatiques | **Livrée, validée le 17/09/2026** |
 | **V1 — Le socle** | Accès par QR, code de secours, QR générique, partage de l'accès, premier lancement, accueil « Avant », navigation, Programme + `.ics`, Infos, FAQ, réponse complète, espace des mariés, planche QR PDF | **complet, en attente des contenus et des relectures** |
 | **V2 — La préparation** | « Le texte », « La promesse », messages des absents, hébergements, fil d'annonces, Web Push, rappels e-mail en opt-in avec file d'envoi | **complète côté code** — reste le contenu des rappels et le choix du prestataire |
+| **Contenus éditables** | `/admin/contenus` : horaires des moments, blocs d'Infos, réponses de la FAQ, hébergements, date limite — tout se remplit depuis le téléphone | **livré** — c'est ici que se remplissent les « [À COMPLÉTER] » |
 | V3 → V4 | voir `docs/PLAN.md` | pas commencées |
 
 Ce qui n'est **pas** fait en V0, volontairement : aucun achat de domaine, aucune action sur le VPS, aucun projet Supabase. Ces trois points attendent tes réponses (`docs/QUESTIONS_BLOQUANTES.md`, section V0).
@@ -122,6 +123,36 @@ fichier. Avant cette date, la commande refuse.
 
 **Perdre la clé privée rend les vœux définitivement illisibles.** C'est le prix
 de la promesse.
+
+## Écrire les contenus
+
+Tout ce que l'application affiche « [À COMPLÉTER] » se remplit depuis
+**`/admin/contenus`**, au téléphone, sans commande et sans SQL. Cinq familles :
+
+| Onglet | Ce qui s'y écrit |
+|---|---|
+| La journée | la date limite de réponse |
+| Les moments | horaires, lieu, ambiance et déroulé des cinq moments |
+| Les infos | les neuf blocs de la page Infos, en français et en anglais |
+| La FAQ | les réponses aux dix-huit questions, l'ordre, et ce qui est visible |
+| Les hébergements | nom, distance, prix indicatif, navette, téléphone, lien |
+
+Le compteur en haut de l'écran dit combien d'éléments restent à écrire, et
+chaque liste indique l'état de ses éléments. Tu choisis d'abord dans la liste,
+tu écris ensuite : un formulaire n'enregistre qu'un élément, donc une saisie
+dans le train ne peut pas écraser ce que tu venais d'écrire ailleurs.
+
+Trois choses que l'écran fait pour toi, et qu'il vaut mieux connaître :
+
+- **Un champ vidé redevient une attente**, pas un blanc : l'invité lit
+  « Horaire à confirmer » au lieu de voir un trou.
+- **Une fin avant le début compte pour le lendemain** : La Nuit de 22:00 à
+  03:00 est bien une nuit, pas une erreur.
+- **Un lien doit commencer par `https://`.** Tout le reste est refusé, y
+  compris si le navigateur l'avait laissé passer.
+
+Les noms et les genres des cinq moments ne sont pas modifiables : ils viennent
+de la direction artistique, pas d'un formulaire.
 
 ## Annonces et notifications
 

@@ -303,6 +303,12 @@ Rappels e-mail en opt-in + fil d'annonces dans l'app ; Web Push (VAPID) ; page �
 
 État au 17/09/2026 : **tout le code de V2 est livré et testé.** Le fil d'annonces, les notifications et l'opt-in e-mail fonctionnent ; un vœu scellé est vérifié illisible côté serveur. Deux points restent, et ce sont des décisions : le contenu des rappels (V2-01) et le transport e-mail (V1-03), qui représente une fonction à écrire dans `lib/email.ts`. Le critère « rappel reçu » ne pourra donc être coché qu'avec un vrai prestataire.
 
+### Contenus éditables — palier hors version (18/09/2026)
+`/admin/contenus` : cinq familles (journée, moments, blocs d'Infos, FAQ, hébergements), liste puis formulaire, un élément par enregistrement, les deux langues d'un seul geste, journal d'audit sans adresse. Ce palier n'ajoute **aucune fonction visible de l'invité** : il rend éditable au téléphone ce qui n'existait qu'en base. C'était la condition pour que les questions de contenu cessent d'être des questions de code.
+*Terminé quand* : chaque `[À COMPLÉTER]` du brief est joignable depuis un écran — vérifié par les parcours `tests/e2e/contenus.spec.ts`, qui écrivent côté mariés et relisent côté invité.
+
+Décision prise en cours de route : la première version empilait les dix-huit formulaires de la FAQ sur un écran de 17 600 px. Inutilisable au téléphone, donc refait en liste-puis-formulaire (2 800 px). Le brief §0 demande de perfectionner plutôt que d'ajouter : c'est ce qui a été fait avant d'ouvrir V3.
+
 ### V3 — Le jour J (J-3 mois)
 Semaine J (météo Open-Meteo, checklist) ; Maintenant ; Aide avec boutons d'appel ; régie minimale (annonces, décalage d'un moment, masquage d'une photo) ; cérémonie débranchée ; photos et vidéos complètes (compression, HEIC, suppression GPS, file persistante, Wi-Fi seulement, modération, demande de retrait) ; mur `/live` ; plan de table ; lien privé de diffusion ; cartes de table PDF et fiche régie PDF ; défis photo si le temps le permet.
 *Terminé quand* : répétition générale de J-60 réussie ; test de charge exécuté contre la production hors gel et consigné ; procédure de bascule DNS chronométrée pour de vrai.
@@ -370,3 +376,4 @@ Le brief §12 demande ≥ 95 dans les quatre catégories, dont « SEO ». Or le 
 1. Réponses aux questions bloquantes **V0** (`QUESTIONS_BLOQUANTES.md`) — sans elles, ni domaine, ni page de secours, ni audit serveur.
 2. Validation de ce plan et des arbitrages §1 et §2.
 3. Arbitrage des 3 micro-interactions et des 3 idées de confort (`PROPOSITIONS.md`) : rien n'est développé sans accord (§17).
+4. Remplissage des contenus depuis `/admin/contenus` : ce n'est plus du code, c'est de l'écriture. Le compteur en tête d'écran dit ce qu'il reste.

@@ -110,6 +110,17 @@ body[data-vignette="oui"]::before {
 /* Cibles tactiles : 48 px minimum (WCAG 2.2 AA, brief §12). */
 .jl-cible { min-height: 48px; min-width: 48px; }
 
+/* Cases à cocher : la cible utile est l'étiquette entière, qui porte
+   `jl-cible`. Le carré par défaut fait 13 px : trop petit à viser et trop
+   discret à lire, surtout au réglage « très grande ». */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  accent-color: var(--texte);
+}
+
 .jl-apparition { animation: jl-fondu var(--duree-moyenne) var(--ease) both; }
 @keyframes jl-fondu {
   from { opacity: 0; transform: translateY(12px); }

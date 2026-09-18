@@ -32,12 +32,15 @@ export default async function AdminLayout({
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
       <header className="flex flex-col gap-4">
         <Signature mention={t.accueil.signature} hauteurMonogramme={44} />
-        <nav aria-label={t.admin.titre} className="flex gap-6">
+        <nav aria-label={t.admin.titre} className="flex flex-wrap gap-x-6 gap-y-2">
           <a href="/admin" className="jl-cible jl-etiquette flex items-center">
             {t.admin.tableau}
           </a>
           <a href="/admin/invites" className="jl-cible jl-etiquette flex items-center">
             {t.admin.invites}
+          </a>
+          <a href="/admin/contenus" className="jl-cible jl-etiquette flex items-center">
+            {t.admin_contenus.titre}
           </a>
           <a href="/admin/annonces" className="jl-cible jl-etiquette flex items-center">
             {t.admin_annonces.titre}

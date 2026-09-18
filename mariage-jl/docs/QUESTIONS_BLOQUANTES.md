@@ -2,6 +2,8 @@
 
 Règle : aucune valeur n'est devinée. Tant qu'une question marquée **bloquante** est ouverte, le travail qui en dépend n'est pas commencé. Les questions « non bloquante » n'empêchent pas d'avancer : le contenu reste `[À COMPLÉTER]` et éditable dans l'admin.
 
+**Depuis le 18/09/2026, « éditable dans l'admin » veut dire éditable au téléphone** : `/admin/contenus` remplace chaque `[À COMPLÉTER]` sans SQL ni commande. Les questions de contenu ci-dessous (V1-02, V1-06 à V1-16, V2-02) ne demandent donc plus une seule ligne de code : ce sont des textes à écrire.
+
 ---
 
 ## V0 — Fondations (bloque tout le reste)
@@ -27,15 +29,15 @@ Règle : aucune valeur n'est devinée. Tant qu'une question marquée **bloquante
 | # | Question | Ce qu'elle bloque | Statut |
 |---|---|---|---|
 | V1-01 | **Date d'envoi du faire-part** | Toutes les échéances du calendrier, la date butoir de V1 | bloquante |
-| V1-02 | **Date limite de réponse** | Carte « À faire », verrouillage du RSVP, rappels | bloquante |
+| V1-02 | **Date limite de réponse** | Carte « À faire », verrouillage du RSVP, rappels | bloquante — mais **plus rien à coder** : `/admin/contenus`, onglet « La journée » |
 | V1-03 | **Prestataire e-mail transactionnel européen** (offre gratuite) + accès à la zone DNS pour SPF, DKIM, DMARC | Livraison des liens d'accès et, en V2, les rappels | **plus bloquante** : le lien d'accès à usage unique est livré et se génère en ligne de commande (`pnpm admin:lien`). L'e-mail ne sera qu'un moyen de livraison de plus |
 | V1-04 | **Adresses e-mail de la liste blanche admin** (Julien, Lauriane) | Accès admin | bloquante |
 | V1-05 | **Liste des foyers** : prénoms par foyer et composition. Fichier existant à importer, ou saisie dans l'admin ? | Planche QR PDF, donc l'impression du faire-part | bloquante |
-| V1-06 | **Horaires des 5 moments** (début et fin) et **lieu de chacun dans le domaine** | Programme, `.ics`, cartes de table | non bloquante (éditable, mais requise avant impression) |
+| V1-06 | **Horaires des 5 moments** (début et fin) et **lieu de chacun dans le domaine** | Programme, `.ics`, cartes de table | non bloquante — saisissable dans `/admin/contenus`, onglet « Les moments » ; requise avant impression |
 | V1-07 | **Adresse complète, coordonnées GPS, accès PMR** du Domaine de Roiffé | Infos « Venir », Accessibilité | non bloquante |
 | V1-08 | **Options de menu** et régimes proposés | Étape 3 du RSVP, export traiteur | non bloquante (mais requise avant ouverture des réponses) |
 | V1-09 | **Tenue** souhaitée, formulée par vous | Infos « Tenue » | non bloquante |
-| V1-10 | **Hébergements** : liste, distances, prix indicatifs, liens, téléphones, navette ou non | Infos « Dormir » | non bloquante |
+| V1-10 | **Hébergements** : liste, distances, prix indicatifs, liens, téléphones, navette ou non | Infos « Dormir » | non bloquante — saisissable dans `/admin/contenus`, onglet « Les hébergements » |
 | V1-11 | **Liste de mariage** : lien externe | Infos | non bloquante |
 | V1-12 | **Contact accessibilité** (nom + moyen de contact) | Infos « Accessibilité » | non bloquante |
 | V1-13 | **Avec des enfants** : menu enfant, espace calme, garde éventuelle | Infos « Enfants » | non bloquante |

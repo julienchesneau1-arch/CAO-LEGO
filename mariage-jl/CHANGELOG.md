@@ -2,6 +2,35 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
+## Contenus éditables — 18 septembre 2026
+
+Jusqu'ici, tout était en base et éditable — à condition d'écrire du SQL. C'est ce qui bloquait le remplissage de chaque « [À COMPLÉTER] ». Cet écran le débloque.
+
+### Livré
+
+- **`/admin/contenus`**, cinq familles de contenu : la journée (date limite de réponse), les cinq moments (horaires, lieu, ambiance, déroulé), les neuf blocs d'Infos, les dix-huit questions de la FAQ, les hébergements. Les noms et les genres des moments ne sont **pas** éditables : ils viennent de la direction artistique du brief §5, pas d'un formulaire.
+- **Un compteur « à compléter »** en tête d'écran, et l'état de chaque élément dans sa liste : les mariés voient d'un coup d'œil ce qui reste à écrire avant le faire-part.
+- **Liste d'abord, formulaire ensuite.** La première version empilait les dix-huit formulaires de la FAQ : un écran de 17 600 px, impraticable au téléphone. On choisit maintenant dans une liste, puis on écrit. La FAQ tient en 2 800 px.
+- **Un formulaire n'écrit qu'un élément.** Une saisie au téléphone, dans le train, ne peut pas écraser ce qui vient d'être écrit ailleurs.
+- **Les deux langues d'un seul geste** pour les blocs et la FAQ : laisser une langue en arrière produirait une invitation à moitié traduite, ce que le brief §13 interdit.
+- **Journal d'audit** sur chaque écriture — l'action et sa cible, jamais l'adresse de l'éditeur. Purgé au bout de trente jours comme le reste.
+
+### Décisions de produit prises en passant
+
+- **Un champ vidé revient à `null`, jamais à la chaîne vide.** C'est ce qui permet à l'écran invité de dire « Horaire à confirmer » au lieu d'afficher un trou.
+- **Une fin d'horaire antérieure au début compte pour le lendemain** : « La Nuit » finit à 03:00, pas la veille du mariage. Sans ce calcul, le fichier d'agenda exporté serait absurde.
+- **Un lien qui n'est pas `http` ou `https` est refusé par le serveur**, pas seulement par le navigateur : un `javascript:` collé par erreur finirait dans un `href` vu par tous les invités. Le refus est testé en contournant exprès la validation du navigateur.
+- **Le sélecteur de date suit la langue du téléphone**, pas celle de la page : l'écran redit donc la date enregistrée en clair, pour qu'un 15/04 ne soit jamais lu comme un 4 avril.
+- **Les cases à cocher passent de 13 à 24 px** et leur étiquette entière reste la cible : le carré par défaut était difficile à viser et trop discret au réglage « très grande ».
+
+### Mesures
+
+203 tests (dont 24 sur cet écran), 86 parcours sur deux gabarits, Lighthouse toujours au-dessus du seuil. L'espace des mariés est désormais **audité par axe-core lui aussi**, sur onze écrans : zéro anomalie, et chaque cible tactile mesurée à 48 px au minimum.
+
+### Ce que cela débloque
+
+La question V1-02 (date limite de réponse) et tous les contenus des questions V1-06 à V1-08 ne demandent plus de code : ce sont des textes à écrire depuis le téléphone.
+
 ## V2 — La préparation — 17 septembre 2026 — complète côté code
 
 ### Seconde tranche

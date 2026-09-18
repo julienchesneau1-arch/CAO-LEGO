@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { FOYER } from "./fixtures";
+import { ouvrirAdmin } from "./admin";
+import { ciblesTropPetites } from "./cibles";
 import { reinitialiserFoyer } from "./reinitialiser";
 
 /**
@@ -49,24 +51,7 @@ test("toutes les cibles tactiles font au moins 48 px", async ({ page }) => {
 
   for (const chemin of ECRANS) {
     await page.goto(chemin);
-    const trop_petites = await page.evaluate(() => {
-      const cibles = [
-        ...document.querySelectorAll(
-          "a[href], button, input:not([type=hidden]), summary, select, textarea",
-        ),
-      ];
-      return cibles
-        .map((element) => {
-          const boite = element.getBoundingClientRect();
-          return {
-            balise: element.tagName.toLowerCase(),
-            texte: (element.textContent ?? "").trim().slice(0, 30),
-            hauteur: Math.round(boite.height),
-            largeur: Math.round(boite.width),
-          };
-        })
-        .filter((cible) => cible.hauteur > 0 && (cible.hauteur < 48 || cible.largeur < 24));
-    });
+    const trop_petites = await ciblesTropPetites(page);
     expect(trop_petites, `cibles trop petites sur ${chemin}`).toEqual([]);
   }
 });
@@ -79,4 +64,46 @@ test("l'ouverture signature est franchissable au clavier seul", async ({ page })
   await expect(page.getByRole("button", { name: "Passer" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+/**
+ * L'espace des mariés est un écran de travail, utilisé au téléphone pendant
+ * des mois : il est tenu aux mêmes règles que les écrans d'invité.
+ */
+const ECRANS_ADMIN = [
+  "/admin",
+  "/admin/contenus?section=journee",
+  "/admin/contenus?section=moments",
+  "/admin/contenus?section=moments&element=02",
+  "/admin/contenus?section=infos",
+  "/admin/contenus?section=infos&element=infos.liste_mariage",
+  "/admin/contenus?section=faq",
+  "/admin/contenus?section=faq&element=nouveau",
+  "/admin/contenus?section=hebergements",
+  "/admin/contenus?section=hebergements&element=nouveau",
+  "/admin/annonces",
+];
+
+test("l'espace des mariés est accessible, et ses cibles font 48 px", async ({ browser }) => {
+  const maries = await ouvrirAdmin(browser);
+
+  for (const chemin of ECRANS_ADMIN) {
+    await maries.goto(chemin);
+
+    const resultat = await new AxeBuilder({ page: maries })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+      .analyze();
+    const lisible = resultat.violations.map((violation) => ({
+      regle: violation.id,
+      impact: violation.impact,
+      description: violation.help,
+      elements: violation.nodes.map((noeud) => noeud.target.join(" ")),
+    }));
+    expect(lisible, `anomalies sur ${chemin}`).toEqual([]);
+
+    const trop_petites = await ciblesTropPetites(maries);
+    expect(trop_petites, `cibles trop petites sur ${chemin}`).toEqual([]);
+  }
+
+  await maries.context().close();
 });

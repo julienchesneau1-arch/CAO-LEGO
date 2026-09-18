@@ -159,6 +159,25 @@ try {
   await page.goto(`${BASE}/admin/invites`, { waitUntil: "networkidle" });
   await prendre("15-admin-invites");
 
+  // « Contenus » : c'est d'ici que les mariés remplacent chaque
+  // « [À COMPLÉTER] » par le vrai texte, sans passer par du SQL.
+  await page.goto(`${BASE}/admin/contenus?section=journee`, { waitUntil: "networkidle" });
+  await prendre("22-admin-contenus-journee");
+  await page.goto(`${BASE}/admin/contenus?section=moments`, { waitUntil: "networkidle" });
+  await prendre("23-admin-contenus-moments");
+  await page.goto(`${BASE}/admin/contenus?section=moments&element=02`, {
+    waitUntil: "networkidle",
+  });
+  await prendre("24-admin-contenus-un-moment");
+  await page.goto(`${BASE}/admin/contenus?section=faq`, { waitUntil: "networkidle" });
+  await prendre("25-admin-contenus-faq");
+  await page.goto(`${BASE}/admin/contenus?section=hebergements&element=nouveau`, {
+    waitUntil: "networkidle",
+  });
+  await prendre("27-admin-contenus-hebergement");
+  await page.goto(`${BASE}/admin/annonces`, { waitUntil: "networkidle" });
+  await prendre("26-admin-annonces");
+
   await page.goto(`${BASE}/design`, { waitUntil: "networkidle" });
   await prendre("16-direction-artistique");
 
