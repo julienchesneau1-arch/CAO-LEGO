@@ -4,7 +4,7 @@
  * ne se connecte jamais à une base en cours de recréation.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { libererPort } from "./liberer-port.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +31,12 @@ try {
 } catch (erreur) {
   console.log(`Libération du port impossible (${erreur.message}) — on continue.`);
 }
+
+// Dossier des souvenirs, vidé à chaque série : un parcours ne doit jamais
+// voir les fichiers de la série précédente.
+const DOSSIER_MEDIAS = "/tmp/jl-e2e-medias";
+rmSync(DOSSIER_MEDIAS, { recursive: true, force: true });
+mkdirSync(DOSSIER_MEDIAS, { recursive: true });
 
 const gestion = new pg.Client({ connectionString: URL_ADMIN });
 await gestion.connect();

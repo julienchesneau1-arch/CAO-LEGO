@@ -9,7 +9,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { chromium, devices } from "@playwright/test";
 import pg from "pg";
 
@@ -20,12 +20,21 @@ const URL_BASE_DONNEES =
 const DOSSIER = new URL("../captures/", import.meta.url);
 mkdirSync(DOSSIER, { recursive: true });
 
+// Dossier jetable des souvenirs de démonstration : jamais celui du
+// développement, et vidé à la fin.
+const MEDIAS = "/tmp/jl-captures-medias";
+rmSync(MEDIAS, { recursive: true, force: true });
+mkdirSync(MEDIAS, { recursive: true });
+
 const ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
 const jeton = Array.from(randomBytes(32), (o) => ALPHABET[o % ALPHABET.length]).join("");
 const empreinte = (s) => createHash("sha256").update(s.trim().toLowerCase(), "utf8").digest();
 
 const base = new pg.Client({ connectionString: URL_BASE_DONNEES });
 await base.connect();
+// Le dossier des souvenirs vient d'être vidé : les lignes de la série
+// précédente n'ont plus de fichier et afficheraient des vignettes cassées.
+await base.query("delete from public.media");
 const { rows } = await base.query(
   `insert into public.households (label_public, token_sha256, backup_code_sha256)
    values ('Foyer de démonstration', $1, $2) returning id`,
@@ -62,10 +71,48 @@ const serveur = spawn("node", [".next/standalone/server.js"], {
     // est alors obligatoire (c'est voulu). On en tire un, jetable.
     JL_COOKIE_SECRET: process.env["JL_COOKIE_SECRET"] ?? randomBytes(32).toString("base64url"),
     JL_PROMESSE_CLE_PUBLIQUE: process.env["JL_PROMESSE_CLE_PUBLIQUE"] ?? "",
+    JL_MEDIAS_DIR: MEDIAS,
   },
   cwd: new URL("..", import.meta.url).pathname,
   stdio: "ignore",
 });
+
+/** Journée simulée autour de maintenant, pour photographier « Maintenant ». */
+const poserJourneeEtPeriode = async (enCours, periode) => {
+  const ordre = ["01", "02", "03", "04", "05"];
+  const rang = ordre.indexOf(enCours);
+  for (const [index, id] of ordre.entries()) {
+    const debut = (index - rang) * 60 - 10;
+    await base.query(
+      `update public.moments
+          set starts_at = now() + ($2 || ' minutes')::interval,
+              ends_at   = now() + ($3 || ' minutes')::interval
+        where id = $1`,
+      [id, String(debut), String(debut + 60)],
+    );
+  }
+  await base.query(
+    `update public.parametres
+        set periode_forcee = $1, periode_forcee_jusqu_a = now() + interval '1 hour'
+      where id = 1`,
+    [periode],
+  );
+};
+
+/** Une table de démonstration, avec les deux invités du foyer dessus. */
+const poserUneTable = async () => {
+  const { rows: tables } = await base.query(
+    `insert into public.seating_tables (label, capacity, sort_order)
+     values ('Table des vignes', 8, 1)
+     on conflict (label) do update set capacity = 8 returning id`,
+  );
+  await base.query(
+    `insert into public.seating_assign (guest_id, table_id)
+     select id, $1 from public.guests where household_id = $2
+     on conflict (guest_id) do update set table_id = excluded.table_id`,
+    [tables[0].id, foyerId],
+  );
+};
 
 const attendre = async () => {
   for (let essai = 0; essai < 60; essai += 1) {
@@ -175,8 +222,12 @@ try {
     waitUntil: "networkidle",
   });
   await prendre("27-admin-contenus-hebergement");
+  await page.goto(`${BASE}/admin/contenus?section=contacts`, { waitUntil: "networkidle" });
+  await prendre("26-admin-contenus-contacts");
   await page.goto(`${BASE}/admin/annonces`, { waitUntil: "networkidle" });
-  await prendre("26-admin-annonces");
+  await prendre("28-admin-annonces");
+  await page.goto(`${BASE}/regie`, { waitUntil: "networkidle" });
+  await prendre("29-regie");
 
   await page.goto(`${BASE}/design`, { waitUntil: "networkidle" });
   await prendre("16-direction-artistique");
@@ -192,6 +243,83 @@ try {
   await page.goto(`${BASE}/loin`, { waitUntil: "networkidle" });
   await prendre("21-ceux-qui-sont-loin");
 
+  await page.goto(`${BASE}/aide`, { waitUntil: "networkidle" });
+  await prendre("30-aide");
+
+  /**
+   * Les souvenirs passent par le vrai parcours : accord, puis envoi d'une
+   * image dessinée dans le navigateur. Une capture d'un écran vide
+   * n'apprendrait rien, et une insertion directe en base ne prouverait pas
+   * que le chemin d'envoi fonctionne.
+   */
+  await page.goto(`${BASE}/photos/envoyer`, { waitUntil: "networkidle" });
+  await prendre("34-partager-un-souvenir-accord");
+  await page.getByRole("button", { name: "J’accepte de partager" }).click();
+  await page.waitForLoadState("networkidle");
+
+  for (const couleur of ["#c8452a", "#1f4e79", "#e0a43c", "#7d2a3a", "#8f7bb5", "#2f6f4f"]) {
+    const octets = await page.evaluate(async (teinte) => {
+      const toile = document.createElement("canvas");
+      toile.width = 600;
+      toile.height = 450;
+      const ctx = toile.getContext("2d");
+      ctx.fillStyle = teinte;
+      ctx.fillRect(0, 0, 600, 450);
+      ctx.fillStyle = "rgba(233, 226, 216, 0.25)";
+      ctx.fillRect(40, 40, 520, 370);
+      const blob = await new Promise((r) => toile.toBlob(r, "image/jpeg", 0.9));
+      return [...new Uint8Array(await blob.arrayBuffer())];
+    }, couleur);
+    await page.setInputFiles('input[type="file"]', {
+      name: `souvenir-${couleur.slice(1)}.jpg`,
+      mimeType: "image/jpeg",
+      buffer: Buffer.from(octets),
+    });
+    await page.waitForTimeout(400);
+  }
+  await prendre("35-partager-un-souvenir");
+
+  await page.goto(`${BASE}/photos`, { waitUntil: "networkidle" });
+  await prendre("36-les-souvenirs");
+
+  await poserUneTable();
+  await page.goto(`${BASE}/ma-table`, { waitUntil: "networkidle" });
+  await prendre("37-ma-table");
+
+  await page.goto(`${BASE}/admin/table`, { waitUntil: "networkidle" });
+  await prendre("38-admin-plan-de-table");
+
+  await page.goto(`${BASE}/live`, { waitUntil: "networkidle" });
+  await prendre("39-le-mur", { attente: 1600, pageEntiere: false });
+
+  // Période « Après » : le dernier visage de l'application.
+  await base.query(
+    `update public.parametres
+        set periode_forcee = 'apres', periode_forcee_jusqu_a = now() + interval '1 hour'
+      where id = 1`,
+  );
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  await prendre("40-merci");
+  await page.goto(`${BASE}/mes-donnees`, { waitUntil: "networkidle" });
+  await prendre("41-mes-donnees");
+  await page.goto(`${BASE}/messages`, { waitUntil: "networkidle" });
+  await prendre("42-livre-d-or");
+
+  /**
+   * Les écrans du jour J ne s'atteignent pas en attendant le 3 juin 2028 : on
+   * pose une journée autour de l'instant présent et on force la période, le
+   * temps de deux captures. Le `finally` remet tout comme avant.
+   */
+  await poserJourneeEtPeriode("03", "semaine");
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  await prendre("31-semaine-j");
+  await poserJourneeEtPeriode("03", "jour");
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  await prendre("32-maintenant");
+  await poserJourneeEtPeriode("02", "jour");
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  await prendre("33-ceremonie-debranchee");
+
   await page.goto(new URL("../secours/index.html", import.meta.url).href, { waitUntil: "load" });
   await prendre("17-page-de-secours");
 
@@ -200,5 +328,13 @@ try {
   serveur.kill("SIGTERM");
   await base.query("delete from public.households where id = $1", [foyerId]);
   await base.query("delete from public.admin_users where email = $1", [emailAdmin]);
+  // La base de développement retrouve son état : ni période forcée, ni
+  // horaires simulés.
+  await base.query(
+    `update public.parametres set periode_forcee = null, periode_forcee_jusqu_a = null where id = 1`,
+  );
+  await base.query("update public.moments set starts_at = null, ends_at = null");
+  await base.query("delete from public.seating_tables where label = 'Table des vignes'");
   await base.end();
+  rmSync(MEDIAS, { recursive: true, force: true });
 }

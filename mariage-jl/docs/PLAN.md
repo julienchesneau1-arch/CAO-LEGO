@@ -313,9 +313,23 @@ Décision prise en cours de route : la première version empilait les dix-huit f
 Semaine J (météo Open-Meteo, checklist) ; Maintenant ; Aide avec boutons d'appel ; régie minimale (annonces, décalage d'un moment, masquage d'une photo) ; cérémonie débranchée ; photos et vidéos complètes (compression, HEIC, suppression GPS, file persistante, Wi-Fi seulement, modération, demande de retrait) ; mur `/live` ; plan de table ; lien privé de diffusion ; cartes de table PDF et fiche régie PDF ; défis photo si le temps le permet.
 *Terminé quand* : répétition générale de J-60 réussie ; test de charge exécuté contre la production hors gel et consigné ; procédure de bascule DNS chronométrée pour de vrai.
 
+État au 18/09/2026, **première tranche livrée** : « Maintenant », cérémonie débranchée (coupure et reprise automatiques), checklist et météo de la semaine J, écran Aide avec boutons d'appel, écran régie minimal (annonces à partir de modèles traduits, décalage entraînant les moments suivants, suspension des envois). Restent les photos et vidéos, le mur `/live`, le plan de table, les cartes de table et la fiche régie PDF, le lien privé de diffusion.
+
+Décision prise en cours de route : le décalage offrait six boutons par moment, soit trente à l'écran, contre l'exigence « utilisable d'une main » du §9. Un pas partagé, choisi une fois, puis deux boutons par moment.
+
+État au 18/09/2026, **seconde tranche livrée : V3 est complète côté code.** Photos et vidéos (galerie, filtres, file d'envoi persistante, option Wi-Fi seulement, consentement versionné, visibilité « aux mariés seulement », demande de retrait en un tap), modération dans l'écran régie, mur `/live`, plan de table avec recherche, cartes de table et fiche régie PDF. Reste le bonus des défis photo, et le lien de diffusion qui attend une adresse — pas du code.
+
+Deux choix d'architecture à retenir : le **stockage est une interface** (fichiers aujourd'hui, Supabase Storage en trente lignes le jour où le projet existe), et le **retrait des métadonnées est côté serveur**, sans dépendance, avec refus des formats qu'il ne sait pas nettoyer. Un parcours vérifie l'absence de position GPS en relisant le fichier sur le disque, puis en le redécodant dans le navigateur.
+
 ### V4 — Après (avant J)
 Merci ; « Le regard du photographe » (accès protégé) ; archives ZIP ; suppressions automatiques effectives ; dates de fin d'accès affichées.
 *Terminé quand* : parcours « Après » validé avec horloge simulée ; une suppression automatique vérifiée sur données de test.
+
+État au 18/09/2026, **livrée**. « Merci », le regard du photographe (section distincte, ouverte depuis une invitation reconnue), le livre d'or, le film, les archives ZIP et « Mes données » avec les dates de suppression. Les parcours forcent la période (« horloge simulée ») et la suppression d'un fichier orphelin est vérifiée sur données de test.
+
+Deux points d'architecture : les échéances viennent d'une fonction SQL écrite à partir des mêmes expressions que les purges (`jl.echeances()`), donc un écran ne peut pas annoncer une date que la base ne tiendra pas ; et le ZIP est écrit à la main en méthode `store`, sans dépendance, vérifié par `unzip -t` qui contrôle chaque CRC.
+
+**Mesure à reprendre (§10)** : le score Lighthouse de performance oscille entre 94 et 99 d'une exécution à l'autre sur ce conteneur partagé, donc à cheval sur le seuil de 95 du brief §12. La mesure n'est pas exploitable telle quelle : elle doit être refaite sur le VPS, machine stable, avant de cocher le critère (dépend de la question V0-05). L'accessibilité (100) et les bonnes pratiques (100) ne bougent pas, elles.
 
 ### Gel — J-7 à J+1
 Aucun déploiement, aucun projet du VPS déployé, aucune mise à jour système, tâches lourdes des autres projets décalées ; sauvegardes vérifiées la veille et le lendemain.

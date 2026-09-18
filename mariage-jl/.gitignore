@@ -11,3 +11,6 @@ playwright-report/
 public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
+
+# Souvenirs envoyés en développement.
+.medias/

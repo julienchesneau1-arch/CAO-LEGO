@@ -140,9 +140,12 @@ test("la date limite saisie devient l'échéance affichée sur l'accueil", async
 }) => {
   const maries = await ouvrirAdmin(browser);
   await maries.goto("/admin/contenus?section=journee");
-  await maries.locator('input[name="date_limite"]').fill("2028-04-15");
+  // La section « La journée » porte deux formulaires : la date limite et le
+  // réglage de la cérémonie débranchée.
+  const formulaire = maries.locator('form[action="/admin/contenus/journee"]');
+  await formulaire.locator('input[name="date_limite"]').fill("2028-04-15");
   const enregistre = maries.waitForResponse((r) => r.request().method() === "POST");
-  await maries.getByRole("button", { name: "Enregistrer" }).click();
+  await formulaire.getByRole("button", { name: "Enregistrer" }).click();
   await enregistre;
   // L'écran redit la date en clair, pour qu'un 15/04 ne soit pas lu 4 avril.
   await expect(maries.getByText("15 avril 2028")).toBeVisible();
@@ -205,9 +208,10 @@ test("le compteur « à compléter » diminue à chaque contenu écrit", async (
 test("le journal d'audit garde la trace sans enregistrer d'adresse", async ({ browser }) => {
   const maries = await ouvrirAdmin(browser);
   await maries.goto("/admin/contenus?section=journee");
-  await maries.locator('input[name="date_limite"]').fill("2028-04-15");
+  const formulaire = maries.locator('form[action="/admin/contenus/journee"]');
+  await formulaire.locator('input[name="date_limite"]').fill("2028-04-15");
   const enregistre = maries.waitForResponse((r) => r.request().method() === "POST");
-  await maries.getByRole("button", { name: "Enregistrer" }).click();
+  await formulaire.getByRole("button", { name: "Enregistrer" }).click();
   await enregistre;
   await maries.context().close();
 

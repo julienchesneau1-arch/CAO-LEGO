@@ -2,6 +2,122 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
+## V4 — Après — 18 septembre 2026
+
+La dernière version du plan. Ce qu'il reste quand la fête est finie : le merci, les photos à emporter, et la fin de vie des données.
+
+### Livré
+
+- **« Merci »** (§8.11) : le jour venu, l'accueil bascule une dernière fois. Le mot des mariés (écrit depuis l'admin), quelques vignettes, les liens vers ce qui reste à voir — et, en bas, **jusqu'à quand**.
+- **Le regard du photographe** : une section à part, `/photographe`, alimentée depuis `/admin/photographe`. Les photos du photographe n'appartiennent à aucun foyer et n'apparaissent jamais dans la galerie des invités ni sur le mur.
+- **Le livre d'or** `/messages` : uniquement les mots dont l'auteur a choisi la visibilité « livre d'or ». Les messages privés n'en sortent pas, et aucun nom de foyer n'est affiché.
+- **Le film de la journée** `/film`, dont l'adresse s'écrit depuis l'admin.
+- **Archives ZIP** : « Toutes les photos du mariage » et « Mes photos ». Fabriquées à la demande, jamais mises en cache.
+- **« Mes données »** `/mes-donnees` (§11) : ce que nous détenons pour ce foyer, **compté et non recopié**, et les dates de suppression automatique.
+- **`pnpm purger`** : exécute les purges SQL, puis supprime du disque les fichiers dont la ligne a disparu — ce que SQL ne peut pas faire.
+
+### Ce que le code garantit, et comment c'est vérifié
+
+- **Les dates annoncées sont celles des purges.** Elles viennent d'une fonction SQL, `jl.echeances()`, écrite à partir des mêmes expressions que les fonctions de purge. Un écran ne peut donc pas promettre une date que la base ne tiendra pas ; un test le vérifie en changeant la date du mariage et en relisant l'échéance.
+- **Une archive n'est pas une porte dérobée.** Elle contient exactement ce que la galerie montre à ce foyer : un souvenir confié aux seuls mariés n'y est pas, et une photo dont le retrait vient d'être demandé en sort **à la demande suivante** — vérifié par un parcours qui compare les deux archives.
+- **L'archive s'ouvre vraiment.** Le ZIP est écrit à la main (méthode `store`, sans dépendance : les JPEG sont déjà compressés) et c'est `unzip -t` qui juge, en vérifiant chaque CRC. Les valeurs de référence du CRC-32 sont testées séparément.
+- **Un fichier orphelin quitte le disque**, et **une ligne sans fichier quitte la base**. Tant que sa ligne existe, un fichier reste, même si on demande la purge — perdre une photo coûte bien plus cher que garder un orphelin une nuit de plus.
+
+### Un défaut trouvé par une capture, et corrigé
+
+Les captures d'écran ont montré trois vignettes cassées dans « Merci » : des lignes de médias dont le fichier avait disparu du disque. Cela n'arrive pas en fonctionnement normal — c'est justement pourquoi personne ne l'aurait vu venir : une restauration partielle, un volume remonté de travers, et la galerie affiche des images mortes à tous les invités jusqu'à ce que quelqu'un le remarque. `pnpm purger` travaille désormais **dans les deux sens**, et un test vérifie qu'une seule ligne part quand un seul fichier manque.
+
+### Une mesure à reprendre sur le VPS
+
+Le score Lighthouse de performance oscille entre 94 et 99 selon la charge du conteneur, c'est-à-dire **à cheval sur le seuil de 95** exigé par le brief §12. Une exécution l'a fait passer sous la barre, la suivante l'a remis à 95. Ce n'est pas une mesure exploitable : elle devra être refaite sur le VPS, machine stable, avant de cocher le critère (question V0-05).
+
+### Décisions de produit prises en passant
+
+- **« Accès protégé » pour les photos du photographe veut dire : depuis une invitation reconnue.** Le QR générique ouvre le programme et les infos ; il n'ouvre pas cette section. C'est une interprétation du brief, consignée comme telle (question V4-02) : plutôt qu'inventer un code que les mariés devraient transmettre à cent cinquante personnes, on s'appuie sur la barrière que tout le monde franchit déjà avec son faire-part.
+- **« Mes données » compte, il ne recopie pas.** Redire les allergies de chacun à l'écran serait exposer une donnée de santé sans raison. Un test vérifie que la structure ne contient que des nombres et des booléens.
+- **Un nom de fichier d'archive ne peut pas sortir du dossier.** Le `..` dans un nom d'entrée ZIP est une vieille attaque toujours efficace ; elle est neutralisée et testée.
+
+### Mesures
+
+303 tests, 158 parcours sur deux gabarits, vingt-trois écrans audités par axe-core sans anomalie, Lighthouse au-dessus du seuil.
+
+### Ce qui reste
+
+Les défis photo (bonus §0 bis, « si le temps le permet ») et le lien privé de diffusion, dont l'emplacement est livré depuis V2 : il attend une adresse, pas du code.
+
+## V3 — Le jour J — 18 septembre 2026 — seconde tranche
+
+Les souvenirs, le mur, le plan de table et les imprimables. V3 est complète côté code.
+
+### Livré
+
+- **Photos et vidéos** (§8.7) : galerie sobre en trois colonnes, filtres par moment et « Mes souvenirs », envoi multiple, compression dans le navigateur, **file d'envoi persistante** dans IndexedDB, option « seulement en Wi-Fi », indicateur discret « 3 souvenirs en attente de réseau ».
+- **Consentement au premier envoi**, avec sa version enregistrée — et un choix de visibilité : **aux invités**, ou **aux mariés seulement**, pour la prudence que le brief demande sur les photos d'enfants.
+- **Demande de retrait en un tap** : la photo est masquée **avant même que nous la regardions**. Le fichier reste sur le disque : une décision prise dans l'urgence d'une soirée doit pouvoir se défaire.
+- **Modération** dans l'écran régie : les signalements avec leur motif, masquer, rendre visible, classer. Les douze derniers souvenirs avec un bouton « Masquer » qui porte son libellé.
+- **Mur en direct `/live`** : diaporama plein écran, fondu, monogramme en filigrane, adresse du QR générique dans un coin. Aucun nom, aucun compteur. La liste se renouvelle sans recharger la page — un vidéoprojecteur reste branché des heures.
+- **Plan de table** (§0 bis) : `/ma-table` donne votre table et les prénoms qui y sont ; la recherche trouve « Chloé » en tapant « chloe ». Côté mariés, `/admin/table` crée les tables et pose chaque personne.
+- **Cartes de table PDF et fiche régie PDF** (§9, §10) : le plan B imprimé. La carte porte le QR générique, les cinq moments, le Wi-Fi et un numéro ; la fiche régie tient sur une page, horaires, contacts et procédures de panne comprises.
+
+### Ce que le code garantit, et comment c'est vérifié
+
+- **Aucune position GPS n'atteint le disque.** Le navigateur ré-encode les images (ce qui perd l'EXIF), et le serveur re-nettoie systématiquement : segments APP de JPEG, blocs de métadonnées de PNG, atomes `udta` et `meta` de MP4/MOV — sans aucune dépendance. Un format que le serveur ne sait pas nettoyer est **refusé**, pas stocké en espérant que personne ne regarde. Un parcours Playwright fabrique une vraie photo géolocalisée, l'envoie, relit le fichier **sur le disque** octet par octet, et vérifie ensuite qu'il se décode toujours.
+- **Aucune URL publique.** Un média passe par une route qui vérifie le foyer ; un identifiant deviné donne 404. Un souvenir confié aux mariés n'est servi qu'aux mariés et au foyer qui l'a envoyé.
+- **La file d'envoi survit à tout.** Un parcours coupe le serveur pour de vrai, choisit un souvenir, **ferme l'onglet**, rallume le serveur, réouvre l'onglet : le souvenir part tout seul.
+- **Aucun compteur** (§17) : le « j'aime » sert au tri et n'est jamais affiché en nombre.
+
+### Défauts trouvés par les tests, et corrigés
+
+- La file d'envoi ne se vidait qu'au bout de vingt secondes ou au retour du réseau : rien à l'ouverture de l'écran. Or sur iPhone la réouverture est le **seul** moment où la file peut partir. Elle tente maintenant l'envoi dès l'affichage.
+- Les vignettes de la galerie étaient des liens sans nom accessible — axe-core l'a signalé. Chaque lien porte maintenant le nom de son moment : décrire la photo demanderait de la regarder, ce que personne ne fait ici.
+
+### Décisions de produit prises en passant
+
+- **Le stockage est une interface**, comme le transport e-mail : une mise en œuvre par fichiers aujourd'hui (le VPS de la section 0 bis), et une trentaine de lignes à écrire le jour où le projet Supabase existe.
+- **HEIC : aucun décodeur embarqué.** Safari sur iPhone sait le décoder, donc la conversion en JPEG a lieu là où le HEIC est produit. Ailleurs, le serveur refuse avec une explication. Embarquer 400 Ko de WebAssembly pour un cas qui se règle tout seul serait un mauvais marché.
+- **La recherche du plan de table se fait côté serveur**, deux lettres minimum, vingt résultats au plus. La recherche de la FAQ tourne dans le téléphone, mais envoyer la liste des invités à quiconque détient une invitation reviendrait à publier le carnet d'adresses du mariage. Le repli hors ligne est le papier : les cartes de table portent le plan.
+- **Un « [À COMPLÉTER] » n'est jamais imprimé.** Les imprimables omettent le Wi-Fi ou le contact qui ne sont pas encore écrits, plutôt que d'imprimer la mention.
+- **Le repli sans accents est écrit à la main** en SQL, sans l'extension `unaccent` et sans dépendre d'une collation : majuscules accentuées comprises.
+
+### Mesures
+
+274 tests, 151 parcours sur deux gabarits, dix-sept écrans audités par axe-core sans anomalie, Lighthouse au-dessus du seuil.
+
+### Ce qui reste de V3
+
+Les défis photo (bonus §0 bis, « si le temps le permet ») et le lien privé de diffusion, dont l'emplacement est déjà livré en V2 : il attend l'adresse, pas du code.
+
+## V3 — Le jour J — 18 septembre 2026 — première tranche
+
+Tout ce qui rend la journée lisible sans que les mariés touchent à quoi que ce soit.
+
+### Livré
+
+- **« Maintenant »** (§8.6) : le jour J, l'accueil bascule. En grand le moment en cours, son genre et son heure de fin ; en dessous le moment suivant avec un compte à rebours discret ; puis les raccourcis. La date du mariage disparaît de l'en-tête — ce jour-là, elle ne renseigne plus personne.
+- **Cérémonie débranchée** (§8.6) : pendant L'Horizon, l'écran demande de ranger son téléphone et l'envoi de souvenirs est suspendu. La coupure **se lève toute seule** à la fin du moment, sans geste de personne. C'est un réglage des mariés, activé par défaut, désactivable depuis l'admin.
+- **Semaine J** (§8.5) : la checklist sereine en six points, et la météo du jour via Open-Meteo — gratuit, sans compte, sans clé.
+- **Aide** (§8.6, §0 bis) : deux boutons d'appel (l'équipe du jour, un témoin), l'adresse et les trois itinéraires, le Wi-Fi invités. Consultable **sans réseau** : c'est la page dont on a le plus besoin quand le réseau manque.
+- **Régie** (§9) : un écran séparé, accessible aux rôles `admin` et `regie`. Publier une annonce depuis quatre modèles pré-écrits ou en texte libre ; décaler un moment **et tous ceux qui le suivent** ; suspendre ou rouvrir les envois. Rien d'autre.
+- **Contacts éditables** : l'admin gagne un onglet « Les contacts », et le compteur « à compléter » les prend en compte.
+
+### Décisions de produit prises en passant
+
+- **Un modèle d'annonce est désigné par sa clé, pas par son texte** : la route retrouve alors les deux langues dans les dictionnaires, et un invité anglophone reçoit une vraie traduction. Une annonce **libre**, elle, part telle quelle dans les deux langues — traduire à la volée un soir de fête n'est pas réaliste, et l'écran le dit avant d'envoyer.
+- **La checklist de la semaine J ne quitte pas le téléphone.** Savoir si un invité a préparé sa tenue n'intéresse personne d'autre que lui : l'envoyer au serveur serait une donnée personnelle collectée sans raison (§11). Un parcours vérifie qu'aucune table ne porte de colonne de checklist.
+- **Un contact sans numéro n'affiche pas de bouton d'appel.** Un bouton qui ne compose rien serait pire que pas de bouton du tout. Un numéro qui ne se compose pas est refusé par le serveur.
+- **Le pas de décalage est partagé par tous les moments.** La première version offrait six boutons par moment, soit trente à l'écran : ce n'est pas « utilisable d'une main » (§9). Trois choix de pas, puis deux boutons par moment — l'écran passe de 3 500 à 2 300 px.
+- **Décaler un moment entraîne les suivants.** Retarder le dîner de vingt minutes retarde la fête d'autant ; décaler un seul moment produirait des horaires qui se chevauchent. Un bouton remet tout comme prévu.
+- **Ce que le brief coupe n'est pas construit** (§0 bis) : ni « Je suis en retard », ni objets perdus. La régie s'appelle, elle ne se notifie pas.
+- **La météo échoue en silence.** Coordonnées inconnues (question V1-07), fenêtre de prévision dépassée, réseau coupé : l'écran dit simplement que la météo viendra. Un écran de mariage ne tombe pas parce qu'un service tiers tousse.
+
+### Mesures
+
+232 tests, 108 parcours sur deux gabarits, Lighthouse au-dessus du seuil. Treize écrans d'admin et de régie audités par axe-core, zéro anomalie.
+
+### Ce qui reste de V3
+
+Photos et vidéos, mur `/live`, plan de table, cartes de table et fiche régie PDF, lien privé de diffusion. La modération des photos rejoindra l'écran régie avec elles.
+
 ## Contenus éditables — 18 septembre 2026
 
 Jusqu'ici, tout était en base et éditable — à condition d'écrire du SQL. C'est ce qui bloquait le remplissage de chaque « [À COMPLÉTER] ». Cet écran le débloque.

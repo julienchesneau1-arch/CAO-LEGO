@@ -10,7 +10,23 @@ import { reinitialiserFoyer } from "./reinitialiser";
  * écran d'invité. L'automatisation ne remplace pas une relecture humaine :
  * elle empêche seulement les régressions silencieuses.
  */
-const ECRANS = ["/", "/programme", "/programme/02", "/infos", "/faq", "/reponse", "/retrouver"];
+const ECRANS = [
+  "/",
+  "/programme",
+  "/programme/02",
+  "/infos",
+  "/faq",
+  "/reponse",
+  "/retrouver",
+  "/aide",
+  "/photos",
+  "/photos/envoyer",
+  "/ma-table",
+  "/messages",
+  "/mes-donnees",
+  "/photographe",
+  "/film",
+];
 
 test.beforeEach(async () => {
   await reinitialiserFoyer();
@@ -81,7 +97,12 @@ const ECRANS_ADMIN = [
   "/admin/contenus?section=faq&element=nouveau",
   "/admin/contenus?section=hebergements",
   "/admin/contenus?section=hebergements&element=nouveau",
+  "/admin/contenus?section=contacts",
+  "/admin/contenus?section=contacts&element=aide.regie",
   "/admin/annonces",
+  "/admin/table",
+  "/admin/photographe",
+  "/regie",
 ];
 
 test("l'espace des mariés est accessible, et ses cibles font 48 px", async ({ browser }) => {

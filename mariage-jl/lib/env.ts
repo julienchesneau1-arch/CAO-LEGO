@@ -24,6 +24,15 @@ const Schema = z.object({
   // (question V1-03). Les e-mails restent alors dans leur file.
   JL_EMAIL_TRANSPORT: z.string().optional(),
   JL_FILM_POSTER_URL: z.string().optional(),
+  // Coordonnées du domaine pour la météo J-7 : « latitude,longitude ».
+  // Absentes tant que la question V1-07 est ouverte — l'écran se taira.
+  JL_METEO_COORDONNEES: z.string().optional(),
+  // Dossier des médias envoyés par les invités. Sur le VPS, un volume
+  // sauvegardé ; en développement, « .medias » à la racine du dépôt.
+  JL_MEDIAS_DIR: z.string().optional(),
+  // Limite d'un envoi, en mégaoctets. La vidéo est déjà bornée à 60 s par
+  // le schéma (arbitrage 0 bis) ; ceci borne le poids.
+  JL_MEDIA_MAX_MO: z.coerce.number().int().min(1).max(500).default(120),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 

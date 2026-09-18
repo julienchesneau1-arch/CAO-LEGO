@@ -258,6 +258,12 @@ decrire()("reste à compléter", () => {
     await client!.query(
       `update public.content_blocks set value = jsonb_set(value, '{texte}', '"écrit"')`,
     );
+    // Les contacts de l'écran Aide comptent aussi : un contact sans numéro
+    // est un bouton d'appel qui n'existe pas (brief §0 bis).
+    await client!.query(
+      `update public.content_blocks set value = jsonb_set(value, '{telephone}', '"+33612345678"')
+        where key like 'aide.%'`,
+    );
     await client!.query(`update public.faq set answer_fr = 'écrit', answer_en = 'written'`);
     await client!.query(`update public.moments
         set starts_at = (select date_mariage from public.parametres where id = 1) + time '12:00'`);

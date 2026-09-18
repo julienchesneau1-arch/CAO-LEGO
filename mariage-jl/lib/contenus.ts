@@ -20,6 +20,29 @@ export async function contenus(langue: Langue): Promise<Readonly<Record<string, 
   return table;
 }
 
+export type Contact = {
+  readonly cle: string;
+  readonly nom: string;
+  readonly telephone: string | null;
+};
+
+/**
+ * Contacts de l'écran Aide (brief §0 bis). Le numéro est le même dans les
+ * deux langues ; seul le libellé change. Tant qu'un numéro n'est pas écrit,
+ * l'écran n'affiche pas de bouton d'appel plutôt qu'un bouton mort.
+ */
+export async function contacts(langue: Langue): Promise<ReadonlyArray<Contact>> {
+  const lignes = await requete<{ key: string; value: { texte?: string; telephone?: string | null } }>(
+    "select key, value from public.content_blocks where locale = $1 and key like 'aide.%' order by key",
+    [langue],
+  );
+  return lignes.map((ligne) => ({
+    cle: ligne.key,
+    nom: ligne.value.texte ?? "",
+    telephone: ligne.value.telephone ?? null,
+  }));
+}
+
 export type QuestionFaq = {
   readonly id: string;
   readonly question: string;

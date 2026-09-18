@@ -53,3 +53,53 @@ export async function reinitialiserContenus(): Promise<void> {
     await client.end();
   }
 }
+
+/**
+ * Force la période affichée (brief §7 : l'admin peut basculer). Les parcours
+ * du jour J ne peuvent pas attendre le 3 juin 2028 : ils forcent la période
+ * et posent des horaires autour de l'instant présent.
+ */
+export async function forcerPeriode(periode: string | null): Promise<void> {
+  const client = new Client({ connectionString: URL_E2E });
+  await client.connect();
+  try {
+    await client.query(
+      `update public.parametres
+          set periode_forcee = $1,
+              periode_forcee_jusqu_a = case when $1::text is null then null
+                                            else now() + interval '1 hour' end
+        where id = 1`,
+      [periode],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Pose une journée dont le moment `enCours` est commencé depuis dix minutes.
+ * Les horaires sont écrits en absolu autour de maintenant : le parcours ne
+ * dépend donc ni du fuseau de la machine ni de l'heure à laquelle il tourne.
+ */
+export async function poserJourneeAutourDeMaintenant(enCours: string): Promise<void> {
+  const client = new Client({ connectionString: URL_E2E });
+  await client.connect();
+  try {
+    const ordre = ["01", "02", "03", "04", "05"];
+    const rang = ordre.indexOf(enCours);
+    for (const [index, id] of ordre.entries()) {
+      // Chaque moment dure une heure ; celui en cours a commencé il y a 10 min.
+      const debut = (index - rang) * 60 - 10;
+      await client.query(
+        `update public.moments
+            set starts_at = now() + ($2 || ' minutes')::interval,
+                ends_at   = now() + ($3 || ' minutes')::interval,
+                shift_minutes = 0
+          where id = $1`,
+        [id, String(debut), String(debut + 60)],
+      );
+    }
+  } finally {
+    await client.end();
+  }
+}

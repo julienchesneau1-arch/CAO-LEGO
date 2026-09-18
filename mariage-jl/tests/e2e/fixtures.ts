@@ -16,3 +16,6 @@ export const FOYER = {
 
 /** Même port que `playwright.config.ts` : utile pour ouvrir un second navigateur. */
 export const BASE_URL = "http://127.0.0.1:3220";
+
+/** Dossier jetable des souvenirs envoyés par les parcours. */
+export const DOSSIER_MEDIAS = "/tmp/jl-e2e-medias";

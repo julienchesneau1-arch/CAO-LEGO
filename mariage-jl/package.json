@@ -32,7 +32,8 @@
     "promesse:cles": "node scripts/promesse-cles.mjs",
     "promesse:ouvrir": "node --experimental-strip-types scripts/promesse-ouvrir.mjs",
     "push:cles": "node scripts/push-cles.mjs",
-    "emails:envoyer": "node --experimental-strip-types scripts/emails-envoyer.mjs"
+    "emails:envoyer": "node --experimental-strip-types scripts/emails-envoyer.mjs",
+    "purger": "node scripts/purger.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

@@ -26,7 +26,13 @@ declare const self: ServiceWorkerGlobalScope & WorkerGlobalScope;
  * 2. **Aucune écriture n'est mise en cache** : une réponse part sur le
  *    réseau, ou elle attend dans la file (lib/file-attente.ts).
  */
-const PAGES_DE_CONTENU = /^\/(programme|infos|faq)(\/|$)/;
+/**
+ * `/aide` rejoint les pages de contenu : c'est celle dont on a le plus
+ * besoin quand le réseau manque, et elle ne contient aucune donnée
+ * personnelle d'invité — seulement les numéros que les mariés ont publiés
+ * pour tout le monde.
+ */
+const PAGES_DE_CONTENU = /^\/(programme|infos|faq|aide)(\/|$)/;
 
 const estStatique = (chemin: string): boolean =>
   chemin.startsWith("/_next/static/") ||

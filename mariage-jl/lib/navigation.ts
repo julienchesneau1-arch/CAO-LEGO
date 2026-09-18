@@ -18,6 +18,14 @@ export const LIVREES = new Set([
   "/loin",
   "/promesse",
   "/annonces",
+  "/aide",
+  "/photos",
+  "/photos/envoyer",
+  "/ma-table",
+  "/messages",
+  "/mes-donnees",
+  "/photographe",
+  "/film",
 ]);
 
 export type Onglet = { readonly cle: string; readonly chemin: string };

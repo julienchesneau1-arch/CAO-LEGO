@@ -16,6 +16,8 @@ export type Parametres = {
   readonly date_limite_reponse: Date | null;
   readonly periode_forcee: Periode | null;
   readonly periode_forcee_jusqu_a: Date | null;
+  /** Réglage des mariés : la cérémonie coupe-t-elle les envois ? (§8.6) */
+  readonly ceremonie_debranchee: boolean;
 };
 
 /** Paramètres de la journée. La date du mariage est la seule valeur certaine. */
@@ -25,8 +27,10 @@ export async function parametres(): Promise<Parametres> {
     date_limite_reponse: Date | null;
     periode_forcee: string | null;
     periode_forcee_jusqu_a: Date | null;
+    ceremonie_debranchee: boolean;
   }>(
-    `select date_mariage, date_limite_reponse, periode_forcee, periode_forcee_jusqu_a
+    `select date_mariage, date_limite_reponse, periode_forcee, periode_forcee_jusqu_a,
+            ceremonie_debranchee
        from public.parametres where id = 1`,
   );
   if (ligne === undefined) throw new Error("La table parametres est vide.");
@@ -36,6 +40,7 @@ export async function parametres(): Promise<Parametres> {
     date_limite_reponse: ligne.date_limite_reponse,
     periode_forcee: estPeriode(forcee) ? forcee : null,
     periode_forcee_jusqu_a: ligne.periode_forcee_jusqu_a,
+    ceremonie_debranchee: ligne.ceremonie_debranchee,
   };
 }
 

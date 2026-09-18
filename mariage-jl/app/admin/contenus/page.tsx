@@ -1,9 +1,11 @@
 import {
   BLOCS_AVEC_LIEN,
   type BlocAdmin,
+  type ContactAdmin,
   type FaqAdmin,
   type HebergementAdmin,
   blocsAdmin,
+  contactsAdmin,
   faqAdmin,
   hebergementsAdmin,
   momentsAdmin,
@@ -15,7 +17,7 @@ import { langueEtTextes } from "@/lib/page-commune";
 
 export const dynamic = "force-dynamic";
 
-const SECTIONS = ["journee", "moments", "infos", "faq", "hebergements"] as const;
+const SECTIONS = ["journee", "moments", "infos", "faq", "hebergements", "contacts"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const estSection = (valeur: string | undefined): valeur is Section =>
@@ -168,9 +170,13 @@ export default async function PageAdminContenus({
           {etat === "supprime" ? t.admin_contenus.supprime : t.admin_contenus.enregistre}
         </p>
       ) : null}
-      {etat === "erreur" || etat === "lien" ? (
+      {etat === "erreur" || etat === "lien" || etat === "telephone" ? (
         <p role="alert" className="border p-4" style={BORDURE}>
-          {etat === "lien" ? t.admin_contenus.lien_refuse : t.admin_contenus.erreur}
+          {etat === "lien"
+            ? t.admin_contenus.lien_refuse
+            : etat === "telephone"
+              ? t.admin_contenus.telephone_refuse
+              : t.admin_contenus.erreur}
         </p>
       ) : null}
 
@@ -181,6 +187,7 @@ export default async function PageAdminContenus({
       {section === "infos" ? <Infos choisi={element} /> : null}
       {section === "faq" ? <Faq choisi={element} /> : null}
       {section === "hebergements" ? <Hebergements choisi={element} /> : null}
+      {section === "contacts" ? <Contacts choisi={element} /> : null}
     </main>
   );
 }
@@ -219,6 +226,102 @@ async function Journee() {
         {jour.date_limite_reponse === null ? null : (
           <p className="jl-doux text-sm">{formaterDate(jour.date_limite_reponse, langue)}</p>
         )}
+        <button type="submit" className={`${BOUTON} self-start`} style={BORDURE}>
+          {t.admin_contenus.enregistrer}
+        </button>
+      </form>
+
+      <hr className="jl-filet" />
+
+      {/*
+        La cérémonie débranchée est un choix des mariés, pas de la régie :
+        elle se règle ici, une fois, et se lève ensuite toute seule à la fin
+        de L'Horizon (brief §8.6).
+      */}
+      <form method="post" action="/admin/contenus/ceremonie" className="flex flex-col gap-4">
+        <h2 className="jl-etiquette">{t.admin_contenus.ceremonie_titre}</h2>
+        <p className="jl-doux text-sm">{t.admin_contenus.ceremonie_aide}</p>
+        <label className="jl-cible flex items-center gap-3">
+          <input
+            type="checkbox"
+            name="debranchee"
+            value="1"
+            defaultChecked={jour.ceremonie_debranchee}
+          />
+          <span>{t.admin_contenus.ceremonie_active}</span>
+        </label>
+        <button type="submit" className={`${BOUTON} self-start`} style={BORDURE}>
+          {t.admin_contenus.enregistrer}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+// ----------------------------------------------------------------- Contacts
+
+async function Contacts({ choisi }: { readonly choisi: string | undefined }) {
+  const { t } = await langueEtTextes();
+  const liste = await contactsAdmin();
+  const contact: ContactAdmin | undefined = liste.find((candidat) => candidat.cle === choisi);
+
+  const libelle = (cle: string): string => (cle === "aide.regie" ? t.aide.regie : t.aide.temoin);
+
+  if (contact === undefined) {
+    return (
+      <Liste
+        section="contacts"
+        libelleModifier={t.admin_contenus.modifier}
+        elements={liste.map((candidat) => ({
+          cle: candidat.cle,
+          titre: libelle(candidat.cle),
+          etat: candidat.telephone ?? t.admin_contenus.etat_a_completer,
+          attente: candidat.telephone === null,
+        }))}
+      />
+    );
+  }
+
+  return (
+    <section aria-labelledby="contact" className="flex flex-col gap-5">
+      <RetourListe section="contacts" />
+      <h2 id="contact" className="jl-titre text-xl">
+        {libelle(contact.cle)}
+      </h2>
+      <form method="post" action="/admin/contenus/contact" className="flex flex-col gap-5">
+        <input type="hidden" name="cle" value={contact.cle} />
+        <Champ libelle={t.admin_contenus.nom_contact}>
+          <input
+            type="text"
+            name="texte_fr"
+            required
+            maxLength={120}
+            defaultValue={contact.texte_fr}
+            className={CHAMP}
+            style={STYLE_CHAMP}
+          />
+        </Champ>
+        <Champ libelle={t.admin_contenus.nom_contact_en}>
+          <input
+            type="text"
+            name="texte_en"
+            required
+            maxLength={120}
+            defaultValue={contact.texte_en}
+            className={CHAMP}
+            style={STYLE_CHAMP}
+          />
+        </Champ>
+        <Champ libelle={t.admin_contenus.telephone} aide={t.admin_contenus.telephone_aide}>
+          <input
+            type="tel"
+            name="telephone"
+            maxLength={40}
+            defaultValue={contact.telephone ?? ""}
+            className={CHAMP}
+            style={STYLE_CHAMP}
+          />
+        </Champ>
         <button type="submit" className={`${BOUTON} self-start`} style={BORDURE}>
           {t.admin_contenus.enregistrer}
         </button>
@@ -358,6 +461,9 @@ async function Infos({ choisi }: { readonly choisi: string | undefined }) {
 
   const libelle = (cle: string): string => {
     if (cle === "loin.diffusion") return t.loin.diffusion_titre;
+    if (cle === "jour.wifi") return t.aide.wifi_titre;
+    if (cle === "apres.merci") return t.merci.titre;
+    if (cle === "apres.film") return t.film.titre;
     return t.infos[cle.slice("infos.".length) as "venir"];
   };
 

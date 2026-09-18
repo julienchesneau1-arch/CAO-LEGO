@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { expect, test } from "@playwright/test";
 import { Client } from "pg";
-import { FOYER, URL_E2E } from "./fixtures";
+import { DOSSIER_MEDIAS, FOYER, URL_E2E } from "./fixtures";
 import { reinitialiserFoyer } from "./reinitialiser";
 
 /**
@@ -37,6 +37,7 @@ async function allumer(): Promise<void> {
       HOSTNAME: "127.0.0.1",
       JL_DATABASE_URL: URL_E2E,
       JL_COOKIE_SECRET: "secret-des-parcours-hors-ligne-0123456789",
+      JL_MEDIAS_DIR: DOSSIER_MEDIAS,
     },
     stdio: "ignore",
     detached: true,
@@ -92,6 +93,15 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async () => {
   await reinitialiserFoyer();
+  // Les souvenirs et les accords de partage sont remis à zéro : le parcours
+  // de la file d'envoi part d'un foyer qui n'a encore rien accepté.
+  const client = new Client({ connectionString: URL_E2E });
+  await client.connect();
+  await client.query("delete from public.media_takedown");
+  await client.query("delete from public.media_signal");
+  await client.query("delete from public.media");
+  await client.query("delete from public.media_consent");
+  await client.end();
   if (serveur === undefined) await allumer();
 });
 
@@ -99,7 +109,9 @@ test.afterAll(async () => {
   await eteindre().catch(() => undefined);
 });
 
-test("le programme, les infos et la FAQ restent consultables sans réseau", async ({ page }) => {
+test("le programme, les infos, la FAQ et l'aide restent consultables sans réseau", async ({
+  page,
+}) => {
   await page.goto(`${BASE}/i/${FOYER.jeton}`);
   await page.getByRole("button", { name: "Passer" }).click();
   await attendreServiceWorker(page);
@@ -108,7 +120,7 @@ test("le programme, les infos et la FAQ restent consultables sans réseau", asyn
   await page.reload({ waitUntil: "networkidle" });
 
   // Ouverts une fois avec le réseau : c'est la condition posée par le brief.
-  for (const chemin of ["/programme", "/infos", "/faq"]) {
+  for (const chemin of ["/programme", "/infos", "/faq", "/aide"]) {
     await page.goto(`${BASE}${chemin}`);
     await page.waitForLoadState("networkidle");
   }
@@ -126,7 +138,7 @@ test("le programme, les infos et la FAQ restent consultables sans réseau", asyn
     }
     return chemins.sort();
   });
-  expect(cache).toEqual(["/faq", "/infos", "/programme"]);
+  expect(cache).toEqual(["/aide", "/faq", "/infos", "/programme"]);
 
   await eteindre();
 
@@ -142,6 +154,11 @@ test("le programme, les infos et la FAQ restent consultables sans réseau", asyn
   // La recherche se fait dans le téléphone : elle marche sans réseau.
   await page.getByLabel("Chercher une question").fill("fauteuil");
   await expect(page.getByRole("heading", { level: 2 })).toHaveCount(1);
+
+  // L'aide est la page dont on a le plus besoin quand le réseau manque.
+  await page.goto(`${BASE}/aide`);
+  await expect(page.getByRole("heading", { level: 1, name: "Aide" })).toBeVisible();
+  await expect(page.getByText("Domaine de Roiffé, 86120 Roiffé (Vienne)")).toBeVisible();
 });
 
 test("une page personnelle n'est jamais mise en cache : l'écran hors ligne prend le relais", async ({
@@ -199,4 +216,77 @@ test("une réponse donnée sans réseau part au retour du réseau", async ({ pag
     .toBe(1);
   const lignes = await enBase<{ status: string }>("select status from public.rsvp");
   expect(lignes[0]?.status).toBe("yes");
+});
+
+/**
+ * La promesse la plus lourde du brief §8.7 : « file d'envoi persistante,
+ * reprend après coupure, fermeture de l'app ou redémarrage ». On la vérifie
+ * comme l'invité la vivrait — serveur éteint, souvenir choisi, onglet fermé,
+ * serveur rallumé, onglet réouvert — sans jamais toucher au serveur depuis
+ * la page.
+ */
+test("un souvenir choisi sans réseau part au retour du réseau, même après fermeture", async ({
+  browser,
+}) => {
+  const contexte = await browser.newContext({ baseURL: BASE });
+  const page = await contexte.newPage();
+
+  // Accord de partage donné tant que le réseau est là.
+  await page.goto(`${BASE}/i/${FOYER.jeton}`);
+  await page.getByRole("button", { name: "Passer" }).click();
+  await page.goto(`${BASE}/photos/envoyer`);
+  const accepte = page.waitForResponse((r) => r.url().includes("/photos/consentement"));
+  await page.getByRole("button", { name: "J’accepte de partager" }).click();
+  await accepte;
+
+  await attendreServiceWorker(page);
+  await page.reload({ waitUntil: "networkidle" });
+
+  // Réseau coupé pour de vrai : le serveur est éteint.
+  await eteindre();
+
+  const photo = await page.evaluate(async () => {
+    const toile = document.createElement("canvas");
+    toile.width = 32;
+    toile.height = 32;
+    const contexte2d = toile.getContext("2d");
+    if (contexte2d === null) throw new Error("pas de contexte");
+    contexte2d.fillStyle = "#1f4e79";
+    contexte2d.fillRect(0, 0, 32, 32);
+    const blob = await new Promise<Blob | null>((r) => toile.toBlob(r, "image/jpeg", 0.9));
+    return [...new Uint8Array(await (blob as Blob).arrayBuffer())];
+  });
+
+  await page.setInputFiles('input[type="file"]', {
+    name: "hors-ligne.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from(photo),
+  });
+
+  // L'indicateur discret du brief : un nombre, une phrase.
+  await expect(page.getByText(/1 souvenir\(s\) en attente de réseau/)).toBeVisible();
+  expect(await enBase("select 1 from public.media")).toHaveLength(0);
+
+  // L'onglet se ferme : la file vit dans IndexedDB, pas dans la page.
+  await page.close();
+  await allumer();
+
+  const reprise = await contexte.newPage();
+  await reprise.goto(`${BASE}/photos/envoyer`, { waitUntil: "networkidle" });
+
+  // Rien à cliquer : la reprise a lieu au retour dans l'application.
+  for (let essai = 0; essai < 40; essai += 1) {
+    if ((await enBase("select 1 from public.media")).length > 0) break;
+    await reprise.waitForTimeout(250);
+  }
+  const lignes = await enBase<{ storage_path: string; gps_stripped: boolean }>(
+    "select storage_path, gps_stripped from public.media",
+  );
+  expect(lignes).toHaveLength(1);
+  expect(lignes[0]?.gps_stripped).toBe(true);
+
+  // Et l'écran dit ce qui vient de partir, plutôt que « rien en attente » :
+  // l'invité voit que son souvenir n'a pas été perdu.
+  await expect(reprise.getByText(/1 souvenir\(s\) envoyé\(s\)/)).toBeVisible();
+  await contexte.close();
 });

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { CarteAFaire } from "@/components/CarteAFaire";
+import { ChecklistSemaine } from "@/components/ChecklistSemaine";
+import { Maintenant } from "@/components/Maintenant";
+import { Merci } from "@/components/Merci";
 import { derniereAnnonce } from "@/lib/annonces";
 import { CompteARebours } from "@/components/CompteARebours";
 import { FiletsEtapes } from "@/components/FiletsEtapes";
@@ -18,14 +21,30 @@ import {
   formater,
   formaterDate,
 } from "@/lib/i18n";
+import { echeances } from "@/lib/apres";
+import { contenus } from "@/lib/contenus";
+import { etatJournee } from "@/lib/journee";
+import { galerie } from "@/lib/medias";
+import { previsionDuJour, famille } from "@/lib/meteo";
 import { etapesFranchies } from "@/lib/periode";
 
 export const dynamic = "force-dynamic";
 
+/** Les six étapes de la checklist de la semaine J (brief §8.5). */
+const ETAPES_SEMAINE = [
+  "tenue",
+  "trajet",
+  "hebergement",
+  "table",
+  "ecran_accueil",
+  "batterie",
+] as const;
+
 /**
- * Accueil (brief §7 et §8.1). Le contenu suit la période : « Avant » et
- * « Semaine J » montrent le film, le compte à rebours et la carte « À faire ».
- * Les périodes « Jour J » et « Après » arrivent en V3 et V4 : l'écran le dit
+ * Accueil (brief §7 et §8.1). Le contenu suit la période : « Avant » montre
+ * le film, le compte à rebours et la carte « À faire » ; « Semaine J » y
+ * ajoute la checklist sereine et la météo du jour ; « Jour J » devient
+ * « Maintenant » (§8.6). La période « Après » arrive en V4 : l'écran le dit
  * plutôt que d'afficher une page vide.
  */
 export default async function Accueil() {
@@ -68,6 +87,40 @@ export default async function Accueil() {
 
   const { JL_FILM_URL, JL_FILM_POSTER_URL } = env();
 
+  // « Maintenant » et la météo ne sont calculés que là où ils servent : le
+  // jour J n'appelle pas Open-Meteo, et la période « Avant » ne lit pas
+  // l'état de la journée.
+  const journee = periode === "jour" ? await etatJournee(maintenant) : undefined;
+  const meteo =
+    periode === "semaine" ? await previsionDuJour(parametresJournee.date_mariage) : undefined;
+
+  // Période « Après » : le mot des mariés, quelques vignettes, et les dates
+  // de fin — qui viennent des mêmes expressions que les purges.
+  const apres =
+    periode === "apres"
+      ? await (async () => {
+          const [blocs, vignettes, dates] = await Promise.all([
+            contenus(langue),
+            galerie({
+              limite: 9,
+              ...(foyer === undefined ? {} : { foyer: foyer.id }),
+            }),
+            echeances(),
+          ]);
+          const bloc = blocs["apres.merci"];
+          const enAttente =
+            bloc === undefined ||
+            bloc.texte.trim() === "" ||
+            bloc.texte.includes("[À COMPLÉTER]") ||
+            bloc.texte.includes("[TO BE COMPLETED]");
+          return {
+            message: enAttente ? null : (bloc?.texte ?? null),
+            vignettes: vignettes.filter((m) => m.kind === "photo").map((m) => m.id),
+            dates,
+          };
+        })()
+      : undefined;
+
   return (
     <>
       <PremierLancement
@@ -96,9 +149,15 @@ export default async function Accueil() {
       />
 
       <main className="mx-auto flex max-w-2xl flex-col gap-12 px-6 py-14">
+        {/*
+          Le jour J, la date ne renseigne plus personne : la place revient au
+          moment en cours (§8.6). L'en-tête s'allège, sans disparaître.
+        */}
         <header className="flex flex-col gap-6">
           <Signature mention={t.accueil.signature} titreAccessible="Julien & Lauriane" />
-          <p className="jl-titre text-4xl tracking-[0.12em]">{t.accueil.date}</p>
+          {periode === "jour" ? null : (
+            <p className="jl-titre text-4xl tracking-[0.12em]">{t.accueil.date}</p>
+          )}
           <p className="jl-doux">{t.accueil.lieu}</p>
           <p>{bienvenue}</p>
         </header>
@@ -121,6 +180,14 @@ export default async function Accueil() {
             </Link>
           </section>
         )}
+
+        {periode === "jour" && journee !== undefined ? (
+          <Maintenant
+            etat={journee}
+            langue={langue}
+            libelles={{ maintenant: t.maintenant, adresse: t.infos.adresse }}
+          />
+        ) : null}
 
         {periode === "avant" || periode === "semaine" ? (
           <>
@@ -152,12 +219,69 @@ export default async function Accueil() {
                 lire: t.accueil.film_lire,
               }}
             />
+            {periode === "semaine" ? (
+              <>
+                <hr className="jl-filet" />
+                <ChecklistSemaine
+                  etapes={ETAPES_SEMAINE.map((etape) => ({
+                    cle: etape,
+                    libelle: t.semaine[etape],
+                  }))}
+                  libelles={{
+                    titre: t.semaine.checklist,
+                    faite: t.semaine.faite,
+                    locale: t.semaine.locale,
+                  }}
+                />
+                <section aria-labelledby="meteo" className="flex flex-col gap-2">
+                  <h2 id="meteo" className="jl-etiquette">
+                    {t.semaine.meteo}
+                  </h2>
+                  {meteo === undefined ? (
+                    <p className="jl-doux">{t.semaine.meteo_absente}</p>
+                  ) : (
+                    <>
+                      <p className="jl-titre text-xl tabular-nums">
+                        {formater(t.semaine.meteo_temperatures, {
+                          min: String(Math.round(meteo.minimum)),
+                          max: String(Math.round(meteo.maximum)),
+                        })}
+                      </p>
+                      <p className="jl-doux">
+                        {
+                          {
+                            soleil: t.semaine.meteo_soleil,
+                            nuages: t.semaine.meteo_nuages,
+                            pluie: t.semaine.meteo_pluie_famille,
+                            orage: t.semaine.meteo_orage,
+                          }[famille(meteo.code)]
+                        }
+                      </p>
+                      {meteo.pluieMm <= 0 ? null : (
+                        <p className="jl-doux tabular-nums">
+                          {formater(t.semaine.meteo_pluie, {
+                            mm: String(Math.round(meteo.pluieMm)),
+                          })}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </section>
+              </>
+            ) : null}
           </>
-        ) : (
-          <p className="jl-doux">
-            {periode === "jour" ? t.accueil.periode_jour : t.accueil.periode_apres}
-          </p>
-        )}
+        ) : null}
+
+        {periode === "apres" && apres !== undefined ? (
+          <Merci
+            message={apres.message}
+            vignettes={apres.vignettes}
+            echeances={apres.dates}
+            langue={langue}
+            libelles={t.merci}
+            reconnu={foyer !== undefined}
+          />
+        ) : null}
 
         <hr className="jl-filet" />
 

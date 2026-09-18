@@ -16,7 +16,8 @@ Ce dépôt contient l'application que les invités ouvriront depuis le QR code d
 | **V1 — Le socle** | Accès par QR, code de secours, QR générique, partage de l'accès, premier lancement, accueil « Avant », navigation, Programme + `.ics`, Infos, FAQ, réponse complète, espace des mariés, planche QR PDF | **complet, en attente des contenus et des relectures** |
 | **V2 — La préparation** | « Le texte », « La promesse », messages des absents, hébergements, fil d'annonces, Web Push, rappels e-mail en opt-in avec file d'envoi | **complète côté code** — reste le contenu des rappels et le choix du prestataire |
 | **Contenus éditables** | `/admin/contenus` : horaires des moments, blocs d'Infos, réponses de la FAQ, hébergements, date limite — tout se remplit depuis le téléphone | **livré** — c'est ici que se remplissent les « [À COMPLÉTER] » |
-| V3 → V4 | voir `docs/PLAN.md` | pas commencées |
+| **V3 — Le jour J** | « Maintenant », cérémonie débranchée, checklist et météo de la semaine J, Aide avec boutons d'appel, régie (annonces, décalage, suspension, modération), photos et vidéos avec file d'envoi persistante, mur `/live`, plan de table, cartes de table et fiche régie PDF | **complète côté code** — reste les défis photo (bonus) |
+| **V4 — Après** | « Merci », le regard du photographe, le livre d'or, le film, archives ZIP, « Mes données » avec les dates de suppression | **livrée** |
 
 Ce qui n'est **pas** fait en V0, volontairement : aucun achat de domaine, aucune action sur le VPS, aucun projet Supabase. Ces trois points attendent tes réponses (`docs/QUESTIONS_BLOQUANTES.md`, section V0).
 
@@ -153,6 +154,95 @@ Trois choses que l'écran fait pour toi, et qu'il vaut mieux connaître :
 
 Les noms et les genres des cinq moments ne sont pas modifiables : ils viennent
 de la direction artistique, pas d'un formulaire.
+
+## Le jour J
+
+Trois choses à savoir, et rien à faire :
+
+- **L'application bascule toute seule.** À J-7 elle montre la checklist et la météo ; le 3 juin, l'accueil devient « Maintenant » : le moment en cours en grand, le suivant en dessous. Les horaires viennent de `/admin/contenus` — rien n'est codé en dur.
+- **La cérémonie débranchée est active par défaut.** Pendant L'Horizon, l'écran invite à ranger son téléphone et suspend l'envoi de souvenirs ; la coupure se lève seule à la fin. Tu peux la désactiver dans `/admin/contenus`, onglet « La journée ».
+- **La régie a son propre écran, `/regie`.** Donne le rôle `regie` à une ou deux personnes de confiance : elles pourront publier une annonce, décaler un moment (et tous les suivants), suspendre les envois — et rien d'autre. Elles ne voient ni les allergies ni les données des foyers.
+
+Pour ouvrir un accès régie :
+
+```bash
+pnpm admin:lien              # affiche le lien à usage unique
+```
+
+Les numéros de l'écran Aide s'écrivent dans `/admin/contenus`, onglet « Les contacts ». Tant qu'un numéro est vide, aucun bouton d'appel n'apparaît.
+
+## Les souvenirs des invités
+
+Un invité donne son accord une fois, choisit ses photos, et c'est tout. Ce que
+tu dois savoir :
+
+- **Rien n'est stocké avec sa position.** Le téléphone ré-encode les images,
+  et le serveur retire de nouveau toutes les métadonnées — EXIF des JPEG,
+  blocs des PNG, atomes de position des vidéos d'iPhone. Un fichier que le
+  serveur ne sait pas nettoyer est **refusé**, avec une explication à
+  l'invité.
+- **Aucune adresse publique.** Une photo passe par une route qui vérifie
+  l'invitation. Un lien deviné ne donne rien.
+- **Un invité peut confier ses photos aux mariés seulement** (utile pour les
+  photos d'enfants). Elles n'apparaissent alors ni dans la galerie des
+  autres, ni sur le mur projeté.
+- **N'importe qui peut demander le retrait d'une photo où il apparaît, en un
+  tap.** Elle est masquée tout de suite, avant même que vous la regardiez.
+  Le fichier n'est pas supprimé : tu peux la rendre visible depuis `/regie`.
+- **Rien n'est perdu sans réseau.** Les envois attendent dans le téléphone et
+  repartent d'eux-mêmes. Sur iPhone, ils repartent à la réouverture de
+  l'application — Safari ne permet pas mieux, et l'écran le dit.
+
+Où vivent les fichiers : dans le dossier `JL_MEDIAS_DIR` (à sauvegarder). Le
+jour où le projet Supabase existe, il y a **une trentaine de lignes** à écrire
+dans `lib/stockage.ts`, et rien d'autre à toucher.
+
+Le mur à projeter est à l'adresse **`/live`** : diaporama plein écran, aucun
+nom, aucun compteur.
+
+## Le plan de table
+
+Dans `/admin/table` : tu crées les tables, puis tu poses chaque personne avec
+un menu déroulant. L'invité voit sa table dans `/ma-table` et peut chercher
+quelqu'un — « chloe » trouve « Chloé ». La recherche ne dit que le prénom et
+la table.
+
+Deux boutons sur le même écran produisent les imprimables du brief :
+
+- **Les cartes de table** (une page A5 par table) : QR générique, les cinq
+  moments, le Wi-Fi, un numéro. C'est le plan B si l'application ou le réseau
+  tombe.
+- **La fiche régie** (une page A4) : horaires, contacts, et ce qu'il faut
+  faire si quelque chose casse.
+
+Ce qui n'est pas encore écrit dans `/admin/contenus` n'est **pas imprimé** :
+mieux vaut un blanc qu'un « [À COMPLÉTER] » sur une nappe.
+
+## Après le mariage
+
+L'application bascule une dernière fois toute seule. L'accueil devient
+« Merci » : ton mot (à écrire dans `/admin/contenus`, onglet « Les infos »),
+quelques photos, et les liens vers ce qui reste à voir.
+
+- **Le regard du photographe** : dépose les photos dans
+  `/admin/photographe`. Elles apparaissent dans `/photographe`, une section à
+  part, visible seulement depuis une invitation — le QR générique ne l'ouvre
+  pas. Elles ne se mélangent jamais aux photos des invités.
+- **Le livre d'or** `/messages` : uniquement les mots dont l'auteur a choisi
+  qu'ils soient visibles. Les messages privés restent privés.
+- **Les archives** : chaque invité peut emporter « toutes les photos » ou
+  « mes photos » en un fichier ZIP. L'archive est fabriquée à la demande :
+  une photo retirée n'y est plus.
+- **`/mes-donnees`** : ce que nous détenons pour ce foyer, et les dates de
+  suppression automatique. Ces dates viennent des purges elles-mêmes — elles
+  ne peuvent pas être fausses.
+
+Les suppressions automatiques tournent chaque nuit sur Supabase. En attendant,
+et pour nettoyer les fichiers du disque :
+
+```bash
+pnpm purger        # purge les lignes échues, puis les fichiers orphelins
+```
 
 ## Annonces et notifications
 

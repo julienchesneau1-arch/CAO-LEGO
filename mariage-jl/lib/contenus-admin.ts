@@ -25,6 +25,9 @@ export const CLES_BLOCS = [
   "infos.covoiturage",
   "infos.liste_mariage",
   "loin.diffusion",
+  "jour.wifi",
+  "apres.merci",
+  "apres.film",
 ] as const;
 
 export type CleBloc = (typeof CLES_BLOCS)[number];
@@ -34,11 +37,39 @@ export const BLOCS_AVEC_LIEN: ReadonlySet<string> = new Set([
   "infos.covoiturage",
   "infos.liste_mariage",
   "loin.diffusion",
+  "apres.film",
 ]);
 
 export function estCleBloc(valeur: string | undefined): valeur is CleBloc {
   return valeur !== undefined && (CLES_BLOCS as readonly string[]).includes(valeur);
 }
+
+/**
+ * Contacts joignables depuis l'écran Aide (brief §0 bis : boutons d'appel).
+ * Ils ne sont pas dans `CLES_BLOCS` parce qu'ils portent un numéro, pas un
+ * lien : un numéro se compose, il ne s'ouvre pas dans un navigateur.
+ */
+export const CLES_CONTACTS = ["aide.regie", "aide.temoin"] as const;
+export type CleContact = (typeof CLES_CONTACTS)[number];
+
+export function estCleContact(valeur: string | undefined): valeur is CleContact {
+  return valeur !== undefined && (CLES_CONTACTS as readonly string[]).includes(valeur);
+}
+
+/**
+ * Numéro de téléphone : chiffres, espaces, points, tirets et un `+` en tête.
+ * On ne cherche pas à valider un plan de numérotation — seulement à refuser
+ * ce qui ne pourrait pas se composer, et surtout tout ce qui n'est pas un
+ * numéro (un `tel:` se retrouve dans un `href`).
+ */
+export function telephoneAcceptable(valeur: string): boolean {
+  const propre = valeur.replace(/[\s.\-()]/g, "");
+  return /^\+?\d{6,15}$/.test(propre);
+}
+
+/** Forme composable : c'est elle qui part dans `href="tel:…"`. */
+export const numeroComposable = (valeur: string): string =>
+  valeur.replace(/[\s.\-()]/g, "");
 
 /**
  * Un lien saisi par les mariés finit dans un `href` : on n'accepte que http
@@ -196,6 +227,56 @@ export async function enregistrerBloc(
     [cle, charge(valeurs.texte_fr), charge(valeurs.texte_en), par],
   );
   await journaliser("bloc.maj", cle);
+}
+
+export type ContactAdmin = {
+  readonly cle: string;
+  readonly texte_fr: string;
+  readonly texte_en: string;
+  readonly telephone: string | null;
+};
+
+export async function contactsAdmin(): Promise<ReadonlyArray<ContactAdmin>> {
+  const lignes = await requete<{
+    key: string;
+    locale: string;
+    value: { texte?: string; telephone?: string | null };
+  }>("select key, locale, value from public.content_blocks where key = any($1)", [
+    [...CLES_CONTACTS],
+  ]);
+
+  return CLES_CONTACTS.map((cle) => {
+    const fr = lignes.find((l) => l.key === cle && l.locale === "fr")?.value ?? {};
+    const en = lignes.find((l) => l.key === cle && l.locale === "en")?.value ?? {};
+    return {
+      cle,
+      texte_fr: fr.texte ?? "",
+      texte_en: en.texte ?? "",
+      telephone: fr.telephone ?? null,
+    };
+  });
+}
+
+/** Le numéro est le même dans les deux langues : seul le libellé se traduit. */
+export async function enregistrerContact(
+  cle: CleContact,
+  valeurs: {
+    readonly texte_fr: string;
+    readonly texte_en: string;
+    readonly telephone: string | null;
+  },
+  par: string,
+): Promise<void> {
+  const charge = (texte: string): string =>
+    JSON.stringify({ texte, telephone: valeurs.telephone });
+  await requete(
+    `insert into public.content_blocks (key, locale, value, updated_at, updated_by)
+     values ($1, 'fr', $2::jsonb, now(), $4), ($1, 'en', $3::jsonb, now(), $4)
+     on conflict (key, locale) do update
+        set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
+    [cle, charge(valeurs.texte_fr), charge(valeurs.texte_en), par],
+  );
+  await journaliser("contact.maj", cle);
 }
 
 // ---------------------------------------------------------------------- FAQ
@@ -376,11 +457,12 @@ const EN_ATTENTE = (texte: string | null): boolean =>
  * savent d'un coup d'œil ce qu'il reste à écrire avant le faire-part.
  */
 export async function resteACompleter(): Promise<number> {
-  const [moments, blocs, questions, jour] = await Promise.all([
+  const [moments, blocs, contacts, questions, jour] = await Promise.all([
     requete<{ debut: string | null; place: string | null }>(
       `select to_char(starts_at, 'HH24:MI') as debut, place from public.moments`,
     ),
     blocsAdmin(),
+    contactsAdmin(),
     requete<{ answer_fr: string; answer_en: string }>(
       "select answer_fr, answer_en from public.faq",
     ),
@@ -393,6 +475,10 @@ export async function resteACompleter(): Promise<number> {
   for (const moment of moments) if (moment.debut === null) reste += 1;
   for (const bloc of blocs) {
     if (EN_ATTENTE(bloc.texte_fr) || EN_ATTENTE(bloc.texte_en)) reste += 1;
+  }
+  for (const contact of contacts) {
+    // Un contact sans numéro est inutile : le bouton d'appel n'existerait pas.
+    if (contact.telephone === null || EN_ATTENTE(contact.texte_fr)) reste += 1;
   }
   for (const question of questions) {
     if (EN_ATTENTE(question.answer_fr) || EN_ATTENTE(question.answer_en)) reste += 1;

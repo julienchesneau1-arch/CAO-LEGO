@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { URL_E2E } from "./tests/e2e/fixtures";
+import { DOSSIER_MEDIAS, URL_E2E } from "./tests/e2e/fixtures";
 
 const PORT = 3220;
 
@@ -55,6 +55,9 @@ export default defineConfig({
       // Clé publique de scellement pour les parcours. Une clé publique n'est
       // pas un secret ; la clé privée correspondante n'existe nulle part.
       JL_PROMESSE_CLE_PUBLIQUE: process.env["JL_PROMESSE_CLE_PUBLIQUE"] ?? CLE_PUBLIQUE_TEST,
+      // Les souvenirs des parcours vont dans un dossier jetable, vidé par
+      // scripts/e2e-prepare.mjs : jamais dans le dossier de développement.
+      JL_MEDIAS_DIR: DOSSIER_MEDIAS,
     },
   },
 });
