@@ -680,5 +680,47 @@
     "refusees": "{nombre} fichier(s) refusé(s).",
     "aucune": "Aucune photo du photographe pour l’instant.",
     "retirer": "Retirer"
+  },
+  "indicateurs": {
+    "titre": "Les indicateurs",
+    "intro": "Ce que le brief demande de suivre, mesuré sans aucun traceur. Ce qui ne se mesure pas ainsi est dit tel quel, jamais approché.",
+    "ouverts": "Foyers ayant ouvert leur invitation",
+    "reponses": "Réponses reçues via l’application",
+    "rapides": "Réponse en moins de deux minutes",
+    "souvenirs": "Souvenirs partagés par les invités",
+    "emails_echoues": "E-mails définitivement échoués",
+    "envois_echoues": "Envois de souvenirs définitivement échoués",
+    "questions": "Questions reçues par téléphone ou message",
+    "interventions": "Interventions de Julien et Lauriane le jour J",
+    "incidents": "Incident bloquant le jour J",
+    "objectif_pourcentage": "objectif {objectif}%",
+    "objectif_au_moins": "objectif au moins {objectif}",
+    "objectif_zero": "objectif zéro",
+    "atteint": "Atteint",
+    "pas_encore": "Pas encore",
+    "indisponible": "Non mesurable",
+    "sans_traceur": "Le savoir demanderait de faire remonter les échecs depuis les téléphones, donc de tracer. Le brief l’interdit.",
+    "hors_application": "Rien de cela ne passe par l’application. À noter à la main, si vous le voulez.",
+    "base_vide": "Rien à mesurer pour l’instant.",
+    "delai_titre": "Délai médian entre l’ouverture et la réponse",
+    "delai_secondes": "{secondes} secondes",
+    "delai_minutes": "{minutes} min {secondes} s",
+    "delai_absent": "Aucune réponse mesurable pour l’instant."
+  },
+  "defis": {
+    "titre": "Les défis",
+    "intro": "Un défi par moment, si vous en avez envie. Rien à gagner, rien à compter.",
+    "aucun": "Aucun défi pour l’instant.",
+    "repondre": "Répondre à ce défi",
+    "choisi": "Vous répondez au défi : {titre}",
+    "retirer": "Sans défi"
+  },
+  "admin_defis": {
+    "titre": "Les défis photo",
+    "intro": "Un défi par moment. Tant qu’un intitulé n’est pas écrit, le défi n’apparaît nulle part — même publié.",
+    "titre_fr": "Intitulé en français",
+    "titre_en": "Intitulé en anglais",
+    "publie": "Visible des invités",
+    "aucun_classement": "Aucun classement, aucun compteur : c’est une invitation à regarder autrement, pas une compétition."
   }
 }

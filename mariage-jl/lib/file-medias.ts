@@ -23,6 +23,7 @@ export type SouvenirEnAttente = {
   readonly nom: string;
   readonly mime: string;
   readonly moment: string | null;
+  readonly defi?: string | null;
   readonly largeur: number | null;
   readonly hauteur: number | null;
   readonly duree: number | null;
@@ -108,6 +109,7 @@ export async function vider(forcer = false): Promise<Resultat> {
     const corps = new FormData();
     corps.append("fichier", souvenir.blob, souvenir.nom);
     if (souvenir.moment !== null) corps.append("moment", souvenir.moment);
+    if (souvenir.defi != null) corps.append("defi", souvenir.defi);
     if (souvenir.largeur !== null) corps.append("largeur", String(souvenir.largeur));
     if (souvenir.hauteur !== null) corps.append("hauteur", String(souvenir.hauteur));
     if (souvenir.duree !== null) corps.append("duree", String(souvenir.duree));

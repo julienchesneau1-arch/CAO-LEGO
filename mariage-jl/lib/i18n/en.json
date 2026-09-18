@@ -680,5 +680,47 @@
     "refusees": "{nombre} file(s) refused.",
     "aucune": "No photographer pictures yet.",
     "retirer": "Remove"
+  },
+  "indicateurs": {
+    "titre": "Indicators",
+    "intro": "What the brief asks us to follow, measured without any tracker. Whatever cannot be measured that way is stated as such, never approximated.",
+    "ouverts": "Households that opened their invitation",
+    "reponses": "Replies received through the app",
+    "rapides": "Replied in under two minutes",
+    "souvenirs": "Memories shared by guests",
+    "emails_echoues": "Emails that permanently failed",
+    "envois_echoues": "Memory uploads that permanently failed",
+    "questions": "Questions received by phone or message",
+    "interventions": "Times Julien and Lauriane had to step in on the day",
+    "incidents": "Blocking incidents on the day",
+    "objectif_pourcentage": "target {objectif}%",
+    "objectif_au_moins": "target at least {objectif}",
+    "objectif_zero": "target zero",
+    "atteint": "Met",
+    "pas_encore": "Not yet",
+    "indisponible": "Not measurable",
+    "sans_traceur": "Knowing this would mean reporting failures back from phones, which means tracking. The brief forbids it.",
+    "hors_application": "None of this goes through the app. Note it by hand if you wish.",
+    "base_vide": "Nothing to measure yet.",
+    "delai_titre": "Median delay between opening and replying",
+    "delai_secondes": "{secondes} seconds",
+    "delai_minutes": "{minutes} min {secondes} s",
+    "delai_absent": "No measurable reply yet."
+  },
+  "defis": {
+    "titre": "Challenges",
+    "intro": "One challenge per moment, if you feel like it. Nothing to win, nothing counted.",
+    "aucun": "No challenge yet.",
+    "repondre": "Take on this challenge",
+    "choisi": "You are answering the challenge: {titre}",
+    "retirer": "No challenge"
+  },
+  "admin_defis": {
+    "titre": "Photo challenges",
+    "intro": "One challenge per moment. Until a title is written, the challenge appears nowhere — even published.",
+    "titre_fr": "Title in French",
+    "titre_en": "Title in English",
+    "publie": "Visible to guests",
+    "aucun_classement": "No ranking, no counter: it is an invitation to look differently, not a competition."
   }
 }

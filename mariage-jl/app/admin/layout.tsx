@@ -39,6 +39,9 @@ export default async function AdminLayout({
           <a href="/admin/invites" className="jl-cible jl-etiquette flex items-center">
             {t.admin.invites}
           </a>
+          <a href="/admin/indicateurs" className="jl-cible jl-etiquette flex items-center">
+            {t.indicateurs.titre}
+          </a>
           <a href="/admin/contenus" className="jl-cible jl-etiquette flex items-center">
             {t.admin_contenus.titre}
           </a>
@@ -47,6 +50,9 @@ export default async function AdminLayout({
           </a>
           <a href="/admin/annonces" className="jl-cible jl-etiquette flex items-center">
             {t.admin_annonces.titre}
+          </a>
+          <a href="/admin/defis" className="jl-cible jl-etiquette flex items-center">
+            {t.admin_defis.titre}
           </a>
           <a href="/admin/photographe" className="jl-cible jl-etiquette flex items-center">
             {t.admin_photographe.titre}

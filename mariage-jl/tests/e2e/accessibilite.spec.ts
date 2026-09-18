@@ -102,6 +102,8 @@ const ECRANS_ADMIN = [
   "/admin/annonces",
   "/admin/table",
   "/admin/photographe",
+  "/admin/defis",
+  "/admin/indicateurs",
   "/regie",
 ];
 

@@ -117,6 +117,8 @@ export async function enregistrerMedia(entree: {
    * inconnus, modération, purge — reste identique.
    */
   readonly source?: "invite" | "photographe" | undefined;
+  /** Défi auquel ce souvenir répond, s'il y en a un (brief §8.7). */
+  readonly defiId?: string | null | undefined;
 }): Promise<{ readonly id: string } | { readonly refus: RefusEnvoi }> {
   if (entree.octets.byteLength > octetsMax()) return { refus: "trop_gros" };
 
@@ -147,8 +149,8 @@ export async function enregistrerMedia(entree: {
   await requete(
     `insert into public.media
        (id, storage_path, household_id, moment_id, kind, mime, bytes,
-        width, height, duration_s, status, gps_stripped, visibilite, source)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'published', true, $11, $12)`,
+        width, height, duration_s, status, gps_stripped, visibilite, source, challenge_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'published', true, $11, $12, $13)`,
     [
       id,
       chemin,
@@ -162,6 +164,7 @@ export async function enregistrerMedia(entree: {
       entree.dureeS ?? null,
       consentement.visibilite,
       duPhotographe ? "photographe" : "invite",
+      entree.defiId ?? null,
     ],
   );
   return { id };

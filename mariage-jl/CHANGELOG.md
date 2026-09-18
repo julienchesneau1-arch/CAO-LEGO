@@ -2,6 +2,33 @@
 
 Les dates sont celles de livraison réelle. Tant qu'une version n'est pas validée, elle reste en « en attente de validation ».
 
+## Indicateurs, défis, page de secours vivante, test de charge — 18 septembre 2026
+
+Quatre points du brief qui n'étaient pas encore construits, et qui ne dépendaient d'aucune réponse.
+
+### Livré
+
+- **Indicateurs de réussite** (§16), `/admin/indicateurs` : les neuf indicateurs du brief, mesurés **sans aucun traceur**. Ouvertures, réponses, réponse en moins de deux minutes, souvenirs partagés, e-mails échoués — plus le délai médian entre l'ouverture et la réponse.
+- **Défis photo** (§8.7, bonus §0 bis) : un défi par moment, dans sa couleur, choisi à l'envoi d'un souvenir. **Aucun classement, aucun compteur** (§17).
+- **Page de secours vivante** : elle est désormais **régénérée depuis la base**. Horaires, lieu, accès, date limite, numéros, Wi-Fi : elle dit la même chose que l'application.
+- **Test de charge** (§10), `pnpm charge` : 150 ouvertures étalées sur cinq minutes, cinquante envois simultanés, lectures en parallèle. Il mesure et affiche les percentiles ; c'est le rapport écrit qui juge.
+
+### Ce que le code garantit, et comment c'est vérifié
+
+- **Quatre indicateurs du brief ne sont pas mesurables sans traceur** : envois de souvenirs définitivement échoués, questions reçues par téléphone, interventions des mariés le jour J, incident bloquant. Ils **figurent quand même dans la liste**, avec la raison — les cacher ferait croire qu'on les a oubliés, les approcher ferait croire à un fait. Un test vérifie qu'ils renvoient `undefined` et jamais une approximation.
+- **Aucun verdict sur une base vide.** Afficher « 0 % — pas atteint » sur zéro foyer serait un jugement porté sur rien : la fonction renvoie « indéterminé ».
+- **Un foyer qui a répondu sans que son ouverture soit enregistrée n'entre dans aucun des deux comptes** du délai : il fausserait la proportion dans un sens comme dans l'autre.
+- **Un défi publié mais sans intitulé écrit reste invisible.** Le brief dit « intitulés éditables » et ne les fournit pas : on n'affiche jamais « [À COMPLÉTER] » à un invité. Un parcours le vérifie en publiant un défi vide.
+- **Supprimer un défi ne supprime pas les souvenirs qui y répondaient.**
+- **La page de secours échappe ce qui vient de la saisie.** Elle est servie telle quelle, sans script : une balise collée par erreur dans l'admin casserait la seule page qui doit tenir quand tout tombe. Un test y colle un `<script>` et vérifie qu'il ressort échappé.
+- **Sans base, la page de secours ne devine rien** : les mentions d'attente restent.
+
+### Mesures
+
+344 tests, 174 parcours sur deux gabarits, vingt-cinq écrans audités par axe-core sans anomalie.
+
+Premier passage du test de charge sur le conteneur de développement (40 ouvertures, 15 envois simultanés de 1,5 Mo, 30 lectures en parallèle) : **zéro échec**, médiane de 426 ms pour un envoi, 526 ms au plus pour un écran. Ce n'est pas la mesure du brief — elle demande la production, hors gel, et un rapport écrit (§10) — mais l'outil est prêt et fonctionne.
+
 ## V4 — Après — 18 septembre 2026
 
 La dernière version du plan. Ce qu'il reste quand la fête est finie : le merci, les photos à emporter, et la fin de vie des données.

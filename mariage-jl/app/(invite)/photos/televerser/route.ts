@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { foyerCourant } from "@/lib/foyer";
 import { etatJournee } from "@/lib/journee";
+import { estDefiOuvert } from "@/lib/defis";
 import { enregistrerMedia, octetsMax, type RefusEnvoi } from "@/lib/medias";
 
 const MOMENTS = ["01", "02", "03", "04", "05"];
@@ -34,6 +35,14 @@ export async function POST(requete: NextRequest): Promise<Response> {
   const momentBrut = donnees.get("moment")?.toString() ?? "";
   const moment = MOMENTS.includes(momentBrut) ? momentBrut : journee.courant?.id ?? null;
 
+  /*
+    Le défi vient du téléphone : on vérifie qu'il est publié et réellement
+    écrit avant de l'attacher. Un identifiant bricolé n'accroche rien.
+  */
+  const defiBrut = donnees.get("defi")?.toString() ?? "";
+  const defiId =
+    defiBrut !== "" && (await estDefiOuvert(defiBrut)) ? defiBrut : null;
+
   const dureeBrute = Number(donnees.get("duree") ?? 0);
   const largeur = Number(donnees.get("largeur") ?? 0);
   const hauteur = Number(donnees.get("hauteur") ?? 0);
@@ -43,6 +52,7 @@ export async function POST(requete: NextRequest): Promise<Response> {
     momentId: moment,
     mime: fichier.type,
     octets: new Uint8Array(await fichier.arrayBuffer()),
+    defiId,
     ...(largeur > 0 ? { largeur } : {}),
     ...(hauteur > 0 ? { hauteur } : {}),
     ...(dureeBrute > 0 && dureeBrute <= 60 ? { dureeS: dureeBrute } : {}),

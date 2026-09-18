@@ -20,13 +20,17 @@ type Libelles = Readonly<Record<string, string>>;
 export function EnvoyerSouvenir({
   momentCourant,
   suspendu,
+  defis,
   libelles,
 }: {
   readonly momentCourant: string | null;
   readonly suspendu: boolean;
+  /** Défis ouverts, s'il y en a (brief §8.7). Aucun compteur, aucun classement. */
+  readonly defis: ReadonlyArray<{ readonly id: string; readonly titre: string }>;
   readonly libelles: Libelles;
 }) {
   const [attente, setAttente] = useState(0);
+  const [defi, setDefi] = useState("");
   const [wifiSeulement, setWifiSeulement] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
   const [travaille, setTravaille] = useState(false);
@@ -110,6 +114,7 @@ export function EnvoyerSouvenir({
           nom: prepare.nom,
           mime: prepare.mime,
           moment: momentCourant,
+          defi: defi === "" ? null : defi,
           largeur: prepare.largeur,
           hauteur: prepare.hauteur,
           duree: prepare.duree,
@@ -156,6 +161,25 @@ export function EnvoyerSouvenir({
               style={{ borderColor: "var(--filet)", color: "var(--texte)" }}
             />
           </label>
+
+          {defis.length === 0 ? null : (
+            <label className="flex flex-col gap-2">
+              <span className="jl-etiquette">{libelles["defis"]}</span>
+              <select
+                value={defi}
+                onChange={(evenement) => setDefi(evenement.target.value)}
+                className="jl-cible border bg-transparent px-4 py-3"
+                style={{ borderColor: "var(--filet)", color: "var(--texte)" }}
+              >
+                <option value="">{libelles["sans_defi"]}</option>
+                {defis.map((candidat) => (
+                  <option key={candidat.id} value={candidat.id}>
+                    {candidat.titre}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="jl-cible flex items-center gap-3">
             <input

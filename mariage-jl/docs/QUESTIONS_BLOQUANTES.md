@@ -89,3 +89,13 @@ Règle : aucune valeur n'est devinée. Tant qu'une question marquée **bloquante
 | V4-02 | **Photographe** : format de livraison, volume attendu, date | « Le regard du photographe », archives |
 | V4-03 | **Destination de la sauvegarde externe** (hors Hostinger, hors Supabase) | Sauvegardes, archives ZIP |
 | V4-04 | Date de fin d'accès annoncée aux invités | Écran Merci, page Confidentialité |
+
+---
+
+## Après la livraison de V4 — ce qui reste mesurable ou décidable
+
+| # | Question | Ce qu'elle bloque | Statut |
+|---|---|---|---|
+| V4-07 | **Test de charge** (§10) : l'outil est livré (`pnpm charge`). Il doit tourner **contre la production, hors gel**, et son résultat être consigné par écrit. Quand le faisons-nous ? | Critère de fin de V3 | bloquante avant le jour J — dépend du domaine (V0-02) et du VPS (V0-05) |
+| V4-08 | **Indicateurs non mesurables** : quatre des neuf indicateurs du §16 ne peuvent pas être mesurés sans tracer les invités. Ils sont affichés comme « non mesurables », avec la raison. Veux-tu les noter à la main quelque part, ou les laisser ainsi ? | Écran des indicateurs | non bloquante |
+| V4-09 | **Répétition générale à J-60** (§10) : un repas de famille de 15 à 20 personnes, sur leurs propres téléphones. À organiser, et le rapport écrit à produire. | Critère de fin de V1 et de V3 | bloquante avant le faire-part |

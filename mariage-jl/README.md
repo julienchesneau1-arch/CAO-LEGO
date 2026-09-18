@@ -244,6 +244,54 @@ et pour nettoyer les fichiers du disque :
 pnpm purger        # purge les lignes échues, puis les fichiers orphelins
 ```
 
+## Suivre, sans traceur
+
+`/admin/indicateurs` reprend les neuf indicateurs du brief. Cinq sont
+mesurés depuis la base, parce qu'elle connaît déjà ces informations :
+ouvertures, réponses, réponse en moins de deux minutes, souvenirs partagés,
+e-mails échoués. Les quatre autres (envois abandonnés dans un téléphone,
+questions reçues au téléphone, vos interventions le jour J, incident
+bloquant) **ne sont pas mesurables sans tracer les invités**. Ils figurent
+quand même dans la liste, avec la raison : mieux vaut un blanc assumé qu'un
+chiffre approché qu'on finirait par prendre pour un fait.
+
+Aucun de ces chiffres n'est visible des invités.
+
+## Les défis photo
+
+`/admin/defis` : un défi par moment, dans sa couleur. Écris l'intitulé,
+coche « visible des invités », et il apparaît au moment d'envoyer un
+souvenir. Tant qu'un intitulé n'est pas écrit, le défi n'apparaît nulle part
+— même publié.
+
+Aucun classement, aucun compteur : personne ne saura combien de personnes
+ont répondu à un défi.
+
+## La page de secours
+
+Elle est régénérée depuis la base, donc elle **dit la même chose que
+l'application** — horaires, lieu, accès, date limite, numéros, Wi-Fi :
+
+```bash
+pnpm gen:secours   # à relancer après avoir rempli des contenus
+```
+
+Sans base joignable, elle garde les mentions « [À COMPLÉTER] » plutôt que
+d'inventer.
+
+## Le test de charge
+
+Le brief §10 demande 150 invités ouvrant l'app en cinq minutes et cinquante
+envois simultanés :
+
+```bash
+JL_DATABASE_URL=… pnpm charge https://mon-serveur --foyers 150 --photos 50
+```
+
+Il crée des foyers d'essai étiquetés « CHARGE — », mesure, affiche les
+percentiles, et les supprime — même si tu l'interromps. **Jamais pendant la
+période de gel, jamais pendant que des invités utilisent l'application.**
+
 ## Annonces et notifications
 
 Depuis `/admin/annonces`, tu publies une annonce en français et en anglais.

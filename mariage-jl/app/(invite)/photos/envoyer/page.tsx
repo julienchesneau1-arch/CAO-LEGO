@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { EnvoyerSouvenir } from "@/components/EnvoyerSouvenir";
+import { defisPublies } from "@/lib/defis";
 import { foyerCourant } from "@/lib/foyer";
 import { etatJournee } from "@/lib/journee";
 import { consentementMedias } from "@/lib/medias";
@@ -19,12 +20,13 @@ export default async function PageEnvoyer({
 }: {
   readonly searchParams: Promise<{ etat?: string }>;
 }) {
-  const { t } = await langueEtTextes();
+  const { langue, t } = await langueEtTextes();
   const { etat } = await searchParams;
   const foyer = await foyerCourant();
-  const [journee, accord] = await Promise.all([
+  const [journee, accord, defis] = await Promise.all([
     etatJournee(),
     foyer === undefined ? Promise.resolve(undefined) : consentementMedias(foyer.id),
+    defisPublies(langue),
   ]);
   const bordure = { borderColor: "var(--filet)" };
 
@@ -92,7 +94,10 @@ export default async function PageEnvoyer({
           <EnvoyerSouvenir
             momentCourant={journee.courant?.id ?? null}
             suspendu={journee.envoisEnPause}
+            defis={defis.map((defi) => ({ id: defi.id, titre: defi.titre }))}
             libelles={{
+              defis: t.defis.titre,
+              sans_defi: t.defis.retirer,
               titre: t.envoi.titre,
               choisir: t.envoi.choisir,
               wifi: t.envoi.wifi,
